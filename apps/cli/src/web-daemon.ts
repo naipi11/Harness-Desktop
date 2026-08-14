@@ -12,10 +12,12 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 export interface WebDaemonChild {
   /** The operating-system process id, assigned after spawn. */
   pid?: number | undefined
-  /** Subscribe once to a child startup event. */
-  once(event: 'spawn', listener: () => void): unknown
+  /** Subscribe once to child startup or termination during failed startup cleanup. */
+  once(event: 'spawn' | 'exit', listener: () => void): unknown
   /** Subscribe once to a child startup failure. */
   once(event: 'error', listener: (error: Error) => void): unknown
+  /** Request child termination during failed startup cleanup. */
+  kill(): boolean
   /** Release the parent's event-loop reference after startup succeeds. */
   unref(): void
 }
@@ -74,12 +76,35 @@ export interface LaunchWebDaemonInput {
   args: readonly string[]
 }
 
+/** Close the parent's log descriptor without replacing an operation's primary result. */
+function closeParentLog(adapters: WebDaemonAdapters, logFd: number): void {
+  try {
+    adapters.closeSync(logFd)
+  } catch {
+    // A live child's published PID or a spawn error remains authoritative.
+  }
+}
+
+/** Terminate a child whose completed spawn cannot be published safely. */
+function terminateSpawnedChild(child: WebDaemonChild): Promise<void> {
+  return new Promise((resolve) => {
+    child.once('exit', resolve)
+    try {
+      child.kill()
+    } catch {
+      // Without a publishable PID, keep the parent attached until the child exits.
+    }
+  })
+}
+
 /**
  * Start a detached web-profile child with stdout and stderr written to one log.
  * @param input - entrypoint, patch files, and cleaned web arguments.
  * @param adapters - filesystem and child-process operations; production is the default.
- * @returns the child pid and its private log path after the operating system reports spawn.
- * @throws when the log cannot be prepared or the child cannot start.
+ * @returns the child pid and its private log path after the operating system reports spawn;
+ * a parent-only descriptor-close failure does not make that live child undiscoverable.
+ * @throws when the log cannot be prepared or the child cannot start; a spawned child
+ * without a pid receives a termination request and is awaited before rejection.
  */
 export function launchWebDaemon(
   input: LaunchWebDaemonInput,
@@ -113,37 +138,32 @@ export function launchWebDaemon(
       stdio: ['ignore', logFd, logFd],
     })
   } catch (error: unknown) {
-    adapters.closeSync(logFd)
-    throw new Error(`web daemon spawn failed for ${input.entry}`, { cause: error })
+    const spawnError = new Error(`web daemon spawn failed for ${input.entry}`, { cause: error })
+    closeParentLog(adapters, logFd)
+    throw spawnError
   }
 
   return new Promise((resolve, reject) => {
     let settled = false
-    const closeLog = (): boolean => {
-      try {
-        adapters.closeSync(logFd)
-        return true
-      } catch (error: unknown) {
-        reject(new Error(`web daemon log operation failed for ${logPath}`, { cause: error }))
-        return false
-      }
-    }
     child.once('spawn', () => {
       if (settled) return
       settled = true
-      if (!closeLog()) return
       if (child.pid === undefined) {
-        reject(new Error(`web daemon spawn failed for ${input.entry}: missing process id`))
+        const spawnError = new Error(`web daemon spawn failed for ${input.entry}: missing process id`)
+        closeParentLog(adapters, logFd)
+        void terminateSpawnedChild(child).then(() => { reject(spawnError) })
         return
       }
+      closeParentLog(adapters, logFd)
       child.unref()
       resolve({ pid: child.pid, logPath })
     })
     child.once('error', (error) => {
       if (settled) return
       settled = true
-      if (!closeLog()) return
-      reject(new Error(`web daemon spawn failed for ${input.entry}`, { cause: error }))
+      const spawnError = new Error(`web daemon spawn failed for ${input.entry}`, { cause: error })
+      closeParentLog(adapters, logFd)
+      reject(spawnError)
     })
   })
 }
