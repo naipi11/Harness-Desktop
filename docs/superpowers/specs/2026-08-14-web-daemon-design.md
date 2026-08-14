@@ -1,5 +1,7 @@
 # Web daemon launch design
 
+English | [中文](2026-08-14-web-daemon-design.zh.md)
+
 ## Scope
 
 `dsh web` gains optional detached execution for local Web UI servers. The foreground invocation and all existing Web options keep their current behavior.
