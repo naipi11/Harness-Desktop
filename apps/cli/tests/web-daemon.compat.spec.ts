@@ -88,24 +88,74 @@ async function stopDetachedProcess(pid: number): Promise<void> {
   await waitForStoppedProcess(pid)
 }
 
+/** The process and log reported by a successfully spawned detached server. */
+interface DetachedWebServer {
+  logPath: string
+  pid: number
+}
+
+/** Record a daemon's resources before asserting the parent transcript exactly. */
+function recordedDetachedWebServer(stdout: string): DetachedWebServer {
+  const match = stdout.match(/dsh web: started detached process (\d+); log: ([^\r\n]+)/u)
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error(`detached parent did not report a process id and log. stdout:\n${stdout}`)
+  }
+  return { pid: Number(match[1]), logPath: match[2] }
+}
+
+/** Launch one alias, verify the served UI, and always clean up its process and home. */
+async function verifyDetachedWebAlias(alias: '--background' | '--daemon'): Promise<void> {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-web-daemon-'))
+  let server: DetachedWebServer | undefined
+  let primaryError: unknown
+  const cleanupErrors: unknown[] = []
+  try {
+    try {
+      const parent = await runBuiltBin(['web', alias, '--port', '0'], home)
+      server = recordedDetachedWebServer(parent.stdout)
+      expect(parent).toEqual({
+        code: 0,
+        stderr: '',
+        stdout: `dsh web: started detached process ${String(server.pid)}; log: ${server.logPath}\n`,
+      })
+      const log = await waitForLogLine(server.logPath, /dsh web: http:\/\/127\.0\.0\.1:\d+/u)
+      await expect(fetch(urlFromLog(log))).resolves.toMatchObject({ ok: true })
+    } catch (error: unknown) {
+      primaryError = error
+    }
+  } finally {
+    try {
+      if (server !== undefined) await stopDetachedProcess(server.pid)
+    } catch (error: unknown) {
+      cleanupErrors.push(error)
+    } finally {
+      try {
+        await rm(home, { recursive: true, force: true })
+      } catch (error: unknown) {
+        cleanupErrors.push(error)
+      }
+    }
+  }
+  if (primaryError !== undefined) {
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([primaryError, ...cleanupErrors], 'detached Web assertion and cleanup both failed')
+    }
+    throw primaryError
+  }
+  if (cleanupErrors.length === 1) throw cleanupErrors[0]
+  if (cleanupErrors.length > 1) throw new AggregateError(cleanupErrors, 'detached Web cleanup failed')
+}
+
 describe.skipIf(!requireBuiltArtifacts)('dsh built web daemon', () => {
-  it('returns after starting a detached server that serves the built UI', async () => {
+  it('returns after --daemon starts a detached server that serves the built UI', async () => {
     expect(existsSync(builtBin), `missing built CLI ${resolve(builtBin)}; run pnpm run build`).toBe(true)
     expect(existsSync(webDist), `missing Web dist ${resolve(webDist)}; run pnpm run build`).toBe(true)
-    const home = await mkdtemp(join(tmpdir(), 'dsh-web-daemon-'))
-    let pid: number | undefined
-    try {
-      const parent = await runBuiltBin(['web', '--daemon', '--port', '0'], home)
-      expect(parent).toMatchObject({ code: 0, stderr: '' })
-      const match = parent.stdout.match(/^dsh web: started detached process (\d+); log: (.+)\n$/u)
-      expect(match).not.toBeNull()
-      if (match?.[1] === undefined || match[2] === undefined) throw new Error('detached parent did not report a process id and log')
-      pid = Number(match[1])
-      const log = await waitForLogLine(match[2], /dsh web: http:\/\/127\.0\.0\.1:\d+/u)
-      await expect(fetch(urlFromLog(log))).resolves.toMatchObject({ ok: true })
-    } finally {
-      if (pid !== undefined) await stopDetachedProcess(pid)
-      await rm(home, { recursive: true, force: true })
-    }
+    await verifyDetachedWebAlias('--daemon')
+  }, 50_000)
+
+  it('returns after --background starts a detached server that serves the built UI', async () => {
+    expect(existsSync(builtBin), `missing built CLI ${resolve(builtBin)}; run pnpm run build`).toBe(true)
+    expect(existsSync(webDist), `missing Web dist ${resolve(webDist)}; run pnpm run build`).toBe(true)
+    await verifyDetachedWebAlias('--background')
   }, 50_000)
 })
