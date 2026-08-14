@@ -32,7 +32,7 @@ English | [涓枃](2026-08-14-web-daemon.zh.md)
 **Interfaces:**
 
 - Produces: `resolveWebDaemonInvocation(args: readonly string[]): { args: string[]; detached: boolean }`.
-- Produces: `launchWebDaemon(input: { entry: string; patches: readonly string[]; args: readonly string[] }): Promise<{ pid: number; logPath: string }>`.
+- Produces: `launchWebDaemon(input: { runtimeArgs: readonly string[]; entry: string; patches: readonly string[]; args: readonly string[] }): Promise<{ pid: number; logPath: string }>`.
 - Produces: injectable filesystem and child-process adapters; production resolves the home with `resolveDshHome()`.
 - Consumed by Task 2: only the `profile === 'web'` branch in `apps/cli/src/bin.ts`.
 
@@ -44,10 +44,10 @@ expect(resolveWebDaemonInvocation(['--port', '0', '--daemon', '--background']))
 expect(resolveWebDaemonInvocation(['--daemon', '--help']))
   .toEqual({ args: ['--help'], detached: false })
 
-const launched = launchWebDaemon({ entry: '/dsh/bin.js', patches: ['overlay.yml'], args: ['--port', '0'] }, adapters)
+const launched = launchWebDaemon({ runtimeArgs: ['--import', 'tsx/esm'], entry: '/dsh/bin.js', patches: ['overlay.yml'], args: ['--port', '0'] }, adapters)
 child.emit('spawn')
 await expect(launched).resolves.toMatchObject({ pid: 417 })
-expect(adapters.spawn).toHaveBeenCalledWith(process.execPath, ['/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'], expect.objectContaining({ detached: true, windowsHide: true, stdio: ['ignore', 9, 9] }))
+expect(adapters.spawn).toHaveBeenCalledWith(process.execPath, ['--import', 'tsx/esm', '/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'], expect.objectContaining({ detached: true, windowsHide: true, stdio: ['ignore', 9, 9] }))
 ```
 
 - [ ] **Step 2: Confirm the test fails before implementation**
@@ -66,7 +66,7 @@ export function resolveWebDaemonInvocation(args: readonly string[]): { args: str
 }
 ```
 
-Create `$DSH_HOME/logs/` with owner-only permissions, create a unique subdirectory through `mkdtempSync`, open `server.log` exclusively with owner-only mode, and give the same descriptor to child stdout and stderr. Rebuild child argv as `['--profile', 'web', ...patches.flatMap(path => ['--patch', path]), ...args]`. Await `spawn` or `error`, close the parent descriptor on either path, call `unref()` only after `spawn`, and throw an error that names the failed log or spawn operation.
+Create `$DSH_HOME/logs/` with owner-only permissions, create a unique subdirectory through `mkdtempSync`, open `server.log` exclusively with owner-only mode, and give the same descriptor to child stdout and stderr. Rebuild child argv as `[...runtimeArgs, entry, '--profile', 'web', ...patches.flatMap(path => ['--patch', path]), ...args]`. The CLI passes `process.execArgv` so source launches retain `--import tsx/esm`. Await `spawn` or `error`, close the parent descriptor on either path, call `unref()` only after `spawn`, and throw an error that names the failed log or spawn operation.
 
 - [ ] **Step 4: Run focused verification**
 
@@ -124,7 +124,7 @@ Expected: FAIL because the CLI does not dispatch the helper, help lacks both ali
 ```ts
 const web = invocation.profile === 'web' ? resolveWebDaemonInvocation(invocation.args) : undefined
 if (web?.detached) {
-  const launched = await launchWebDaemon({ entry: fileURLToPath(import.meta.url), patches: invocation.patches, args: web.args })
+  const launched = await launchWebDaemon({ runtimeArgs: process.execArgv, entry: fileURLToPath(import.meta.url), patches: invocation.patches, args: web.args })
   process.stdout.write(`dsh web: started detached process \${String(launched.pid)}; log: \${launched.logPath}\n`)
   break
 }

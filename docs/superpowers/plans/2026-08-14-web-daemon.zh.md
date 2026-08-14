@@ -32,7 +32,7 @@
 **接口：**
 
 - 产出：`resolveWebDaemonInvocation(args: readonly string[]): { args: string[]; detached: boolean }`。
-- 产出：`launchWebDaemon(input: { entry: string; patches: readonly string[]; args: readonly string[] }): Promise<{ pid: number; logPath: string }>`。
+- 产出：`launchWebDaemon(input: { runtimeArgs: readonly string[]; entry: string; patches: readonly string[]; args: readonly string[] }): Promise<{ pid: number; logPath: string }>`。
 - 产出：可注入的文件系统和子进程适配器；生产实现通过 `resolveDshHome()` 解析主目录。
 - 由任务 2 使用：仅在 `apps/cli/src/bin.ts` 中的 `profile === 'web'` 分支使用。
 
@@ -44,10 +44,10 @@ expect(resolveWebDaemonInvocation(['--port', '0', '--daemon', '--background']))
 expect(resolveWebDaemonInvocation(['--daemon', '--help']))
   .toEqual({ args: ['--help'], detached: false })
 
-const launched = launchWebDaemon({ entry: '/dsh/bin.js', patches: ['overlay.yml'], args: ['--port', '0'] }, adapters)
+const launched = launchWebDaemon({ runtimeArgs: ['--import', 'tsx/esm'], entry: '/dsh/bin.js', patches: ['overlay.yml'], args: ['--port', '0'] }, adapters)
 child.emit('spawn')
 await expect(launched).resolves.toMatchObject({ pid: 417 })
-expect(adapters.spawn).toHaveBeenCalledWith(process.execPath, ['/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'], expect.objectContaining({ detached: true, windowsHide: true, stdio: ['ignore', 9, 9] }))
+expect(adapters.spawn).toHaveBeenCalledWith(process.execPath, ['--import', 'tsx/esm', '/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'], expect.objectContaining({ detached: true, windowsHide: true, stdio: ['ignore', 9, 9] }))
 ```
 
 - [ ] **步骤 2：确认实现前测试失败**
@@ -66,7 +66,7 @@ export function resolveWebDaemonInvocation(args: readonly string[]): { args: str
 }
 ```
 
-以仅所有者权限创建 `$DSH_HOME/logs/`，通过 `mkdtempSync` 创建唯一子目录，以仅所有者模式独占打开 `server.log`，并将同一个描述符交给子进程的 stdout 和 stderr。重建子进程 argv：`['--profile', 'web', ...patches.flatMap(path => ['--patch', path]), ...args]`。等待 `spawn` 或 `error`，在任一路径关闭父进程描述符，仅在 `spawn` 后调用 `unref()`，并抛出明确指出日志或 spawn 操作失败的错误。
+以仅所有者权限创建 `$DSH_HOME/logs/`，通过 `mkdtempSync` 创建唯一子目录，以仅所有者模式独占打开 `server.log`，并将同一个描述符交给子进程的 stdout 和 stderr。重建子进程 argv：`[...runtimeArgs, entry, '--profile', 'web', ...patches.flatMap(path => ['--patch', path]), ...args]`。CLI 传入 `process.execArgv`，使源码启动保留 `--import tsx/esm`。等待 `spawn` 或 `error`，在任一路径关闭父进程描述符，仅在 `spawn` 后调用 `unref()`，并抛出明确指出日志或 spawn 操作失败的错误。
 
 - [ ] **步骤 4：运行聚焦验证**
 
@@ -124,7 +124,7 @@ await stopDetachedProcess(Number(pid))
 ```ts
 const web = invocation.profile === 'web' ? resolveWebDaemonInvocation(invocation.args) : undefined
 if (web?.detached) {
-  const launched = await launchWebDaemon({ entry: fileURLToPath(import.meta.url), patches: invocation.patches, args: web.args })
+  const launched = await launchWebDaemon({ runtimeArgs: process.execArgv, entry: fileURLToPath(import.meta.url), patches: invocation.patches, args: web.args })
   process.stdout.write(`dsh web: started detached process \${String(launched.pid)}; log: \${launched.logPath}\n`)
   break
 }
