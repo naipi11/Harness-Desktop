@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-web-daemon-launch.md
-2026-08-14-web-daemon-launch.md: 5597792f26a30538e6b133421d13991f0ffc783d
-2026-08-14-web-daemon-launch.zh.md: 5053c2cceeb4dce60c434ef220723075a8f00db9
+2026-08-14-web-daemon-launch.md: b7324c3e16e7c6c8e74064601d87bde7d771d0b0
+2026-08-14-web-daemon-launch.zh.md: d6b7a90ad3b019dca6528c5e0dffdb82c57c6137

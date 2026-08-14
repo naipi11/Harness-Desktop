@@ -10,7 +10,7 @@ Web sessions need to continue after an interactive launcher returns, while their
 
 ## Decision
 
-The CLI owns the Web-only `--daemon` and `--background` aliases. It consumes either alias before it passes cleaned arguments to the Web profile, re-execs the child with the same source-launch runtime arguments when applicable, prints the child PID and private `$DSH_HOME/logs/.../server.log` path, and exits after child creation. The returned PID uses the existing child-disposal cleanup.
+The CLI owns the Web-only `--daemon` and `--background` aliases. It consumes either alias before it passes cleaned arguments to the Web profile, re-execs the child with the same source-launch runtime arguments when applicable, prints the child PID and private `$DSH_HOME/logs/.../server.log` path, and exits after child creation. The caller owns the returned PID and manages it with platform process tools. POSIX `SIGTERM` reaches the existing graceful profile shutdown; Windows `taskkill /F` forces termination and does not prove graceful disposal.
 
 `web-startup` continues to own `--host`, `--port`, repeatable `--trusted-host`, and `--help`. The child writes its URL and startup failures to the private log. Parent success only reports child creation; it does not report HTTP readiness, and `--help` creates no child.
 
@@ -22,4 +22,6 @@ The CLI owns the Web-only `--daemon` and `--background` aliases. It consumes eit
 
 ## Consequences
 
-Foreground `dsh web` behavior remains unchanged. Background callers receive a PID that existing disposal cleans up, but must read the private log to obtain the child URL or diagnose startup failure. The process has no readiness guarantee or lifecycle-management commands beyond normal child disposal.
+Foreground `dsh web` behavior remains unchanged. Background callers manage the returned PID and must read the private log to obtain the child URL or diagnose startup failure. The launcher provides no automatic process cleanup, readiness guarantee, `status`, or `stop` command.
+
+The built CLI smoke starts and stops both aliases. POSIX cleanup sends `SIGTERM` and reaches the profile's graceful shutdown path. Windows cleanup uses `taskkill /F`; it proves forced process-tree termination, not graceful disposal.

@@ -63,7 +63,7 @@ dsh web --dump-config
 dsh web --help
 ```
 
-For either background alias, the parent prints the child PID and private `$DSH_HOME/logs/.../server.log` path, then exits. That success means the child was created, not that HTTP is ready. The returned PID uses the launcher's existing child-disposal cleanup; the child writes its URL and every startup failure to the private log, which is required to diagnose a failed launch. `dsh web --help` creates no child, and `dsh web` without a background alias remains foreground.
+For either background alias, the parent prints the child PID and private `$DSH_HOME/logs/.../server.log` path, then exits. That success means the child was created, not that HTTP is ready. The caller manages the PID with platform process tools. On POSIX, `SIGTERM` reaches the existing graceful profile shutdown. On Windows, `taskkill /PID <pid> /T /F` forces termination and does not prove graceful disposal. The child writes its URL and every startup failure to the private log, which is required to diagnose a failed launch. `dsh web --help` creates no child, and `dsh web` without a background alias remains foreground.
 
 There is no readiness polling, `status` or `stop` service manager, remote bind, or login autostart. The production Web runner needs built package and frontend artifacts (`pnpm run build`). It serves `http://127.0.0.1:3080` by default. The CLI intentionally does not support `--host 0.0.0.0` yet and exits with a usage error; `--trusted-host` adds named authorities accepted by the `/api` browser-trust fence.
 

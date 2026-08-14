@@ -63,7 +63,7 @@ dsh web --dump-config
 dsh web --help
 ```
 
-使用任一后台别名时，父进程会输出子进程 PID 和私有 `$DSH_HOME/logs/.../server.log` 路径，然后退出。该成功只表示已创建子进程，不表示 HTTP 已就绪。返回的 PID 使用启动器现有的 child-disposal 清理；子进程将 URL 和每项启动失败写入私有日志，诊断启动失败必须查看该日志。`dsh web --help` 不会创建子进程，不带后台别名的 `dsh web` 仍在前台运行。
+使用任一后台别名时，父进程会输出子进程 PID 和私有 `$DSH_HOME/logs/.../server.log` 路径，然后退出。该成功只表示已创建子进程，不表示 HTTP 已就绪。调用方使用平台进程工具管理该 PID。在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程。在 Windows 上，`taskkill /PID <pid> /T /F` 会强制终止，不能证明已优雅 dispose。子进程将 URL 和每项启动失败写入私有日志，诊断启动失败必须查看该日志。`dsh web --help` 不会创建子进程，不带后台别名的 `dsh web` 仍在前台运行。
 
 没有就绪轮询、`status` 或 `stop` 服务管理器、远程 bind 或登录自启。生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。默认服务地址是 `http://127.0.0.1:3080`。CLI 目前有意不支持 `--host 0.0.0.0`，并会以用法错误退出；`--trusted-host` 可添加 `/api` 浏览器信任围栏接受的具名 authority。
 

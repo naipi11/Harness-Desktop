@@ -10,7 +10,7 @@ Web 会话需要在交互式启动器返回后继续运行，同时其应用参�
 
 ## Decision
 
-CLI 持有仅用于 Web 的 `--daemon` 和 `--background` 别名。它在向 Web profile 传递清理后的参数前消费任一别名，在适用时以相同的源码启动运行时参数重新执行子进程，输出子进程 PID 与私有 `$DSH_HOME/logs/.../server.log` 路径，并在创建子进程后退出。返回的 PID 使用现有 child-disposal 清理。
+CLI 持有仅用于 Web 的 `--daemon` 和 `--background` 别名。它在向 Web profile 传递清理后的参数前消费任一别名，在适用时以相同的源码启动运行时参数重新执行子进程，输出子进程 PID 与私有 `$DSH_HOME/logs/.../server.log` 路径，并在创建子进程后退出。调用方持有返回的 PID，并使用平台进程工具管理它。在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程；在 Windows 上，`taskkill /F` 会强制终止，不能证明已优雅 dispose。
 
 `web-startup` 继续持有 `--host`、`--port`、可重复的 `--trusted-host` 和 `--help`。子进程将 URL 和启动失败写入私有日志。父进程成功只表示已创建子进程，不表示 HTTP 已就绪，`--help` 不会创建子进程。
 
@@ -22,4 +22,6 @@ CLI 持有仅用于 Web 的 `--daemon` 和 `--background` 别名。它在向 Web
 
 ## Consequences
 
-前台 `dsh web` 行为不变。后台调用方会得到由现有 disposal 清理的 PID，但必须读取私有日志以获得子进程 URL 或诊断启动失败。该进程没有就绪保证，也没有正常 child disposal 以外的生命周期管理命令。
+前台 `dsh web` 行为不变。后台调用方负责管理返回的 PID，并且必须读取私有日志以获得子进程 URL 或诊断启动失败。启动器不提供自动进程清理、就绪保证、`status` 或 `stop` 命令。
+
+构建后 CLI 冒烟测试会启动并停止两个别名。在 POSIX 上，清理会发送 `SIGTERM` 并进入 profile 的优雅关闭路径。在 Windows 上，清理使用 `taskkill /F`；它只证明已强制终止进程树，不证明已优雅 dispose。
