@@ -10,10 +10,12 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 |---|---|
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
-| `dsh web` | Alias of `--profile web`. |
+| `dsh web` | Alias of `--profile web`; `--daemon` and `--background` launch only Web in the background. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+
+`dsh web --daemon` and `dsh web --background` are equivalent Web-only aliases. The parent prints the child PID and private log path, then exits; that success reports child creation rather than HTTP readiness. The existing child-disposal cleanup owns the returned PID, the child records its URL and startup failures in its private log, and `--help` creates no child. `dsh web` without either alias keeps its foreground behavior; the [CLI behavior reference](reference/README.md) owns the operational details.
 
 ## App arguments
 

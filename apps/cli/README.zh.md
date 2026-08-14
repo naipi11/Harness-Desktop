@@ -10,10 +10,12 @@
 |---|---|
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
-| `dsh web` | `--profile web` 的别名。 |
+| `dsh web` | `--profile web` 的别名；`--daemon` 和 `--background` 仅将 Web 放到后台启动。 |
 | `dsh plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
 
 运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `dsh plugin` 创建。
+
+`dsh web --daemon` 与 `dsh web --background` 是等价且仅用于 Web 的别名。父进程会输出子进程 PID 和私有日志路径，然后退出；成功只表示已创建子进程，不表示 HTTP 已就绪。现有 child-disposal 清理会管理返回的 PID，子进程会把 URL 和启动失败写入私有日志，`--help` 不会创建子进程。不带这些别名的 `dsh web` 保持前台行为；操作细节见 [CLI（命令行界面）行为参考](reference/README.md)。
 
 ## 应用参数
 
