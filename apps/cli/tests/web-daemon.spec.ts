@@ -42,10 +42,12 @@ describe('web daemon launch', () => {
     const adapters = adaptersFor(child)
     const launched = launchWebDaemon({
       entry: '/dsh/bin.js',
+      runtimeArgs: ['--import', 'tsx/esm'],
       patches: ['overlay.yml'],
       args: ['--port', '0'],
     }, adapters)
 
+    expect(child.unref).not.toHaveBeenCalled()
     child.emit('spawn')
 
     await expect(launched).resolves.toEqual({ pid: 417, logPath: join(logDirectory, 'server.log') })
@@ -54,7 +56,7 @@ describe('web daemon launch', () => {
     expect(adapters.openSync).toHaveBeenCalledWith(join(logDirectory, 'server.log'), 'wx', 0o600)
     expect(adapters.spawn).toHaveBeenCalledWith(
       process.execPath,
-      ['/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'],
+      ['--import', 'tsx/esm', '/dsh/bin.js', '--profile', 'web', '--patch', 'overlay.yml', '--port', '0'],
       expect.objectContaining({ detached: true, windowsHide: true, stdio: ['ignore', 9, 9] }),
     )
     expect(adapters.closeSync).toHaveBeenCalledWith(9)
@@ -64,7 +66,7 @@ describe('web daemon launch', () => {
   it('closes the parent descriptor and names startup failures', async () => {
     const child = new TestChild()
     const adapters = adaptersFor(child)
-    const launched = launchWebDaemon({ entry: '/dsh/bin.js', patches: [], args: [] }, adapters)
+    const launched = launchWebDaemon({ entry: '/dsh/bin.js', runtimeArgs: [], patches: [], args: [] }, adapters)
 
     child.emit('error', new Error('permission denied'))
 

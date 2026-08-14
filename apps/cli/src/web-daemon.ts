@@ -64,6 +64,8 @@ export function resolveWebDaemonInvocation(args: readonly string[]): { args: str
  * Inputs used to launch a fresh web-profile child.
  */
 export interface LaunchWebDaemonInput {
+  /** Node runtime arguments that must precede the entrypoint. */
+  runtimeArgs: readonly string[]
   /** Source or built dsh entrypoint passed to Node. */
   entry: string
   /** Overlay files retained in caller-supplied order. */
@@ -95,7 +97,14 @@ export function launchWebDaemon(
     throw new Error(`web daemon log operation failed for ${logPath}`, { cause: error })
   }
 
-  const argv = [input.entry, '--profile', 'web', ...input.patches.flatMap(path => ['--patch', path]), ...input.args]
+  const argv = [
+    ...input.runtimeArgs,
+    input.entry,
+    '--profile',
+    'web',
+    ...input.patches.flatMap(path => ['--patch', path]),
+    ...input.args,
+  ]
   let child: WebDaemonChild
   try {
     child = adapters.spawn(process.execPath, argv, {
