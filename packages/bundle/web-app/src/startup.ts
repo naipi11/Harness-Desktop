@@ -52,6 +52,8 @@ function webCommand(): Command {
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --port 8080              serve on another port
+  dsh web --daemon                           start the web server in the background
+  dsh web --background                       alias for --daemon
 `)
 }
 

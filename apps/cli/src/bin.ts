@@ -28,12 +28,26 @@ const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
   case 'profile': {
+    const web = invocation.profile === 'web'
+      ? (await import('./web-daemon.ts')).resolveWebDaemonInvocation(invocation.args)
+      : undefined
+    if (web?.detached) {
+      const { launchWebDaemon } = await import('./web-daemon.ts')
+      const launched = await launchWebDaemon({
+        runtimeArgs: process.execArgv,
+        entry: fileURLToPath(import.meta.url),
+        patches: invocation.patches,
+        args: web.args,
+      })
+      process.stdout.write(`dsh web: started detached process ${String(launched.pid)}; log: ${launched.logPath}\n`)
+      break
+    }
     const { runProfile } = await import('./profile-boot.ts')
     await runProfile({
       environment: loadLayeredEnv('dsh'),
       profile: invocation.profile,
       patchFiles: invocation.patches,
-      args: invocation.args,
+      args: web?.args ?? invocation.args,
     })
     break
   }
