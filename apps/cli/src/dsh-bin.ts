@@ -2,4 +2,4 @@
 
 import { runCli } from './main.ts'
 
-await runCli('harness')
+await runCli('dsh')

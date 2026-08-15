@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh",
-  "description": "dsh CLI: profile boot, plugin management, and the browser UI alias",
+  "description": "Harness CLI: profile boot, plugin management, and the browser UI alias",
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
@@ -12,7 +12,8 @@
   },
   "type": "module",
   "bin": {
-    "dsh": "lib/bin.js"
+    "harness": "lib/bin.js",
+    "dsh": "lib/dsh-bin.js"
   },
   "files": [
     "lib/*.js",

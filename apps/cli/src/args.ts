@@ -16,6 +16,7 @@
  */
 
 import { Command, CommanderError } from 'commander'
+import type { CliCommandName } from './main.ts'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -61,15 +62,17 @@ interface BootOptions {
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
 
 /** The launcher's own help text; each app prints its own. */
-const HELP_EXAMPLES = `
+function helpExamples(commandName: CliCommandName): string {
+  return `
 Examples:
-  dsh --profile web                          boot the web profile (same as: dsh web)
-  dsh --profile headless "run the tests"     answer one task, print the result, and exit
-  dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
-  dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
-  dsh --profile web --help                   the web app's own flags and help
-  dsh plugin --profile tui add <package>     install a plugin into the tui profile
+  ${commandName} --profile web                          boot the web profile (same as: ${commandName} web)
+  ${commandName} --profile headless "run the tests"     answer one task, print the result, and exit
+  ${commandName} --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
+  ${commandName} --profile tui --resume <session>       arguments after the launcher flags reach the app
+  ${commandName} --profile web --help                   the web app's own flags and help
+  ${commandName} plugin --profile tui add <package>     install a plugin into the tui profile
 `
+}
 
 /**
  * Resolve a boot or dump invocation from the launcher flags and the leftover
@@ -107,18 +110,23 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
  * error.
  * @param argv - arguments after the Node binary and script.
  * @param version - version string printed by `--version`.
+ * @param commandName - command name printed in launcher-owned help and errors.
  * @returns the resolved invocation.
  */
-export function parseDshArgs(argv: readonly string[], version: string): DshInvocation {
+export function parseDshArgs(
+  argv: readonly string[],
+  version: string,
+  commandName: CliCommandName = 'harness',
+): DshInvocation {
   let resolved: DshInvocation | undefined
   // Annotated, not inferred: the actions below call back into `program`, and an
   // inferred type would be circular through its own chain.
   const program: Command = new Command()
   program
-    .name('dsh')
+    .name(commandName)
     .version(version, '-V, --version', 'output the version number')
-    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
-    .addHelpText('after', HELP_EXAMPLES)
+    .description(`${commandName}: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.`)
+    .addHelpText('after', helpExamples(commandName))
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
     // know; everything from there on belongs to the booted app, including
@@ -127,7 +135,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
-    .argument('[args...]', 'arguments for the booted profile\'s app (see: dsh --profile <name> --help)')
+    .argument('[args...]', `arguments for the booted profile's app (see: ${commandName} --profile <name> --help)`)
     .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
     .option('--dump-config', 'print the composed profile tree and exit')
@@ -159,7 +167,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
-    .argument('[args...]', 'arguments for the web app (see: dsh web --help)')
+    .argument('[args...]', `arguments for the web app (see: ${commandName} web --help)`)
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
     .option('--dump-config', 'print the composed web-profile tree (with the user layer and any --patch) and exit')
     .option('--dump-default-config', 'print the web profile\'s bundle layers (no user layer) and exit')
@@ -186,6 +194,6 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     return process.exit(error instanceof CommanderError ? error.exitCode : 1)
   }
   /* v8 ignore next -- an action resolves or Commander throws */
-  if (resolved === undefined) throw new Error('dsh: no invocation resolved')
+  if (resolved === undefined) throw new Error(`${commandName}: no invocation resolved`)
   return resolved
 }

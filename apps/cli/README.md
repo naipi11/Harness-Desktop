@@ -2,31 +2,32 @@
 
 English | [中文](README.zh.md)
 
-The `dsh` command is the product launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+`harness` is the product launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. `dsh` remains a compatible command name. [`src/args.ts`](src/args.ts) owns the command grammar, [`src/main.ts`](src/main.ts) dispatches both names, and each entry loads only its selected command name. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
 
 ## Entry modes
 
 | Command | Purpose |
 |---|---|
-| `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
-| `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
-| `dsh web` | Alias of `--profile web`; `--daemon` and `--background` launch only Web in the background. |
-| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `harness --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
+| `harness --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
+| `harness web` | Alias of `--profile web`; `--daemon` and `--background` launch only Web in the background. |
+| `harness plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `dsh <args...>` | Compatibility alias with the same profile and data behavior. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `harness plugin`.
 
-`dsh web --daemon` and `dsh web --background` are equivalent Web-only aliases. The parent prints the child PID and private log path, then exits; that success reports child creation rather than HTTP readiness. The caller manages the PID with platform process tools: POSIX `SIGTERM` reaches the existing graceful profile shutdown, while Windows `taskkill /F` forces termination and does not prove graceful disposal. The child records its URL and startup failures in its private log, and `--help` creates no child. `dsh web` without either alias keeps its foreground behavior; the [CLI behavior reference](reference/README.md) owns the operational details.
+`harness web --daemon` and `harness web --background` are equivalent Web-only aliases. The parent prints the child PID and private log path, then exits; that success reports child creation rather than HTTP readiness. The caller manages the PID with platform process tools: POSIX `SIGTERM` reaches the existing graceful profile shutdown, while Windows `taskkill /F` forces termination and does not prove graceful disposal. The child records its URL and startup failures in its private log, and `--help` creates no child. `harness web` without either alias keeps its foreground behavior; the [CLI behavior reference](reference/README.md) owns the operational details.
 
 ## App arguments
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). Launcher flags therefore come first, and the first token the launcher does not recognize starts the app's arguments:
 
 ```sh
-dsh --profile web --port 8080       # --port belongs to the web app
-dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
-dsh --profile headless "run the tests"
-dsh --profile web --help            # the web app's flags, not the launcher's
-dsh --help                          # the launcher's own help
+harness --profile web --port 8080       # --port belongs to the web app
+harness --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
+harness --profile headless "run the tests"
+harness --profile web --help            # the web app's flags, not the launcher's
+harness --help                          # the launcher's own help
 ```
 
 ## Profiles
@@ -46,4 +47,4 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 
 ## Development
 
-Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm harness <args...>` to run the TypeScript entry and forward every argument; `pnpm dsh <args...>` remains compatible. The [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.

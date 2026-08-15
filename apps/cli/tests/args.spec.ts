@@ -3,6 +3,25 @@ import { parseDshArgs } from '../src/args.ts'
 
 const parse = (argv: string[]) => parseDshArgs(argv, '1.2.3')
 
+/** Capture the launcher's own help without allowing Commander to terminate the test process. */
+function helpOutput(commandName: 'harness' | 'dsh'): string {
+  let output = ''
+  const exit = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    output += String(chunk)
+    return true
+  })
+  vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+  try {
+    parseDshArgs(['--help'], '1.2.3', commandName)
+  } catch {
+    expect(exit).toHaveBeenCalledWith(0)
+  } finally {
+    vi.restoreAllMocks()
+  }
+  return output
+}
+
 /** Capture the process exit code while muting Commander's output. */
 function exitCode(argv: string[]): number {
   const exit = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
@@ -21,6 +40,15 @@ function exitCode(argv: string[]): number {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('parseDshArgs', () => {
+  it('uses the invoking command name in launcher help while preserving the web alias', () => {
+    const harnessHelp = helpOutput('harness')
+    expect(harnessHelp).toContain('harness --profile web')
+    expect(harnessHelp).not.toContain('dsh --profile web')
+    expect(helpOutput('dsh')).toContain('dsh --profile web')
+    expect(parseDshArgs(['web'], '1.2.3', 'harness'))
+      .toEqual({ mode: 'profile', profile: 'web', patches: [], args: [] })
+  })
+
   it('routes profile boots and the web alias, handing the rest to the app', () => {
     expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))

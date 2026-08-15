@@ -11,7 +11,8 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 // The release version, including a prerelease such as 0.0.1-rc.1: `--version`
 // prints what this manifest carries, so no test may pin it to a literal.
 const cliVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
-const dshBin = join(repoRoot, 'apps/cli/lib/bin.js')
+const harnessBin = join(repoRoot, 'apps/cli/lib/bin.js')
+const dshBin = join(repoRoot, 'apps/cli/lib/dsh-bin.js')
 const invalidProvider = fileURLToPath(new URL('./fixtures/invalid-provider.cordis.yml', import.meta.url))
 
 async function runBuiltBin(
@@ -23,7 +24,7 @@ async function runBuiltBin(
     Object.entries({ ...process.env, ...env })
       .filter((entry): entry is [string, string] => entry[1] !== undefined),
   )
-  const result = await execa(process.execPath, [dshBin, ...args], {
+  const result = await execa(process.execPath, [harnessBin, ...args], {
     input: '',
     timeout: 25_000,
     killSignal: 'SIGKILL',
@@ -35,6 +36,18 @@ async function runBuiltBin(
   if (result.timedOut) {
     throw new Error(`dsh built bin did not exit within 25s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
   }
+  return { stdout: result.stdout, code: result.exitCode ?? -1, stderr: result.stderr }
+}
+
+/** Run a selected published CLI entry without TypeScript source hooks. */
+async function runBuiltEntry(bin: string, args: readonly string[]): Promise<{ stdout: string; code: number; stderr: string }> {
+  const result = await execa(process.execPath, [bin, ...args], {
+    input: '',
+    timeout: 25_000,
+    killSignal: 'SIGKILL',
+    reject: false,
+  })
+  if (result.timedOut) throw new Error(`built CLI entry did not exit within 25s: ${bin}`)
   return { stdout: result.stdout, code: result.exitCode ?? -1, stderr: result.stderr }
 }
 
@@ -309,7 +322,28 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
   })
 }
 
-describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
+describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins (node lib/*.js, no tsx)', () => {
+  it('exposes harness as the primary entry and dsh as the compatible entry', async () => {
+    const [harnessHelp, dshHelp] = await Promise.all([
+      runBuiltEntry(harnessBin, ['--help']),
+      runBuiltEntry(dshBin, ['--help']),
+    ])
+    expect(harnessHelp).toMatchObject({ code: 0, stderr: '' })
+    expect(harnessHelp.stdout).toContain('harness --profile web')
+    expect(harnessHelp.stdout).not.toContain('dsh --profile web')
+    expect(dshHelp).toMatchObject({ code: 0, stderr: '' })
+    expect(dshHelp.stdout).toContain('dsh --profile web')
+
+    const [harnessWeb, dshWeb] = await Promise.all([
+      runBuiltEntry(harnessBin, ['web', '--help']),
+      runBuiltEntry(dshBin, ['web', '--help']),
+    ])
+    expect(harnessWeb.code).toBe(0)
+    expect(dshWeb.code).toBe(0)
+    expect(harnessWeb.stdout).toContain('--port <port>')
+    expect(dshWeb.stdout).toContain('--port <port>')
+  }, 30_000)
+
   it('requires --profile and rejects removed commands', async () => {
     const bare = await runBuiltBin()
     expect(bare.code).toBe(1)
@@ -317,8 +351,8 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     expect(bare.stderr).toContain('--profile <name> is required')
     const help = await runBuiltBin(['--help'])
     expect(help.code).toBe(0)
-    expect(help.stdout).toContain('dsh --profile web')
-    expect(help.stdout).toContain('dsh plugin --profile')
+    expect(help.stdout).toContain('harness --profile web')
+    expect(help.stdout).toContain('harness plugin --profile')
     expect(help.stdout).not.toMatch(/^\s+(?:tui|meta|upgrade)\b/mu)
     for (const removed of [['tui'], ['--config', 'x.yml'], ['-p', 'task'], ['run', 'task']]) {
       const result = await runBuiltBin(removed)

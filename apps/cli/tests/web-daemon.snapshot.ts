@@ -8,13 +8,13 @@ import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
-const sourceBin = join(repoRoot, 'apps/cli/src/bin.ts')
-const builtBin = join(repoRoot, 'apps/cli/lib/bin.js')
+const harnessSourceBin = join(repoRoot, 'apps/cli/src/bin.ts')
+const harnessBuiltBin = join(repoRoot, 'apps/cli/lib/bin.js')
 
 /** Run the source tree by default and the built artifact when snapshot mode asks for it. */
 function cliCommand(): { args: string[]; executable: string } {
-  if (process.env.DSH_EXAMPLE_MODE === 'lib') return { executable: process.execPath, args: [builtBin] }
-  return { executable: process.execPath, args: ['--import', 'tsx/esm', sourceBin] }
+  if (process.env.DSH_EXAMPLE_MODE === 'lib') return { executable: process.execPath, args: [harnessBuiltBin] }
+  return { executable: process.execPath, args: ['--import', 'tsx/esm', harnessSourceBin] }
 }
 
 describe('web daemon help snapshot', () => {

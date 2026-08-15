@@ -68,7 +68,7 @@ export function resolveWebDaemonInvocation(args: readonly string[]): { args: str
 export interface LaunchWebDaemonInput {
   /** Node runtime arguments that must precede the entrypoint. */
   runtimeArgs: readonly string[]
-  /** Source or built dsh entrypoint passed to Node. */
+  /** Source or built CLI entrypoint passed to Node. */
   entry: string
   /** Overlay files retained in caller-supplied order. */
   patches: readonly string[]
