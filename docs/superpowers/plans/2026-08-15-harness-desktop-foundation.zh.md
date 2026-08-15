@@ -416,7 +416,7 @@ preload 入口调用 `contextBridge.exposeInMainWorld('harnessDesktop', createDe
 
 ```powershell
 pnpm --filter @deepseek-ai/dsh-desktop add '@deepseek-ai/dsh-app-boot@workspace:^' 'react@^18.2.0' 'react-dom@^18.2.0'
-pnpm --filter @deepseek-ai/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' vite typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
+pnpm --filter @deepseek-ai/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' 'vite@^7.0.0' typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
 ```
 
 - [ ] **Step 8：运行测试并提交应用壳**
