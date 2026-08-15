@@ -22,13 +22,20 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./product-metadata": {
+      "types": "./lib/types/product-metadata.d.ts",
+      "default": "./lib/product-metadata.js"
+    },
+    "./product.json": "./product.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
-    "lib/types/**/*.d.ts"
+    "lib/product-metadata.js",
+    "lib/types/**/*.d.ts",
+    "product.json"
   ],
   "license": "MIT",
   "dependencies": {

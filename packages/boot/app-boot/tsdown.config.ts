@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown'
  * app host bind to one Loader peer.
  */
 export default defineConfig({
-  entry: ['lib/types/index.js', 'lib/types/invariant.js'],
+  entry: ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/product-metadata.js'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
@@ -15,5 +15,6 @@ export default defineConfig({
   clean: false,
   deps: {
     alwaysBundle: ['@deepseek-ai/cordis-plugin-include'],
+    neverBundle: [/product\.json$/],
   },
 })
