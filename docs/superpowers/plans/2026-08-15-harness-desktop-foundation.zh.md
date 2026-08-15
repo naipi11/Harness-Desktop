@@ -325,7 +325,7 @@ pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/source-launch.co
 ```powershell
 pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/web-daemon.spec.ts
 pnpm run build:lib:host
-pnpm exec vitest run apps/cli/tests/built-bin.e2e.ts
+pnpm exec vitest run --config vitest.e2e.config.ts apps/cli/tests/built-bin.e2e.ts
 pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/web-daemon.snapshot.ts
 ```
 
