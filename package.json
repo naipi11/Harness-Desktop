@@ -68,6 +68,7 @@
     "verify-md-links": "tsx scripts/verify-md-links.ts",
     "verify-doc-site-fragments": "tsx scripts/verify-doc-site-fragments.ts",
     "verify:product-identity": "tsx scripts/product-identity.ts",
+    "verify:desktop-release-config": "tsx scripts/desktop-release-config.ts",
     "verify-public-repository-links": "tsx scripts/verify-public-repository-links.ts",
     "verify-doc-refs": "tsx scripts/verify-doc-refs.ts",
     "verify-package-paths": "tsx scripts/verify-package-paths.ts",

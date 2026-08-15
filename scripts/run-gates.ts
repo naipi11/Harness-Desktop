@@ -392,6 +392,9 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
 function ciArtifactGates(): Gate[] {
   return [
     pnpmScript('build', 'build'),
+    pnpmScript('desktop-release-config', 'verify:desktop-release-config', {
+      label: 'desktop release config',
+    }),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',

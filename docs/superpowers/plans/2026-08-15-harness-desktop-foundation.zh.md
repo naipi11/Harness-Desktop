@@ -640,7 +640,7 @@ git commit -m "feat(brand): adopt Harness Desktop public identity"
 - 使用：`product.json`、已构建 Electron 输出和 GitHub Actions 原生 runner。
 - 产出：已验证的 Windows NSIS、macOS 通用 DMG、Linux AppImage/DEB 配置、关闭发布的未签名 PR 产物，以及只执行 pack 的旧 dsh workflow。
 
-- [ ] **Step 1：编写失败的发布配置断言**
+- [x] **Step 1：编写失败的发布配置断言**
 
 创建测试，加载配置并要求：
 
@@ -657,7 +657,7 @@ git commit -m "feat(brand): adopt Harness Desktop public identity"
 
 同时断言 Desktop workflow 正文包含 `--publish never`、`windows-2025`、`macos-15` 和 `ubuntu-24.04`，并且不包含 npm 或 GitHub release 发布命令。断言旧 `.github/workflows/release.yml` 不包含 `release:publish` 调用或 `NODE_AUTH_TOKEN`。
 
-- [ ] **Step 2：运行测试并确认配置缺失**
+- [x] **Step 2：运行测试并确认配置缺失**
 
 运行：
 
@@ -667,7 +667,7 @@ pnpm exec vitest run scripts/desktop-release-config.spec.ts
 
 预期：FAIL，因为 builder config 和 workflow 尚不存在。
 
-- [ ] **Step 3：添加 Electron Builder 配置**
+- [x] **Step 3：添加 Electron Builder 配置**
 
 使用 JSON import attribute 导入 `product.json` 并导出：
 
@@ -688,17 +688,17 @@ export default {
 
 向 Desktop manifest 添加 `package` 和 `package:dir` 脚本；两者都传入 `--publish never`。
 
-- [ ] **Step 4：添加原生 runner 产物 workflow**
+- [x] **Step 4：添加原生 runner 产物 workflow**
 
 workflow 在 PR 和手动触发时运行，使用 Node 24 与 frozen pnpm install，构建 Desktop，只打包当前 runner 的原生目标，并上传 `apps/desktop/release/*`。它只授予 `contents: read`，不声明 environment，不接收签名或 npm secret，绝不创建 GitHub Release。
 
 把现有 release workflow 的显示名称改成旧 dsh pack audit，移除 `publish` 输入和完整 `publish` job，保留不使用凭据的 pack/install 验证 job。这样，fork 在内部名称仍使用上游 scope 时无法发布这些包。
 
-- [ ] **Step 5：把静态发布配置验证器加入仓库检查**
+- [x] **Step 5：把静态发布配置验证器加入仓库检查**
 
 `scripts/desktop-release-config.ts` 加载产品元数据、builder config、Desktop manifest 和 workflow 正文。应用 ID、产品名称、可执行文件名、仓库 owner/name、目标矩阵不匹配，或发布模式不是 `never` 时，它都必须拒绝。把 `verify:desktop-release-config` 加入根脚本，并在 `scripts/run-gates.ts` 的 artifact gate 中执行。
 
-- [ ] **Step 6：运行配置测试和本地 unpacked 构建**
+- [x] **Step 6：运行配置测试和本地 unpacked 构建**
 
 运行：
 
@@ -712,7 +712,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run package:dir
 
 预期：测试和验证器通过；当前平台在 `apps/desktop/release` 下生成 unpacked app，且没有发布。
 
-- [ ] **Step 7：提交打包脚手架**
+- [x] **Step 7：提交打包脚手架**
 
 运行：
 

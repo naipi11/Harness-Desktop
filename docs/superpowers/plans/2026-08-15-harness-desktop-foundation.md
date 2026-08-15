@@ -640,7 +640,7 @@ git commit -m "feat(brand): adopt Harness Desktop public identity"
 - Consumes: `product.json`, built Electron output, and native GitHub Actions runners.
 - Produces: validated Windows NSIS, macOS universal DMG, Linux AppImage/DEB configuration, unsigned pull-request artifacts with publishing disabled, and a pack-only legacy dsh workflow.
 
-- [ ] **Step 1: Write failing release-config assertions**
+- [x] **Step 1: Write failing release-config assertions**
 
 Create tests that load the config and require:
 
@@ -657,7 +657,7 @@ Create tests that load the config and require:
 
 Also assert that the Desktop workflow text contains `--publish never`, `windows-2025`, `macos-15`, and `ubuntu-24.04`, and contains no npm or GitHub release publishing command. Assert that the legacy `.github/workflows/release.yml` contains no `release:publish` invocation or `NODE_AUTH_TOKEN`.
 
-- [ ] **Step 2: Run the test and confirm configuration is missing**
+- [x] **Step 2: Run the test and confirm configuration is missing**
 
 Run:
 
@@ -667,7 +667,7 @@ pnpm exec vitest run scripts/desktop-release-config.spec.ts
 
 Expected: FAIL because the builder config and workflow do not exist.
 
-- [ ] **Step 3: Add the Electron Builder configuration**
+- [x] **Step 3: Add the Electron Builder configuration**
 
 Import `product.json` with a JSON import attribute and export:
 
@@ -688,17 +688,17 @@ export default {
 
 Add `package` and `package:dir` scripts to the Desktop manifest; both pass `--publish never`.
 
-- [ ] **Step 4: Add the native-runner artifact workflow**
+- [x] **Step 4: Add the native-runner artifact workflow**
 
 The workflow runs on pull requests and manual dispatch, uses Node 24 and frozen pnpm install, builds Desktop, packages only the runner's native targets, and uploads `apps/desktop/release/*`. It grants `contents: read`, declares no environment, receives no signing or npm secret, and never creates a GitHub Release.
 
 Rename the existing release workflow to a legacy dsh pack audit in its displayed name, remove its `publish` input and complete `publish` job, and keep the credential-free pack/install verification job. This prevents the fork from publishing upstream-scoped packages while their names remain internal.
 
-- [ ] **Step 5: Add the static release-config verifier to repository gates**
+- [x] **Step 5: Add the static release-config verifier to repository gates**
 
 `scripts/desktop-release-config.ts` loads product metadata, builder config, Desktop manifest, and workflow text. It rejects mismatched app ID, product name, executable name, repository owner/name, target matrix, or any publishing mode other than `never`. Add `verify:desktop-release-config` to root scripts and the artifact gate in `scripts/run-gates.ts`.
 
-- [ ] **Step 6: Run config tests and a local unpacked build**
+- [x] **Step 6: Run config tests and a local unpacked build**
 
 Run:
 
@@ -712,7 +712,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run package:dir
 
 Expected: tests and verifier pass; the current platform produces an unpacked app under `apps/desktop/release` without publishing.
 
-- [ ] **Step 7: Commit packaging scaffolding**
+- [x] **Step 7: Commit packaging scaffolding**
 
 Run:
 
