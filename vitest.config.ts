@@ -11,6 +11,15 @@ import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './scripts/covera
 // threshold ERRORs name only the file. Absolute path because istanbul-reports
 // require()s custom reporters (which is also why the reporter is CJS).
 const uncoveredLocationsReporter = fileURLToPath(new URL('./scripts/coverage-uncovered-locations.cjs', import.meta.url))
+const productMetadataSource = fileURLToPath(
+  new URL('./packages/boot/app-boot/src/product-metadata.ts', import.meta.url),
+)
+// This built-only package subpath needs an exact source alias on clean checkouts.
+const sourceResolve = () => ({
+  alias: {
+    '@deepseek-ai/dsh-app-boot/product-metadata': productMetadataSource,
+  },
+})
 
 // Resolution facade shared by every plugin instance below: tsconfig.base.json
 // has no include, which vite-tsconfig-paths treats as match-all, so its paths
@@ -116,6 +125,7 @@ const processBoundTests = [
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
+  resolve: sourceResolve(),
   test: {
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
@@ -126,6 +136,7 @@ export default defineConfig({
     projects: [
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: sourceResolve(),
         test: {
           name: 'thread-safe',
           execArgv: vitestExecArgv,
@@ -144,6 +155,7 @@ export default defineConfig({
       },
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: sourceResolve(),
         test: {
           name: 'process-bound',
           execArgv: vitestExecArgv,

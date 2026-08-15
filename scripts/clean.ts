@@ -1,4 +1,4 @@
-import { lstat, readdir, realpath, rm } from 'node:fs/promises'
+import { lstat, readdir, realpath, rm, unlink } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -18,6 +18,19 @@ async function exists(path: string): Promise<boolean> {
     if (isMissing(error)) return false
     throw error
   }
+}
+
+async function removeTarget(path: string): Promise<void> {
+  try {
+    if ((await lstat(path)).isSymbolicLink()) {
+      await unlink(path)
+      return
+    }
+  } catch (error) {
+    if (isMissing(error)) return
+    throw error
+  }
+  await rm(path, { recursive: true, force: true })
 }
 
 async function childDirectories(path: string): Promise<string[]> {
@@ -58,7 +71,7 @@ export class RepositoryCleaner {
   async clean(): Promise<string[]> {
     const targets = await this.plan()
     // Planning validates every target first, so an unsafe orphan prevents all deletion.
-    for (const target of targets) await rm(target, { recursive: true, force: true })
+    for (const target of targets) await removeTarget(target)
     return targets.map(target => repositoryPath(this.root, target))
   }
 
