@@ -129,7 +129,7 @@ Add a test to app-boot's `tests/product-metadata.spec.ts` that requires `product
 Run:
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 ```
 
 Expected: FAIL because `../src/product-metadata.ts` does not exist.
@@ -205,7 +205,7 @@ Add `lib/types/product-metadata.js` to the package-local tsdown entries so the s
 Run:
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 pnpm run build:lib:host
 pnpm run verify-package-invariants
 pnpm run typecheck
@@ -753,7 +753,7 @@ Expected: the Desktop README pair passes.
 Run:
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/desktop/tests/window-options.spec.ts apps/desktop/tests/preload-bridge.spec.ts scripts/product-identity.spec.ts scripts/desktop-release-config.spec.ts
 pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/web-daemon.snapshot.ts apps/cli/tests/dsh-badge.snapshot.ts apps/desktop/tests/desktop-shell.snapshot.tsx
 pnpm run desktop:build

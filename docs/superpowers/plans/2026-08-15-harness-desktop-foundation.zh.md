@@ -129,7 +129,7 @@ git status --short
 运行：
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 ```
 
 预期：FAIL，因为 `../src/product-metadata.ts` 尚不存在。
@@ -205,7 +205,7 @@ export const productMetadata: Readonly<ProductMetadata> = Object.freeze({ ...met
 运行：
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 pnpm run build:lib:host
 pnpm run verify-package-invariants
 pnpm run typecheck
@@ -753,7 +753,7 @@ pnpm run verify-translation-pairing apps/desktop/README.md
 运行：
 
 ```powershell
-pnpm --dir packages/boot/app-boot exec vitest run tests/product-metadata.spec.ts
+pnpm exec vitest run packages/boot/app-boot/tests/product-metadata.spec.ts
 pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/desktop/tests/window-options.spec.ts apps/desktop/tests/preload-bridge.spec.ts scripts/product-identity.spec.ts scripts/desktop-release-config.spec.ts
 pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/web-daemon.snapshot.ts apps/cli/tests/dsh-badge.snapshot.ts apps/desktop/tests/desktop-shell.snapshot.tsx
 pnpm run desktop:build
