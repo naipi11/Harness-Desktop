@@ -337,6 +337,24 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
         env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
         needs: ['build:web'],
       }),
+      pnpmExec('web-daemon-source-launch-smoke', [
+        'vitest',
+        'run',
+        'apps/cli/tests/web-daemon.compat.spec.ts',
+      ], {
+        label: 'Web daemon source launch smoke',
+        env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1', DSH_EXAMPLE_MODE: 'src' },
+        needs: ['build:web'],
+      }),
+      pnpmExec('web-daemon-built-launch-smoke', [
+        'vitest',
+        'run',
+        'apps/cli/tests/web-daemon.compat.spec.ts',
+      ], {
+        label: 'Web daemon built launch smoke',
+        env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1', DSH_EXAMPLE_MODE: 'lib' },
+        needs: ['build:web'],
+      }),
     )
   }
   return gates

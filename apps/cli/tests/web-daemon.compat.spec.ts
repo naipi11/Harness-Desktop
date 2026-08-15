@@ -1,8 +1,9 @@
 /**
- * Built-entry acceptance for a detached Web CLI invocation.
+ * Source- and built-entry acceptance for a detached Web CLI invocation.
  *
  * This is opt-in because it starts and tears down a real web server after the
- * release artifacts have been built.
+ * frontend has been built. `DSH_EXAMPLE_MODE=lib` selects the published entry;
+ * the default executes the source entry through the production tsx runtime.
  */
 
 import { existsSync } from 'node:fs'
@@ -14,13 +15,21 @@ import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
+const sourceBin = join(repoRoot, 'apps/cli/src/bin.ts')
 const builtBin = join(repoRoot, 'apps/cli/lib/bin.js')
 const webDist = join(repoRoot, 'apps/web/dist/index.html')
-const requireBuiltArtifacts = process.env.DSH_REQUIRE_BUILT_CLI_SMOKE === '1'
+const requireWebDaemonSmoke = process.env.DSH_REQUIRE_BUILT_CLI_SMOKE === '1'
 
-/** Run the published CLI and collect its parent-process result. */
-async function runBuiltBin(args: readonly string[], home: string): Promise<{ code: number; stderr: string; stdout: string }> {
-  const result = await execa(process.execPath, [builtBin, ...args], {
+/** Resolve the source tsx or published plain-Node launch vector for this test run. */
+function cliCommand(): { args: string[]; executable: string; label: 'built' | 'source' } {
+  if (process.env.DSH_EXAMPLE_MODE === 'lib') return { executable: process.execPath, args: [builtBin], label: 'built' }
+  return { executable: process.execPath, args: ['--import', 'tsx/esm', sourceBin], label: 'source' }
+}
+
+/** Run the selected CLI entry and collect its parent-process result. */
+async function runCli(args: readonly string[], home: string): Promise<{ code: number; stderr: string; stdout: string }> {
+  const command = cliCommand()
+  const result = await execa(command.executable, [...command.args, ...args], {
     env: {
       ...process.env,
       DEEPSEEK_API_KEY: 'dsh-web-daemon-smoke-key',
@@ -33,7 +42,7 @@ async function runBuiltBin(args: readonly string[], home: string): Promise<{ cod
     stripFinalNewline: false,
     timeout: 25_000,
   })
-  if (result.timedOut) throw new Error(`dsh built bin did not exit within 25s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+  if (result.timedOut) throw new Error(`dsh ${command.label} bin did not exit within 25s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
   return { code: result.exitCode ?? -1, stderr: result.stderr, stdout: result.stdout }
 }
 
@@ -111,7 +120,7 @@ async function verifyDetachedWebAlias(alias: '--background' | '--daemon'): Promi
   const cleanupErrors: unknown[] = []
   try {
     try {
-      const parent = await runBuiltBin(['web', alias, '--port', '0'], home)
+      const parent = await runCli(['web', alias, '--port', '0'], home)
       server = recordedDetachedWebServer(parent.stdout)
       expect(parent).toEqual({
         code: 0,
@@ -146,15 +155,19 @@ async function verifyDetachedWebAlias(alias: '--background' | '--daemon'): Promi
   if (cleanupErrors.length > 1) throw new AggregateError(cleanupErrors, 'detached Web cleanup failed')
 }
 
-describe.skipIf(!requireBuiltArtifacts)('dsh built web daemon', () => {
-  it('returns after --daemon starts a detached server that serves the built UI', async () => {
-    expect(existsSync(builtBin), `missing built CLI ${resolve(builtBin)}; run pnpm run build`).toBe(true)
+describe.skipIf(!requireWebDaemonSmoke)('dsh web daemon source and built launch', () => {
+  it('returns after --daemon starts a detached server that serves the UI', async () => {
+    const command = cliCommand()
+    const entry = command.label === 'built' ? builtBin : sourceBin
+    expect(existsSync(entry), `missing ${command.label} CLI ${resolve(entry)}; run pnpm run build`).toBe(true)
     expect(existsSync(webDist), `missing Web dist ${resolve(webDist)}; run pnpm run build`).toBe(true)
     await verifyDetachedWebAlias('--daemon')
   }, 50_000)
 
-  it('returns after --background starts a detached server that serves the built UI', async () => {
-    expect(existsSync(builtBin), `missing built CLI ${resolve(builtBin)}; run pnpm run build`).toBe(true)
+  it('returns after --background starts a detached server that serves the UI', async () => {
+    const command = cliCommand()
+    const entry = command.label === 'built' ? builtBin : sourceBin
+    expect(existsSync(entry), `missing ${command.label} CLI ${resolve(entry)}; run pnpm run build`).toBe(true)
     expect(existsSync(webDist), `missing Web dist ${resolve(webDist)}; run pnpm run build`).toBe(true)
     await verifyDetachedWebAlias('--background')
   }, 50_000)

@@ -24,4 +24,4 @@ CLI 持有仅用于 Web 的 `--daemon` 和 `--background` 别名。它在向 Web
 
 前台 `dsh web` 行为不变。后台调用方负责管理返回的 PID，并且必须读取私有日志以获得子进程 URL 或诊断启动失败。启动器不提供自动进程清理、就绪保证、`status` 或 `stop` 命令。
 
-构建后 CLI 冒烟测试会启动并停止两个别名。在 POSIX 上，清理会发送 `SIGTERM` 并进入 profile 的优雅关闭路径。在 Windows 上，清理使用 `taskkill /F`；它只证明已强制终止进程树，不证明已优雅 dispose。
+源代码和构建后的 CLI 冒烟测试都会启动并停止两个别名。在 POSIX 上，清理会发送 `SIGTERM` 并进入 profile 的优雅关闭路径。在 Windows 上，清理使用 `taskkill /F`；它只证明已强制终止进程树，不证明已优雅 dispose。

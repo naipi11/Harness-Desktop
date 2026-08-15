@@ -24,4 +24,4 @@ The CLI owns the Web-only `--daemon` and `--background` aliases. It consumes eit
 
 Foreground `dsh web` behavior remains unchanged. Background callers manage the returned PID and must read the private log to obtain the child URL or diagnose startup failure. The launcher provides no automatic process cleanup, readiness guarantee, `status`, or `stop` command.
 
-The built CLI smoke starts and stops both aliases. POSIX cleanup sends `SIGTERM` and reaches the profile's graceful shutdown path. Windows cleanup uses `taskkill /F`; it proves forced process-tree termination, not graceful disposal.
+Source and built CLI smokes start and stop both aliases. POSIX cleanup sends `SIGTERM` and reaches the profile's graceful shutdown path. Windows cleanup uses `taskkill /F`; it proves forced process-tree termination, not graceful disposal.
