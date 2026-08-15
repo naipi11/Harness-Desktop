@@ -24,6 +24,8 @@ npx --package @deepseek-ai/dsh harness web
 
 过渡期 npm 包仍以 `@deepseek-ai/dsh` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
 
+如需后台服务，附加 `--daemon`（等价于 `--background`）：命令会输出子进程 PID 与私有日志路径，然后退出。
+
 ### 从源码运行
 
 如需从仓库源码运行：
@@ -35,6 +37,28 @@ pnpm install
 pnpm run build
 pnpm harness web
 ```
+
+`pnpm harness web` 在前台启动 Web UI。如需后台运行，使用 `pnpm harness web --daemon`（或 `--background`）：父进程会输出子进程 PID 与私有日志路径，然后退出。
+
+### 桌面客户端
+
+Electron 客户端支持 Windows、macOS 与 Linux。从仓库源码目录运行：
+
+```sh
+git clone https://github.com/naipi11/Harness-Desktop.git
+cd Harness-Desktop
+pnpm install
+pnpm run build
+pnpm desktop
+```
+
+如需为当前平台构建安装包：
+
+```sh
+pnpm --filter @deepseek-ai/dsh-desktop run package
+```
+
+安装包目标为 Windows NSIS、macOS universal DMG，以及 Linux AppImage 和 deb。如需免安装目录而非安装包，将 `package` 替换为 `package:dir`。产物位于 `apps/desktop/release/`。
 
 ## 社区与支持
 

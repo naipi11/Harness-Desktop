@@ -24,6 +24,8 @@ The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See
 
 The transition package is still published as `@deepseek-ai/dsh`; `dsh` remains a compatible command name with the same data and profile layout.
 
+For a background server, add `--daemon` (or the equivalent `--background`): the command prints the child PID and its private log path, then exits.
+
 ### Run from source
 
 To run from a repository checkout:
@@ -35,6 +37,28 @@ pnpm install
 pnpm run build
 pnpm harness web
 ```
+
+`pnpm harness web` starts the Web UI in the foreground. Use `pnpm harness web --daemon` (or `--background`) for a background server; the parent prints the child PID and its private log path, then exits.
+
+### Desktop app
+
+The Electron client supports Windows, macOS, and Linux. From a repository checkout:
+
+```sh
+git clone https://github.com/naipi11/Harness-Desktop.git
+cd Harness-Desktop
+pnpm install
+pnpm run build
+pnpm desktop
+```
+
+To build an installer for the current platform:
+
+```sh
+pnpm --filter @deepseek-ai/dsh-desktop run package
+```
+
+The installer matrix is Windows NSIS, macOS universal DMG, and Linux AppImage and deb. For an unpacked directory instead of an installer, replace `package` with `package:dir`. Artifacts land in `apps/desktop/release/`.
 
 ## Community and support
 
