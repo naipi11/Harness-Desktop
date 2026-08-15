@@ -593,7 +593,7 @@ Run on PowerShell:
 $env:DSH_SNAPSHOT = 'refresh'
 pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/dsh-badge.snapshot.ts
 pnpm run build
-pnpm exec vitest run --config vitest.web.config.ts
+pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/pwa-manifest.e2e.ts apps/web/tests/built-boot.snapshot.ts apps/web/tests/image-display.snapshot.ts apps/web/tests/max-tokens-notice.snapshot.ts apps/web/tests/search-card.snapshot.ts apps/web/tests/todo-row.snapshot.ts
 Remove-Item Env:DSH_SNAPSHOT
 ```
 
