@@ -6,7 +6,7 @@ import { createWindowOptions } from './window-options.ts'
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow(
-    createWindowOptions(join(__dirname, '../preload/index.mjs')),
+    createWindowOptions(join(__dirname, '../preload/index.cjs')),
   )
 
   window.once('ready-to-show', () => {
