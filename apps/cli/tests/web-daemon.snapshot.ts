@@ -35,7 +35,7 @@ describe('web daemon help snapshot', () => {
           "stderr": "",
           "stdout": "Usage: dsh --profile web [options]
 
-        Serve the DeepSeek Harness browser UI.
+        Serve the Harness Desktop browser UI.
 
         Options:
           --host <host>                  bind host

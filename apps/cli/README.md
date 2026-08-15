@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`harness` is the product launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. `dsh` remains a compatible command name. [`src/args.ts`](src/args.ts) owns the command grammar, [`src/main.ts`](src/main.ts) dispatches both names, and each entry loads only its selected command name. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+`harness` is the Harness Desktop launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. `dsh` remains a compatible command name. [`src/args.ts`](src/args.ts) owns the command grammar, [`src/main.ts`](src/main.ts) dispatches both names, and each entry loads only its selected command name. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
 
 ## Entry modes
 
@@ -39,7 +39,7 @@ The tree composes over an empty root:
 - then the profile's `cordis.patch.yml`, then the home-level `$DSH_HOME/cordis.patch.yml`
 - then `--patch` overlays
 
-Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
+Bundles named in `dsh.profile.bundles` resolve from the Harness Desktop installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
 
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 

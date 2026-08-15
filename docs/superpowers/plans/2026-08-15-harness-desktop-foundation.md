@@ -533,7 +533,7 @@ git commit -m "build(desktop): wire source and e2e launches"
 - Consumes: `productMetadata`, the CLI dual entry, existing Web manifest/site configuration, and the authenticated `naipi11/deepseek-harness` fork.
 - Produces: repository `naipi11/Harness-Desktop`, outward Harness Desktop prose and model identity, and `verify:product-identity` for drift detection.
 
-- [ ] **Step 1: Write a failing identity verifier**
+- [x] **Step 1: Write a failing identity verifier**
 
 Define a pure collector and tests that require every exact owner/value pair:
 
@@ -552,7 +552,7 @@ Define a pure collector and tests that require every exact owner/value pair:
 
 The filesystem entry reads only the six named owners above and fails on any returned violation.
 
-- [ ] **Step 2: Run the verifier test and prove current branding fails**
+- [x] **Step 2: Run the verifier test and prove current branding fails**
 
 Run:
 
@@ -562,7 +562,7 @@ pnpm exec vitest run scripts/product-identity.spec.ts
 
 Expected: FAIL because the implementation is absent and current owners still use DeepSeek Harness and `dsh` as the primary command.
 
-- [ ] **Step 3: Rename the authenticated GitHub fork and update the remote**
+- [x] **Step 3: Rename the authenticated GitHub fork and update the remote**
 
 Run:
 
@@ -577,15 +577,15 @@ git remote -v
 
 Expected: GitHub reports `naipi11/Harness-Desktop`; both origin URLs use the renamed repository. Stop this task without editing files if authentication or repository ownership fails.
 
-- [ ] **Step 4: Replace outward names in their owning sources**
+- [x] **Step 4: Replace outward names in their owning sources**
 
 Update root README installation and source commands to lead with Harness Desktop and `harness`, with one compatibility note for `dsh`. During this workstream, document `npx --package @deepseek-ai/dsh harness web`; do not claim that `@harness-desktop/cli` is published. Update CLI README/reference commands the same way, while keeping `$DSH_HOME`, `dsh.profile`, and internal package identifiers unchanged. Set Web `<title>`, manifest `name`, manifest `short_name`, VitePress title/description/edit links, and public repository URLs from product metadata values. Replace the website's DeepSeek wordmark lockup with a text Harness Desktop lockup; do not invent a final logo asset.
 
-- [ ] **Step 5: Update the model-visible product identity and its direct assertions**
+- [x] **Step 5: Update the model-visible product identity and its direct assertions**
 
 Change the agent preset's product name to Harness Desktop without changing tool, safety, or runtime instructions. Update direct test assertions in `apps/web/tests/assembled-boot.ts` and related scenario inputs before refreshing derivative expected outputs.
 
-- [ ] **Step 6: Refresh only the affected keyless expected outputs**
+- [x] **Step 6: Refresh only the affected keyless expected outputs**
 
 Run on PowerShell:
 
@@ -599,7 +599,7 @@ Remove-Item Env:DSH_SNAPSHOT
 
 Expected: expected outputs change only where the outward product name or primary command is rendered.
 
-- [ ] **Step 7: Run identity, focused behavior, and bilingual checks**
+- [x] **Step 7: Run identity, focused behavior, and bilingual checks**
 
 Run:
 
@@ -613,7 +613,7 @@ pnpm run verify-public-repository-links
 
 Expected: all checks pass against the renamed repository.
 
-- [ ] **Step 8: Commit the public identity migration**
+- [x] **Step 8: Commit the public identity migration**
 
 Run:
 

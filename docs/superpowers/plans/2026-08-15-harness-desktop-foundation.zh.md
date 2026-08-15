@@ -533,7 +533,7 @@ git commit -m "build(desktop): wire source and e2e launches"
 - 使用：`productMetadata`、CLI 双入口、现有 Web manifest/site 配置，以及已认证的 `naipi11/deepseek-harness` fork。
 - 产出：仓库 `naipi11/Harness-Desktop`、对外 Harness Desktop 正文与模型身份，以及用于防止漂移的 `verify:product-identity`。
 
-- [ ] **Step 1：编写失败的身份验证器**
+- [x] **Step 1：编写失败的身份验证器**
 
 定义纯 collector 和测试，要求每组精确的 owner/value：
 
@@ -552,7 +552,7 @@ git commit -m "build(desktop): wire source and e2e launches"
 
 文件系统入口只读取上面六个具名 owner，并在返回任一 violation 时失败。
 
-- [ ] **Step 2：运行验证器测试并证明当前品牌不通过**
+- [x] **Step 2：运行验证器测试并证明当前品牌不通过**
 
 运行：
 
@@ -562,7 +562,7 @@ pnpm exec vitest run scripts/product-identity.spec.ts
 
 预期：FAIL，因为实现尚不存在，当前 owner 仍把 DeepSeek Harness 与 `dsh` 作为主名称。
 
-- [ ] **Step 3：重命名已认证 GitHub fork 并更新 remote**
+- [x] **Step 3：重命名已认证 GitHub fork 并更新 remote**
 
 运行：
 
@@ -577,15 +577,15 @@ git remote -v
 
 预期：GitHub 报告 `naipi11/Harness-Desktop`；origin 的 fetch/push URL 都使用已重命名仓库。如果认证或仓库所有权失败，停止本任务且不编辑文件。
 
-- [ ] **Step 4：在所属真源中替换对外名称**
+- [x] **Step 4：在所属真源中替换对外名称**
 
 更新根 README 的安装和源码命令，使其以 Harness Desktop 与 `harness` 为主，并只为 `dsh` 保留一条兼容说明。本工作流期间记录 `npx --package @deepseek-ai/dsh harness web`；不要声称 `@harness-desktop/cli` 已发布。以相同方式更新 CLI README/reference 命令，同时保持 `$DSH_HOME`、`dsh.profile` 和内部包标识符不变。根据产品元数据更新 Web `<title>`、manifest `name`、manifest `short_name`、VitePress title/description/edit link 和公共仓库 URL。把网站 DeepSeek wordmark lockup 替换为 Harness Desktop 文字 lockup；不要虚构最终 logo 资产。
 
-- [ ] **Step 5：更新模型可见产品身份及其直接断言**
+- [x] **Step 5：更新模型可见产品身份及其直接断言**
 
 把 agent preset 的产品名称改为 Harness Desktop，不改变工具、安全或运行时指令。先更新 `apps/web/tests/assembled-boot.ts` 中的直接测试断言和相关场景输入，再刷新派生预期输出。
 
-- [ ] **Step 6：只刷新受影响的无密钥预期输出**
+- [x] **Step 6：只刷新受影响的无密钥预期输出**
 
 在 PowerShell 中运行：
 
@@ -599,7 +599,7 @@ Remove-Item Env:DSH_SNAPSHOT
 
 预期：只有渲染对外产品名称或主命令的预期输出发生变化。
 
-- [ ] **Step 7：运行身份、聚焦行为和双语检查**
+- [x] **Step 7：运行身份、聚焦行为和双语检查**
 
 运行：
 
@@ -613,7 +613,7 @@ pnpm run verify-public-repository-links
 
 预期：全部检查针对已重命名仓库通过。
 
-- [ ] **Step 8：提交公共身份迁移**
+- [x] **Step 8：提交公共身份迁移**
 
 运行：
 

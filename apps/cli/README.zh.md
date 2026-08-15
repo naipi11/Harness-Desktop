@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`harness` 是 DeepSeek Harness 中用于启动 profile 的主命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。`dsh` 保留为兼容命令名。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/main.ts`](src/main.ts) 分派两个命令名，每个入口只加载选中的命令名。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
+`harness` 是 Harness Desktop 中用于启动 profile 的主命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。`dsh` 保留为兼容命令名。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/main.ts`](src/main.ts) 分派两个命令名，每个入口只加载选中的命令名。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
 
 ## 入口模式
 
@@ -39,7 +39,7 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 - profile 自身的 `cordis.patch.yml`，然后是 home 级的 `$DSH_HOME/cordis.patch.yml`
 - `--patch` 指定的覆盖层
 
-`dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
+`dsh.profile.bundles` 中列出的组合包先从 Harness Desktop 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
 

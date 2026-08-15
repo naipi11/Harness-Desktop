@@ -125,7 +125,7 @@ export function parseDshArgs(
   program
     .name(commandName)
     .version(version, '-V, --version', 'output the version number')
-    .description(`${commandName}: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.`)
+    .description(`${commandName}: boot a Harness Desktop profile — an ordered stack of plugin-bundle patch layers under your own overrides.`)
     .addHelpText('after', helpExamples(commandName))
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
