@@ -14,17 +14,18 @@ Harness Desktop is currently in _developer preview_ and is iterating rapidly. **
 
 ### Run from `npm`
 
-Install `Node.js`, then run:
+Install `Node.js`, then install the CLI globally and run:
 
 ```sh
-npx --package @deepseek-ai/dsh harness web
+npm install -g @harness-desktop/cli
+harness web
 ```
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
-The transition package is still published as `@deepseek-ai/dsh`; `dsh` remains a compatible command name with the same data and profile layout.
+For a background server, use `harness web --daemon` (or `--background`); the parent prints the child PID and its private log path, then exits.
 
-For a background server, add `--daemon` (or the equivalent `--background`): the command prints the child PID and its private log path, then exits.
+The transition package is still published as `@deepseek-ai/dsh`; `dsh` remains a compatible command name with the same data and profile layout.
 
 ### Run from source
 
@@ -42,7 +43,7 @@ pnpm harness web
 
 ### Desktop app
 
-The Electron client supports Windows, macOS, and Linux. From a repository checkout:
+The Electron client supports Windows, macOS, and Linux. Installers are published on [GitHub Releases](https://github.com/naipi11/Harness-Desktop/releases). To run from a repository checkout:
 
 ```sh
 git clone https://github.com/naipi11/Harness-Desktop.git

@@ -14,17 +14,18 @@ Harness Desktop 目前处于 _开发者预览_ 阶段，正在快速迭代。**�
 
 ### 通过 `npm` 运行
 
-安装 `Node.js`，然后运行：
+安装 `Node.js`，再全局安装 CLI 并运行：
 
 ```sh
-npx --package @deepseek-ai/dsh harness web
+npm install -g @harness-desktop/cli
+harness web
 ```
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
-过渡期 npm 包仍以 `@deepseek-ai/dsh` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
+如需后台运行，使用 `harness web --daemon`（或 `--background`）：父进程会输出子进程 PID 与私有日志路径，然后退出。
 
-如需后台服务，附加 `--daemon`（等价于 `--background`）：命令会输出子进程 PID 与私有日志路径，然后退出。
+过渡期 npm 包仍以 `@deepseek-ai/dsh` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
 
 ### 从源码运行
 
@@ -42,7 +43,7 @@ pnpm harness web
 
 ### 桌面客户端
 
-Electron 客户端支持 Windows、macOS 与 Linux。从仓库源码目录运行：
+Electron 客户端支持 Windows、macOS 与 Linux。安装包发布在 [GitHub Releases](https://github.com/naipi11/Harness-Desktop/releases)。从仓库源码目录运行：
 
 ```sh
 git clone https://github.com/naipi11/Harness-Desktop.git
