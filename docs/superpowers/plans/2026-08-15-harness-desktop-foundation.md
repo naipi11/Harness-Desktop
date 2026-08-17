@@ -579,7 +579,7 @@ Expected: GitHub reports `naipi11/Harness-Desktop`; both origin URLs use the ren
 
 - [x] **Step 4: Replace outward names in their owning sources**
 
-Update root README installation and source commands to lead with Harness Desktop and `harness`, with one compatibility note for `dsh`. During this workstream, document `npx --package @deepseek-ai/dsh harness web`; do not claim that `@harness-desktop/cli` is published. Update CLI README/reference commands the same way, while keeping `$DSH_HOME`, `dsh.profile`, and internal package identifiers unchanged. Set Web `<title>`, manifest `name`, manifest `short_name`, VitePress title/description/edit links, and public repository URLs from product metadata values. Replace the website's DeepSeek wordmark lockup with a text Harness Desktop lockup; do not invent a final logo asset.
+Update root README installation and source commands to lead with Harness Desktop and `harness`, with one compatibility note for `dsh`. During this workstream, publish the CLI as `@harness-desktop/cli` and keep `dsh` as a compatible command name. Update CLI README/reference commands the same way, while keeping `$DSH_HOME`, `dsh.profile`, and internal package identifiers unchanged. Set Web `<title>`, manifest `name`, manifest `short_name`, VitePress title/description/edit links, and public repository URLs from product metadata values. Replace the website's DeepSeek wordmark lockup with a text Harness Desktop lockup; do not invent a final logo asset.
 
 - [x] **Step 5: Update the model-visible product identity and its direct assertions**
 

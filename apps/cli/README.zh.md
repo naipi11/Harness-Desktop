@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh`
+# `@harness-desktop/cli`
 
 [English](README.md) | 中文
 

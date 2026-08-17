@@ -25,7 +25,7 @@ harness web
 
 如需后台运行，使用 `harness web --daemon`（或 `--background`）：父进程会输出子进程 PID 与私有日志路径，然后退出。
 
-过渡期 npm 包仍以 `@deepseek-ai/dsh` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
+CLI 以 `@harness-desktop/cli` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
 
 ### 从源码运行
 

@@ -7,7 +7,7 @@
  * removed or bundle-less dependency leaves it). Reconciling by installed
  * state, not by dependency diff, means `update` activates a package that
  * gained its `dsh.bundle` declaration in a newer version.
- * @module @deepseek-ai/dsh/plugin
+ * @module @harness-desktop/cli/plugin
  */
 
 import { spawnSync } from 'node:child_process'

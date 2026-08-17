@@ -28,9 +28,9 @@ function createWorkspace(): string {
 }
 
 describe('DSH package license gate', () => {
-  it('checks root, unhyphenated CLI, and dsh-prefixed package names while ignoring other families', () => {
+  it('checks root, the branded CLI, and dsh-prefixed package names while ignoring other families', () => {
     const root = createWorkspace()
-    writeManifest(root, 'apps/cli/package.json', { name: '@deepseek-ai/dsh', license: 'MIT' })
+    writeManifest(root, 'apps/cli/package.json', { name: '@harness-desktop/cli', license: 'MIT' })
     writeManifest(root, 'packages/core/agent/package.json', {
       name: '@deepseek-ai/dsh-agent',
       license: 'BSD-3-Clause',

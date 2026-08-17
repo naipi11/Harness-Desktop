@@ -25,7 +25,7 @@ The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See
 
 For a background server, use `harness web --daemon` (or `--background`); the parent prints the child PID and its private log path, then exits.
 
-The transition package is still published as `@deepseek-ai/dsh`; `dsh` remains a compatible command name with the same data and profile layout.
+The CLI is published as `@harness-desktop/cli`; `dsh` remains a compatible command name with the same data and profile layout.
 
 ### Run from source
 

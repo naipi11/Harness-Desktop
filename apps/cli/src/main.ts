@@ -1,6 +1,6 @@
 /**
  * Shared command dispatch for the primary Harness CLI and its `dsh` alias.
- * @module @deepseek-ai/dsh/main
+ * @module @harness-desktop/cli/main
  */
 
 import { readFileSync } from 'node:fs'

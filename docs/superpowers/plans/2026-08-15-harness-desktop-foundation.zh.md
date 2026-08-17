@@ -579,7 +579,7 @@ git remote -v
 
 - [x] **Step 4：在所属真源中替换对外名称**
 
-更新根 README 的安装和源码命令，使其以 Harness Desktop 与 `harness` 为主，并只为 `dsh` 保留一条兼容说明。本工作流期间记录 `npx --package @deepseek-ai/dsh harness web`；不要声称 `@harness-desktop/cli` 已发布。以相同方式更新 CLI README/reference 命令，同时保持 `$DSH_HOME`、`dsh.profile` 和内部包标识符不变。根据产品元数据更新 Web `<title>`、manifest `name`、manifest `short_name`、VitePress title/description/edit link 和公共仓库 URL。把网站 DeepSeek wordmark lockup 替换为 Harness Desktop 文字 lockup；不要虚构最终 logo 资产。
+更新根 README 的安装和源码命令，使其以 Harness Desktop 与 `harness` 为主，并只为 `dsh` 保留一条兼容说明。本工作流期间将 CLI 以 `@harness-desktop/cli` 发布，并保留 `dsh` 作为兼容命令名。以相同方式更新 CLI README/reference 命令，同时保持 `$DSH_HOME`、`dsh.profile` 和内部包标识符不变。根据产品元数据更新 Web `<title>`、manifest `name`、manifest `short_name`、VitePress title/description/edit link 和公共仓库 URL。把网站 DeepSeek wordmark lockup 替换为 Harness Desktop 文字 lockup；不要虚构最终 logo 资产。
 
 - [x] **Step 5：更新模型可见产品身份及其直接断言**
 

@@ -1,6 +1,6 @@
 /**
  * Detached web-server startup with one private log per invocation.
- * @module @deepseek-ai/dsh/web-daemon
+ * @module @harness-desktop/cli/web-daemon
  */
 
 import { spawn, type SpawnOptions } from 'node:child_process'

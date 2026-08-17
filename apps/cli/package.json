@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh",
+  "name": "@harness-desktop/cli",
   "description": "Harness Desktop CLI: profile boot, plugin management, and the browser UI alias",
   "version": "0.1.0-rc.5",
   "publishConfig": {

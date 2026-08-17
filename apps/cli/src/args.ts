@@ -12,7 +12,7 @@
  *
  * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
  * plugin dependencies by forwarding to pnpm.
- * @module @deepseek-ai/dsh/args
+ * @module @harness-desktop/cli/args
  */
 
 import { Command, CommanderError } from 'commander'
