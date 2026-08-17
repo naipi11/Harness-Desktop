@@ -21,3 +21,5 @@ The CLI package name is `@harness-desktop/cli`, published publicly and installed
 ## Consequences
 
 New users install `@harness-desktop/cli` and run `harness` (or `dsh`); existing `$DSH_HOME` profiles and `dsh` invocations keep working. The npm publish family must publish the CLI alongside the `@deepseek-ai/dsh-*` packages it depends on, so a publish is an all-family release rather than a single package. Publishing `@harness-desktop/cli` requires the `@harness-desktop` npm scope to exist and the registry token to have access to it.
+
+`apps/desktop` stays out of the npm family: its installers publish through GitHub Release artifacts (`desktop-artifacts.yml`), and the release family excludes that manifest so npm validation never sees Electron source or builder output.

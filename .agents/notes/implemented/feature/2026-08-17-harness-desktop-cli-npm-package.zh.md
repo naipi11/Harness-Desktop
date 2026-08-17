@@ -21,3 +21,5 @@ CLI 包名为 `@harness-desktop/cli`，公开发布并可通过 `npm install -g 
 ## Consequences
 
 新用户安装 `@harness-desktop/cli` 并运行 `harness`（或 `dsh`）；现有 `$DSH_HOME` profile 与 `dsh` 调用继续可用。npm 发布族必须将 CLI 与其依赖的 `@deepseek-ai/dsh-*` 包一起发布，因此发布是整族发布而非单个包。发布 `@harness-desktop/cli` 需要 `@harness-desktop` npm scope 存在，且 registry token 对该 scope 有权限。
+
+`apps/desktop` 不进入 npm 发布族：其安装包通过 GitHub Release 工件（`desktop-artifacts.yml`）发布，发布族排除该 manifest，避免 npm 校验接触 Electron 源码或构建产物。

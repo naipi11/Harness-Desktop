@@ -1,6 +1,7 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
 import { describe, expect, it } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 
@@ -28,6 +29,15 @@ describe('release families', () => {
     // hyphen would defeat any suffix-stripping.
     expect(vendor.tagPrefixFor({ ...cordis, version: '4.0.0-rc.7' })).toBe('vendor-cordis-v')
     expect(vendor.tagFor({ ...cordis, version: '4.0.0-rc.7' })).toBe('vendor-cordis-v4.0.0-rc.7')
+  })
+
+  it('keeps the installer-only desktop app out of the npm family', () => {
+    const dsh = releaseFamily('dsh')
+    const root = fileURLToPath(new URL('../..', import.meta.url))
+    const members = dsh.members(root)
+
+    expect(members.some(member => member.name === '@deepseek-ai/dsh-desktop')).toBe(false)
+    expect(members.some(member => member.name === '@harness-desktop/cli')).toBe(true)
   })
 
   it('rejects a family whose members disagree on the shared version', () => {

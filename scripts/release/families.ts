@@ -73,6 +73,9 @@ export abstract class ReleaseFamily {
   /** Glob patterns, relative to the repository root, that select this family's manifests. */
   abstract readonly patterns: readonly string[]
 
+  /** Repository-relative manifests this family never publishes, matched after globbing. */
+  readonly excludedManifests: readonly string[] = []
+
   /** Git tag prefix this family publishes from. */
   abstract readonly tagPrefix: string
 
@@ -89,6 +92,7 @@ export abstract class ReleaseFamily {
     const seen = new Set<string>()
     for (const manifestPath of manifestPaths) {
       const normalized = manifestPath.replaceAll('\\', '/')
+      if (this.excludedManifests.includes(normalized)) continue
       const manifest = readManifest(resolve(root, manifestPath))
       const name = requireString(manifest, 'name', normalized)
       const version = requireString(manifest, 'version', normalized)
@@ -197,6 +201,8 @@ export abstract class ReleaseFamily {
 class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
   readonly patterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
+  // apps/desktop distributes installers through GitHub Releases, not npm.
+  override readonly excludedManifests = ['apps/desktop/package.json'] as const
   readonly tagPrefix = 'dsh-v'
 
   /**

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-17-harness-desktop-cli-npm-package.md
-2026-08-17-harness-desktop-cli-npm-package.md: cf7c3e1afa47391538bcfe20a4e5c4ce3763a5a2
-2026-08-17-harness-desktop-cli-npm-package.zh.md: 29619ed8222acf828d6ead0a643c21fd482d8a05
+2026-08-17-harness-desktop-cli-npm-package.md: 5f65a8a6bd000e3e6ec358de66fcaa859218c970
+2026-08-17-harness-desktop-cli-npm-package.zh.md: 7d326f4c926f828bb78c601aa0e8248df0c15c29
