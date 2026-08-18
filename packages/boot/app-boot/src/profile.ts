@@ -116,9 +116,16 @@ export const PROFILE_TEMPLATES: Record<string, readonly string[]> = {
   headless: ['@harness-desktop/dsh-base', '@harness-desktop/dsh-headless'],
 }
 
-/** Installation-owned bundle tuples normalized to the shipped template. */
-const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
-  headless: ['@harness-desktop/dsh-base', '@harness-desktop/dsh-web-app', '@harness-desktop/dsh-headless'],
+/** Installation-owned bundle tuples normalized to the shipped template, by profile name. */
+const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly (readonly string[])[]> = {
+  web: [
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+  ],
+  headless: [
+    ['@harness-desktop/dsh-base', '@harness-desktop/dsh-web-app', '@harness-desktop/dsh-headless'],
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+  ],
 }
 
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
@@ -291,15 +298,16 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
 }
 
 /**
- * Normalize an exact installation-owned bundle tuple to its shipped template
- * while preserving every other manifest field. Any other list is user-owned.
+ * Normalize an exact installation-owned bundle tuple (including the legacy
+ * `@deepseek-ai/*` names) to its shipped template while preserving every
+ * other manifest field. Any other list is user-owned.
  */
 function normalizeShippedProfile(name: string, dir: string, manifest: ProfileManifest): ProfileManifest {
   const installationOwned = INSTALLATION_OWNED_PROFILE_TUPLES[name]
   const current = PROFILE_TEMPLATES[name]
   const bundles = manifest.dsh?.profile?.bundles
   if (installationOwned === undefined || current === undefined || bundles === undefined
-    || !sameBundles(bundles, installationOwned)) return manifest
+    || !installationOwned.some(tuple => sameBundles(bundles, tuple))) return manifest
   const normalized: ProfileManifest = {
     ...manifest,
     dsh: {

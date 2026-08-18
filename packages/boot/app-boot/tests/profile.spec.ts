@@ -161,22 +161,45 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web ?? []])
   })
 
-  it('normalizes only the exact installation-owned headless bundle tuple', () => {
+  it('normalizes installation-owned tuples, including legacy @deepseek-ai names', () => {
     const anchor = stageInstallation({
       '@harness-desktop/dsh-base': { patch: '[]\n' },
       '@harness-desktop/dsh-web-app': { patch: '[]\n' },
       '@harness-desktop/dsh-headless': { patch: '[]\n' },
       'custom-bundle': { patch: '[]\n' },
     })
-    const home = tmp()
-    const stock = resolveProfileDir('headless', home)
+    // The pre-rename web template migrates to the shipped web template.
+    const webHome = tmp()
+    const web = resolveProfileDir('web', webHome)
+    initProfile(web, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    loadProfile('t', 'web', anchor, webHome)
+    expect(readProfileManifest('t', web).dsh?.profile?.bundles)
+      .toEqual([...PROFILE_TEMPLATES.web ?? []])
+
+    // Both pre-rename headless variants migrate to the shipped headless template.
+    for (const legacy of [
+      ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
+      ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+    ] as const) {
+      const home = tmp()
+      const dir = resolveProfileDir('headless', home)
+      initProfile(dir, legacy)
+      loadProfile('t', 'headless', anchor, home)
+      expect(readProfileManifest('t', dir).dsh?.profile?.bundles)
+        .toEqual([...PROFILE_TEMPLATES.headless ?? []])
+    }
+
+    // The renamed installation's own triple still normalizes.
+    const stockHome = tmp()
+    const stock = resolveProfileDir('headless', stockHome)
     initProfile(stock, [
       '@harness-desktop/dsh-base', '@harness-desktop/dsh-web-app', '@harness-desktop/dsh-headless',
     ])
-    loadProfile('t', 'headless', anchor, home)
+    loadProfile('t', 'headless', anchor, stockHome)
     expect(readProfileManifest('t', stock).dsh?.profile?.bundles)
       .toEqual(['@harness-desktop/dsh-base', '@harness-desktop/dsh-headless'])
 
+    // A user-modified list stays untouched.
     const customHome = tmp()
     const custom = resolveProfileDir('headless', customHome)
     initProfile(custom, [
