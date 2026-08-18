@@ -2,24 +2,24 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import Include from '@harness-desktop/cordis-plugin-include'
+import LlmRuntime from '@harness-desktop/dsh-llm'
+import SessionStore, { SessionId } from '@harness-desktop/dsh-session'
+import SystemPrompt from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime from '@harness-desktop/dsh-tools'
+import AgentRegistry, { assembleContextFor, type Agent } from '@harness-desktop/dsh-agent'
+import AgentLoop from '@harness-desktop/dsh-agent-loop'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentPresets, {
   COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, PresetMountError, serviceForAgent,
-} from '@deepseek-ai/dsh-agent-presets'
-import type { Config } from '@deepseek-ai/dsh-agent-presets'
-import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+} from '@harness-desktop/dsh-agent-presets'
+import type { Config } from '@harness-desktop/dsh-agent-presets'
+import type {} from '@harness-desktop/dsh-agent-presets/types'
+import { bindScopeParent, createScope, scopeOf } from '@harness-desktop/dsh-scope'
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     /** Published by the `isolated` fixture preset behind an entry-local realm. */
     fixtureIsolatedSvc: { label: string }

@@ -14,7 +14,7 @@
 
 - 对外产品名称为 `Harness Desktop`；仓库为 `naipi11/Harness-Desktop`；主命令为 `harness`。
 - `dsh` 继续作为兼容二进制并使用相同解析器和运行器；本工作流只使用 `$DSH_HOME` 这一套数据命名空间。
-- 内部 `@deepseek-ai/dsh-*` 包保留现有名称；只有集中式元数据与面向公众的应用依赖新品牌。
+- 内部 `@harness-desktop/dsh-*` 包保留现有名称；只有集中式元数据与面向公众的应用依赖新品牌。
 - Electron Renderer 使用 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false` 和强类型 preload API。
 - 本工作流交付可启动的 Desktop 壳，不交付对话、Host 监管、会话租约、交互式 CLI、签名、发布、更新或回滚。
 - `harness web --daemon` 与 `harness web --background` 在构建版和源码启动中都可用；help 绝不进入后台。
@@ -105,7 +105,7 @@ git status --short
 
 **接口：**
 - 使用：现有 app-boot 包、其包级构建和双语 README 约定。
-- 产出：低依赖的 `@deepseek-ai/dsh-app-boot/product-metadata` 子路径，以及 `ProductCommandName`、`ProductMetadata` 和冻结的 `productMetadata`。
+- 产出：低依赖的 `@harness-desktop/dsh-app-boot/product-metadata` 子路径，以及 `ProductCommandName`、`ProductMetadata` 和冻结的 `productMetadata`。
 
 - [ ] **Step 1：编写失败的元数据测试**
 
@@ -273,7 +273,7 @@ pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/source-launch.co
 
 - [ ] **Step 3：提取共享命令运行器并添加轻量入口**
 
-在 `apps/cli/src/main.ts` 中把 `CliCommandName` 定义为 `@deepseek-ai/dsh-app-boot/product-metadata` 导出的 `ProductCommandName`。导出 `runCli(commandName: CliCommandName, argv: readonly string[] = process.argv.slice(2)): Promise<void>`；它调用 `parseDshArgs(argv, readVersion(), commandName)`，再等待 `dispatchInvocation(commandName, invocation)`。
+在 `apps/cli/src/main.ts` 中把 `CliCommandName` 定义为 `@harness-desktop/dsh-app-boot/product-metadata` 导出的 `ProductCommandName`。导出 `runCli(commandName: CliCommandName, argv: readonly string[] = process.argv.slice(2)): Promise<void>`；它调用 `parseDshArgs(argv, readVersion(), commandName)`，再等待 `dispatchInvocation(commandName, invocation)`。
 
 版本读取和现有 mode switch 保留在该模块中。让 `apps/cli/src/bin.ts` 只包含 `import { runCli } from './main.ts'`，随后执行 `await runCli('harness')`。让 `apps/cli/src/dsh-bin.ts` 包含相同 import，随后执行 `await runCli('dsh')`。
 
@@ -412,11 +412,11 @@ preload 入口调用 `contextBridge.exposeInMainWorld('harnessDesktop', createDe
 
 - [ ] **Step 7：添加包配置与依赖**
 
-把 `apps/desktop/package.json` 设为 `name: "@deepseek-ai/dsh-desktop"`、`version: "0.1.0-rc.5"`、`private: true`、`main: "out/main/index.js"`，并提供 `dev`、`build`、`typecheck`、`test` 和 `test:e2e` 脚本。添加 `@deepseek-ai/dsh-app-boot` workspace 依赖，以及 Electron、electron-vite、React 18、React DOM 18、Vite React plugin、TypeScript、Vitest、Playwright 和相关类型包。在 manifest 存在后运行以下命令，在 `pnpm-workspace.yaml` 的 `allowBuilds` 中加入 `electron: true`，并扩展 `vitest.snapshot.config.ts` 使其包含 `apps/desktop/tests/**/*.snapshot.tsx`：
+把 `apps/desktop/package.json` 设为 `name: "@harness-desktop/dsh-desktop"`、`version: "0.1.0-rc.5"`、`private: true`、`main: "out/main/index.js"`，并提供 `dev`、`build`、`typecheck`、`test` 和 `test:e2e` 脚本。添加 `@harness-desktop/dsh-app-boot` workspace 依赖，以及 Electron、electron-vite、React 18、React DOM 18、Vite React plugin、TypeScript、Vitest、Playwright 和相关类型包。在 manifest 存在后运行以下命令，在 `pnpm-workspace.yaml` 的 `allowBuilds` 中加入 `electron: true`，并扩展 `vitest.snapshot.config.ts` 使其包含 `apps/desktop/tests/**/*.snapshot.tsx`：
 
 ```powershell
-pnpm --filter @deepseek-ai/dsh-desktop add '@deepseek-ai/dsh-app-boot@workspace:^' 'react@^18.2.0' 'react-dom@^18.2.0'
-pnpm --filter @deepseek-ai/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' 'vite@^7.0.0' typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
+pnpm --filter @harness-desktop/dsh-desktop add '@harness-desktop/dsh-app-boot@workspace:^' 'react@^18.2.0' 'react-dom@^18.2.0'
+pnpm --filter @harness-desktop/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' 'vite@^7.0.0' typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
 ```
 
 - [ ] **Step 8：运行测试并提交应用壳**
@@ -457,7 +457,7 @@ git commit -m "feat(desktop): add sandboxed Electron shell"
 运行：
 
 ```powershell
-pnpm --filter @deepseek-ai/dsh-desktop run test:e2e
+pnpm --filter @harness-desktop/dsh-desktop run test:e2e
 ```
 
 预期：FAIL，因为 `out/main/index.js` 尚未构建。
@@ -470,10 +470,10 @@ pnpm --filter @deepseek-ai/dsh-desktop run test:e2e
 
 ```json
 {
-  "desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
-  "desktop:build": "pnpm --filter @deepseek-ai/dsh-desktop run build",
-  "desktop:test": "pnpm --filter @deepseek-ai/dsh-desktop run test",
-  "desktop:e2e": "pnpm --filter @deepseek-ai/dsh-desktop run test:e2e"
+  "desktop": "pnpm --filter @harness-desktop/dsh-desktop run dev",
+  "desktop:build": "pnpm --filter @harness-desktop/dsh-desktop run build",
+  "desktop:test": "pnpm --filter @harness-desktop/dsh-desktop run test",
+  "desktop:e2e": "pnpm --filter @harness-desktop/dsh-desktop run test:e2e"
 }
 ```
 
@@ -707,7 +707,7 @@ pnpm install
 pnpm exec vitest run scripts/desktop-release-config.spec.ts
 pnpm run verify:desktop-release-config
 pnpm run desktop:build
-pnpm --filter @deepseek-ai/dsh-desktop run package:dir
+pnpm --filter @harness-desktop/dsh-desktop run package:dir
 ```
 
 预期：测试和验证器通过；当前平台在 `apps/desktop/release` 下生成 unpacked app，且没有发布。

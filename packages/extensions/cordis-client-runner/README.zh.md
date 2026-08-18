@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-cordis-client-runner
+# @harness-desktop/dsh-cordis-client-runner
 
 [English](README.md) | 中文
 

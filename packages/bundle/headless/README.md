@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-headless`
+# `@harness-desktop/dsh-headless`
 
 English | [中文](README.zh.md)
 

@@ -56,7 +56,7 @@ pnpm desktop
 To build an installer for the current platform:
 
 ```sh
-pnpm --filter @deepseek-ai/dsh-desktop run package
+pnpm --filter @harness-desktop/dsh-desktop run package
 ```
 
 The installer matrix is Windows NSIS, macOS universal DMG, and Linux AppImage and deb. For an unpacked directory instead of an installer, replace `package` with `package:dir`. Artifacts land in `apps/desktop/release/`.

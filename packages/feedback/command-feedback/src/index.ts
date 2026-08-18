@@ -3,14 +3,14 @@
  * appends one authoritative log-only event and does not start model work. The
  * append is eager but unflushed, so acknowledgement reports that the entry is
  * logged, not that it reached disk.
- * @module @deepseek-ai/dsh-command-feedback
+ * @module @harness-desktop/dsh-command-feedback
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import type { SessionTelemetryBackend, SessionTelemetrySharingStatus } from '@deepseek-ai/dsh-session-telemetry'
-import type { Session } from '@deepseek-ai/dsh-session'
-import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import type { Context } from '@harness-desktop/cordis'
+import type { CommandInvocation, CommandResult } from '@harness-desktop/dsh-commands'
+import type { SessionTelemetryBackend, SessionTelemetrySharingStatus } from '@harness-desktop/dsh-session-telemetry'
+import type { Session } from '@harness-desktop/dsh-session'
+import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
 
 export const name = 'command-feedback'
 export const inject = ['commands']
@@ -53,7 +53,7 @@ function sharingDisclosure(telemetry: SessionTelemetryBackend | undefined): stri
   return sharingSentence(telemetry.sharing)
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module '@harness-desktop/dsh-session/types' {
   interface SessionEventMap {
     /**
      * One recorded human remark about this session. Log-only and independent

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-ralph
+# @harness-desktop/dsh-tool-ralph
 
 English | [中文](README.zh.md)
 

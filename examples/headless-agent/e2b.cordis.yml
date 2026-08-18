@@ -8,41 +8,41 @@
 # falls back to /home/user/workspace while Bash and PTY keep targeting the
 # host path, so every tool call fails with a remote spawn error.
 - id: base
-  name: '@deepseek-ai/cordis-plugin-include'
+  name: '@harness-desktop/cordis-plugin-include'
   config:
     path: ./advanced.cordis.yml
     patches:
       - id: subprocess
-        name: '@deepseek-ai/dsh-subprocess-local'
+        name: '@harness-desktop/dsh-subprocess-local'
         disabled: true
       - id: fs-local
-        name: '@deepseek-ai/dsh-fs-local'
+        name: '@harness-desktop/dsh-fs-local'
         disabled: true
       - insert:
           - id: e2b
-            name: '@deepseek-ai/dsh-e2b'
+            name: '@harness-desktop/dsh-e2b'
             config:
               cwd: !!js process.cwd()
               timeoutMs: 300000
           - id: subprocess-e2b
-            name: '@deepseek-ai/dsh-subprocess-e2b'
+            name: '@harness-desktop/dsh-subprocess-e2b'
           - id: fs-e2b
-            name: '@deepseek-ai/dsh-fs-e2b'
+            name: '@harness-desktop/dsh-fs-e2b'
           - id: sandbox-policy
-            name: '@deepseek-ai/dsh-sandbox-policy'
+            name: '@harness-desktop/dsh-sandbox-policy'
             config:
               mode: danger-full-access
               workspaceRoot: !!js process.cwd()
           - id: pty
-            name: '@deepseek-ai/dsh-terminal'
+            name: '@harness-desktop/dsh-terminal'
           - id: terminal-bash
-            name: '@deepseek-ai/dsh-terminal-bash'
+            name: '@harness-desktop/dsh-terminal-bash'
           - id: tool-terminal
-            name: '@deepseek-ai/dsh-tool-terminal'
+            name: '@harness-desktop/dsh-tool-terminal'
           - id: lsp
-            name: '@deepseek-ai/dsh-lsp'
+            name: '@harness-desktop/dsh-lsp'
           - id: lsp-stdio
-            name: '@deepseek-ai/dsh-lsp-stdio'
+            name: '@harness-desktop/dsh-lsp-stdio'
             config:
               servers:
                 typescript:
@@ -54,4 +54,4 @@
                     .js: javascript
                     .jsx: javascriptreact
           - id: tool-lsp
-            name: '@deepseek-ai/dsh-tool-lsp'
+            name: '@harness-desktop/dsh-tool-lsp'

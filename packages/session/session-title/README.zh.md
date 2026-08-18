@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-title
+# @harness-desktop/dsh-session-title
 
 [English](README.md) | 中文
 

@@ -67,7 +67,7 @@ jobs:
         run: pnpm run desktop:build
 
       - name: Package installer
-        run: pnpm --filter @deepseek-ai/dsh-desktop run package --publish never
+        run: pnpm --filter @harness-desktop/dsh-desktop run package --publish never
 
       - uses: actions/upload-artifact@v4
         with:

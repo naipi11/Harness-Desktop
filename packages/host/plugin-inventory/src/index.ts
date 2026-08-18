@@ -1,8 +1,8 @@
 /** Read-only projection of the current Cordis Loader plugin entries. */
 
-import type { Context, FiberState } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/cordis-plugin-loader'
-import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import type { Context, FiberState } from '@harness-desktop/cordis'
+import type {} from '@harness-desktop/cordis-plugin-loader'
+import { TypertRemoteService, Remote } from '@harness-desktop/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import type {

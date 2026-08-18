@@ -22,7 +22,7 @@ The long-lived rationale and rejected topologies are recorded in the [Harness De
 ## Non-goals
 
 - The first stable release does not provide cloud synchronization, multi-user collaboration, a mobile client, or a remotely managed agent service.
-- The first stable release does not require a repository-wide rename of every internal `@deepseek-ai/dsh-*` package.
+- The first stable release does not require a repository-wide rename of every internal `@harness-desktop/dsh-*` package.
 - The first release matrix does not promise Windows ARM64, Linux ARM64, RPM, Flatpak, or distribution-specific packages beyond the listed targets.
 - The renderer never runs agent plugins, reads credentials, or receives unrestricted Node.js access.
 - A client never forcefully steals a live session writer lease.
@@ -41,7 +41,7 @@ flowchart LR
   Runtime --> Data["Settings, credentials, sessions"]
 ```
 
-`apps/desktop` owns the Electron main process, preload script, renderer entry, operating-system integration, packaging, and update client. The renderer reuses `@deepseek-ai/dsh-client-web` and the existing client UI packages instead of creating a second conversation implementation.
+`apps/desktop` owns the Electron main process, preload script, renderer entry, operating-system integration, packaging, and update client. The renderer reuses `@harness-desktop/dsh-client-web` and the existing client UI packages instead of creating a second conversation implementation.
 
 The Electron main process starts one Harness Host child for each desktop application instance. The child is a complete Cordis application assembled from existing plugins. The main process communicates with it over the repository's newline-delimited stdio JSON-RPC transport, keeps stdout protocol-pure, routes diagnostics through stderr, and restarts the child only after the previous process and streams have settled.
 
@@ -117,7 +117,7 @@ The repository and GitHub release project use `Harness-Desktop`; user-facing pro
 
 The first stable release keeps `dsh` as a second binary name and retains the existing Harness home layout. The compatibility binary does not maintain a separate parser or runtime. Deprecation messaging may begin after the first stable release, and removal requires at least one complete stable release cycle with the warning present.
 
-Internal `@deepseek-ai/dsh-*` workspace package names remain private implementation details during the initial product migration. Public CLI artifacts bundle their runtime dependency graph and do not publish new packages under the `@deepseek-ai` scope. A later scope migration updates all references atomically and includes an explicit data migration with rollback verification.
+Internal `@harness-desktop/dsh-*` workspace package names remain private implementation details during the initial product migration. Public CLI artifacts bundle their runtime dependency graph and do not publish new packages under the `@harness-desktop` scope. A later scope migration updates all references atomically and includes an explicit data migration with rollback verification.
 
 ## Security and permissions
 

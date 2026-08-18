@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-settings
+# @harness-desktop/dsh-settings
 
 [English](README.md) | 中文
 

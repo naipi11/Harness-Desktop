@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-spill-local`.
- * @module @deepseek-ai/dsh-spill-local/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-spill-local`.
+ * @module @harness-desktop/dsh-spill-local/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-spill-local'
+const PACKAGE_NAME = '@harness-desktop/dsh-spill-local'
 
 /** Cordis companion plugin name. */
 export const name = 'spill-local-invariant'

@@ -3,8 +3,8 @@
  * @module subagent-report-fence
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent-loop'
+import type { Context } from '@harness-desktop/cordis'
+import type {} from '@harness-desktop/dsh-agent-loop'
 
 /** Fixture plugin name. */
 export const name = 'subagent-report-fence'

@@ -1,5 +1,5 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Context } from '@harness-desktop/cordis'
+import type { SessionEvent } from '@harness-desktop/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { runFixtureTurn } from '../src/agent-turn.ts'
 

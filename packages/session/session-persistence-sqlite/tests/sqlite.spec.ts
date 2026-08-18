@@ -1,14 +1,14 @@
-import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, createMessage } from '@harness-desktop/dsh-llm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@deepseek-ai/dsh-session'
-import SqliteSessionPersistence, { SCHEMA_VERSION } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import SessionStore, { SessionId } from '@harness-desktop/dsh-session'
+import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@harness-desktop/dsh-session'
+import SqliteSessionPersistence, { SCHEMA_VERSION } from '@harness-desktop/dsh-session-persistence-sqlite'
 import {
   openDatabase,
   rowToEvent,

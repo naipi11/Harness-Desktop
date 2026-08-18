@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-attachment
+# @harness-desktop/dsh-attachment
 
 [English](README.md) | 中文
 

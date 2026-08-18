@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, CallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@harness-desktop/dsh-attachment'
+import { createUserMessage, CallId, ReasoningEffortId, createMessage } from '@harness-desktop/dsh-llm'
+import type { ContentBlock, GenerateOptions, Message } from '@harness-desktop/dsh-llm'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
 
 function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {

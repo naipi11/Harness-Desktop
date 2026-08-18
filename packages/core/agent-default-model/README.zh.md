@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-agent-default-model
+# @harness-desktop/dsh-agent-default-model
 
 [English](README.md) | 中文
 

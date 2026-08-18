@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ProductMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import type { ProductMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import type { DesktopBridge } from '../../shared/desktop-api.ts'
 import { DesktopShell } from './DesktopShell.tsx'
 

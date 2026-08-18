@@ -6,13 +6,13 @@
 
 import type {
   IApiClient, SettingsNamespaceView,
-} from '@deepseek-ai/dsh-api-remotes/client'
+} from '@harness-desktop/dsh-api-remotes/client'
 import {
   createSnapshotStore, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@harness-desktop/dsh-client-runtime/client'
 import {
   nodeAtPath, rehydrateSchema, type SchemaNode,
-} from '@deepseek-ai/dsh-client-schema-form'
+} from '@harness-desktop/dsh-client-schema-form'
 import { displayPermissionPreset } from './presentation.ts'
 
 /** Permission's settings namespace on the host wire. */

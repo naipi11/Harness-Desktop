@@ -9,10 +9,10 @@ const productMetadataSource = fileURLToPath(
 export default defineConfig({
   main: {
     // Keep the source launch independent of app-boot's generated lib output.
-    plugins: [externalizeDepsPlugin({ exclude: ['@deepseek-ai/dsh-app-boot'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@harness-desktop/dsh-app-boot'] })],
     resolve: {
       alias: {
-        '@deepseek-ai/dsh-app-boot/product-metadata': productMetadataSource,
+        '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
       },
     },
     build: {

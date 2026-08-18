@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-desktop",
+  "name": "@harness-desktop/dsh-desktop",
   "version": "0.1.0-rc.5",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-app-boot": "workspace:^",
+    "@harness-desktop/dsh-app-boot": "workspace:^",
     "react": "18.2.0",
     "react-dom": "18.2.0"
   },

@@ -56,7 +56,7 @@ pnpm desktop
 如需为当前平台构建安装包：
 
 ```sh
-pnpm --filter @deepseek-ai/dsh-desktop run package
+pnpm --filter @harness-desktop/dsh-desktop run package
 ```
 
 安装包目标为 Windows NSIS、macOS universal DMG，以及 Linux AppImage 和 deb。如需免安装目录而非安装包，将 `package` 替换为 `package:dir`。产物位于 `apps/desktop/release/`。

@@ -22,7 +22,7 @@
 ## 非目标
 
 - 第一个稳定版本不提供云同步、多人协作、移动客户端或远程托管的 agent 服务。
-- 第一个稳定版本不要求一次性重命名仓库内全部 `@deepseek-ai/dsh-*` 包。
+- 第一个稳定版本不要求一次性重命名仓库内全部 `@harness-desktop/dsh-*` 包。
 - 第一版支持矩阵不承诺 Windows ARM64、Linux ARM64、RPM、Flatpak 或已列目标之外的发行版专用软件包。
 - Renderer 不运行 agent 插件、不读取凭据，也不获得不受限制的 Node.js 访问权限。
 - 客户端绝不强行抢占仍然存活的会话写入租约。
@@ -41,7 +41,7 @@ flowchart LR
   Runtime --> Data["Settings, credentials, sessions"]
 ```
 
-`apps/desktop` 负责 Electron 主进程、preload 脚本、Renderer 入口、操作系统集成、打包和更新客户端。Renderer 复用 `@deepseek-ai/dsh-client-web` 与现有客户端 UI 包，不另建第二套对话实现。
+`apps/desktop` 负责 Electron 主进程、preload 脚本、Renderer 入口、操作系统集成、打包和更新客户端。Renderer 复用 `@harness-desktop/dsh-client-web` 与现有客户端 UI 包，不另建第二套对话实现。
 
 Electron 主进程为每个桌面应用实例启动一个 Harness Host 子进程。该子进程是由现有插件组成的完整 Cordis 应用。主进程通过仓库现有的换行分隔 stdio JSON-RPC 协议与它通信，保持 stdout 只承载协议，通过 stderr 传递诊断，并且仅在前一进程退出且数据流完全结束后重启子进程。
 
@@ -117,7 +117,7 @@ harness update
 
 第一个稳定版本把 `dsh` 保留为第二个二进制名称，并保留现有 Harness 主目录布局。兼容二进制不维护独立解析器或运行时。第一个稳定版本发布后可以开始显示弃用提示；只有在该提示完整存在至少一个稳定版本周期后才可移除。
 
-产品迁移初期，内部 `@deepseek-ai/dsh-*` 工作区包名继续作为私有实现细节。公开 CLI 产物打包自身的运行时依赖图，不在 `@deepseek-ai` scope 下发布新包。后续 scope 迁移必须原子更新全部引用，并包含具有回滚验证的明确数据迁移。
+产品迁移初期，内部 `@harness-desktop/dsh-*` 工作区包名继续作为私有实现细节。公开 CLI 产物打包自身的运行时依赖图，不在 `@harness-desktop` scope 下发布新包。后续 scope 迁移必须原子更新全部引用，并包含具有回滚验证的明确数据迁移。
 
 ## 安全与权限
 

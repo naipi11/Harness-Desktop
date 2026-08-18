@@ -8,18 +8,18 @@
  * tool result enters durable session history, so emitting an image on a route
  * that cannot carry it would break that route's continuation. Unknown
  * capability therefore refuses instead of relying on the adapter guard.
- * @module @deepseek-ai/dsh-tool-fs/src/read-image
+ * @module @harness-desktop/dsh-tool-fs/src/read-image
  */
 
 import { basename, extname } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-fs'
+import type { Context } from '@harness-desktop/cordis'
+import { AttachmentError, AttachmentId } from '@harness-desktop/dsh-attachment'
+import type { ImageAttachmentRef, ImageMediaType } from '@harness-desktop/dsh-attachment'
+import { createUserMessage } from '@harness-desktop/dsh-llm'
+import type { ContentBlock } from '@harness-desktop/dsh-llm'
+import { defineTool } from '@harness-desktop/dsh-tools'
+import type { GenericCallView, ToolExecution } from '@harness-desktop/dsh-tools'
+import type {} from '@harness-desktop/dsh-fs'
 import { resolveRegularReadTarget } from './read-target.ts'
 
 /** Extensions `read_image` accepts; magic-byte validation at the attachment service stays authoritative. */

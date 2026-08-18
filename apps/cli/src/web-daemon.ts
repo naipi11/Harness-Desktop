@@ -6,7 +6,7 @@
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { closeSync, mkdirSync, mkdtempSync, openSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { resolveDshHome } from '@harness-desktop/dsh-home-paths'
 
 /** A child process observed only through its startup events. */
 export interface WebDaemonChild {

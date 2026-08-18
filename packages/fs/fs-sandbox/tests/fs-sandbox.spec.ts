@@ -13,12 +13,12 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import { FsError, FsTargetKey } from '@deepseek-ai/dsh-fs'
-import type { FsTarget } from '@deepseek-ai/dsh-fs'
-import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
+import { Context } from '@harness-desktop/cordis'
+import { FsError, FsTargetKey } from '@harness-desktop/dsh-fs'
+import type { FsTarget } from '@harness-desktop/dsh-fs'
+import SandboxPolicyService from '@harness-desktop/dsh-sandbox-policy'
+import type { SandboxMode } from '@harness-desktop/dsh-sandbox'
+import { SandboxedFileSystem } from '@harness-desktop/dsh-fs-sandbox'
 
 let base: string
 let workspace: string

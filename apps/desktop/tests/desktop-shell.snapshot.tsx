@@ -1,4 +1,4 @@
-import { productMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { DesktopShell } from '../src/renderer/src/DesktopShell.tsx'

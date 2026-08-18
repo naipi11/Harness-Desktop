@@ -1,24 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import AgentRegistry, { Inbox, type Agent } from '@deepseek-ai/dsh-agent'
-import SandboxProvider from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
-import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
-import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend } from '@deepseek-ai/dsh-terminal-bash'
-import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
-import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
-import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import SessionStore, { Session, SessionId } from '@harness-desktop/dsh-session'
+import AgentRegistry, { Inbox, type Agent } from '@harness-desktop/dsh-agent'
+import SandboxProvider from '@harness-desktop/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@harness-desktop/dsh-sandbox'
+import SandboxPolicyService, { setSandboxMode } from '@harness-desktop/dsh-sandbox-policy'
+import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@harness-desktop/dsh-terminal'
+import { BashTerminalBackend } from '@harness-desktop/dsh-terminal-bash'
+import * as ptyLocal from '@harness-desktop/dsh-terminal-bash'
+import type { ResolvedConfig } from '@harness-desktop/dsh-terminal-bash/src/config.ts'
+import type { LocalPtySession } from '@harness-desktop/dsh-terminal-bash/src/session.ts'
+import { SubprocessRuntime } from '@harness-desktop/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
+} from '@harness-desktop/dsh-subprocess'
 
 class EmptySandbox extends SandboxProvider {
   confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {

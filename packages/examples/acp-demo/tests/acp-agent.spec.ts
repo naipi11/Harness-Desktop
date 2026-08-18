@@ -3,16 +3,16 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { agentEvents } from '@deepseek-ai/dsh-agent'
-import { TOOL_ORDER_REST } from '@deepseek-ai/dsh-system-prompt'
-import type { Message } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import { agentEvents } from '@harness-desktop/dsh-agent'
+import { TOOL_ORDER_REST } from '@harness-desktop/dsh-system-prompt'
+import type { Message } from '@harness-desktop/dsh-llm'
+import { SessionId } from '@harness-desktop/dsh-session'
 import * as acpAgent from '../src/index.ts'
 
 /**
- * In-process unit coverage for the @deepseek-ai/dsh-acp-demo composition:
+ * In-process unit coverage for the @harness-desktop/dsh-acp-demo composition:
  * mounting it brings up the agent-spine-demo spine + JSONL persistence + the ACP
  * bridge in one `ctx.plugin`. It loads no Loader-only plugin (no hmr), so it
  * mounts in a plain Context.

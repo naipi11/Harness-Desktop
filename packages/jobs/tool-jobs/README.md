@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-jobs
+# @harness-desktop/dsh-tool-jobs
 
 English | [中文](README.zh.md)
 

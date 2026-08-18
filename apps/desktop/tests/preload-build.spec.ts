@@ -31,7 +31,7 @@ it('builds one CommonJS preload and makes the main process load it', async () =>
 
   const main = await readFile(fileURLToPath(new URL('../out/main/index.js', import.meta.url)), 'utf8')
   expect(main).toContain('../preload/index.cjs')
-  expect(main).not.toContain('@deepseek-ai/dsh-app-boot/product-metadata')
+  expect(main).not.toContain('@harness-desktop/dsh-app-boot/product-metadata')
 })
 
 it('builds renderer bootstrap HTML without a copied product name', async () => {

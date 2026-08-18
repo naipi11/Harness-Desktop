@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-subagent
+# @harness-desktop/dsh-subagent
 
 [English](README.md) | 中文
 

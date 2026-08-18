@@ -4,8 +4,8 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import type { ProductCommandName } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import { loadLayeredEnv } from '@harness-desktop/dsh-app-boot'
+import type { ProductCommandName } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { parseDshArgs, type DshInvocation } from './args.ts'
 
 /** Command names accepted by the shared CLI implementation. */

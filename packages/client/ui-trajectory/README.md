@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-trajectory
+# @harness-desktop/dsh-client-ui-trajectory
 
 English | [中文](README.zh.md)
 

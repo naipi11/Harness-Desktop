@@ -21,24 +21,24 @@ const workspaceGlobs = [
   { dir: 'apps', depth: 1 },
 ] as const
 const vendoredPackages = new Set([
-  '@deepseek-ai/cordis',
-  '@deepseek-ai/cosmokit',
-  '@deepseek-ai/schemastery',
-  '@deepseek-ai/cordis-plugin-loader',
-  '@deepseek-ai/cordis-plugin-include',
-  '@deepseek-ai/cordis-plugin-group',
-  '@deepseek-ai/cordis-plugin-timer',
-  '@deepseek-ai/cordis-plugin-hmr',
-  '@deepseek-ai/cordis-plugin-logger-console',
+  '@harness-desktop/cordis',
+  '@harness-desktop/cosmokit',
+  '@harness-desktop/schemastery',
+  '@harness-desktop/cordis-plugin-loader',
+  '@harness-desktop/cordis-plugin-include',
+  '@harness-desktop/cordis-plugin-group',
+  '@harness-desktop/cordis-plugin-timer',
+  '@harness-desktop/cordis-plugin-hmr',
+  '@harness-desktop/cordis-plugin-logger-console',
 ])
 const publicLandlockPackages = new Set([
-  '@deepseek-ai/node-addon-landlock-run',
-  '@deepseek-ai/node-addon-landlock-run-linux-arm64',
-  '@deepseek-ai/node-addon-landlock-run-linux-x64',
+  '@harness-desktop/node-addon-landlock-run',
+  '@harness-desktop/node-addon-landlock-run-linux-arm64',
+  '@harness-desktop/node-addon-landlock-run-linux-x64',
 ])
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
+  '@harness-desktop/node-addon-landlock-run': ['src/main.c'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
 /**
@@ -55,7 +55,7 @@ const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@harness-desktop/cli': ['lib/*.js', 'config'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
-  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  '@harness-desktop/dsh-web-frontend': ['dist', '!dist/**/*.map'],
 }
 /** Apps that ship installers or local artifacts instead of npm packages. */
 const privateAppDirectories = new Set(['apps/desktop'])
@@ -134,21 +134,21 @@ function workspaceManifests(): WorkspaceManifest[] {
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // Profile bundles publish their dsh.bundle.patch layer beside the lib.
-  '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
+  '@harness-desktop/dsh-base': ['cordis.patch.yml'],
+  '@harness-desktop/dsh-web-app': ['cordis.patch.yml'],
+  '@harness-desktop/dsh-headless': ['cordis.patch.yml'],
+  '@harness-desktop/dsh-client-ui-theme': ['lib/styles'],
   // The product metadata subpath and its JSON payload ship beside the lib.
-  '@deepseek-ai/dsh-app-boot': ['lib/product-metadata.js', 'product.json'],
+  '@harness-desktop/dsh-app-boot': ['lib/product-metadata.js', 'product.json'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.
-  '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
+  '@harness-desktop/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
   // The argv-prefix runner entry ships beside the lib as its own bundle;
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
-  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
-  '@deepseek-ai/dsh-skill-badge': ['assets'],
-  '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  '@harness-desktop/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  '@harness-desktop/dsh-skill-badge': ['assets'],
+  '@harness-desktop/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
@@ -275,7 +275,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     return errors
   }
 
-  if (manifest.name?.startsWith('@deepseek-ai/') || manifest.name?.startsWith('@harness-desktop/')) {
+  if (manifest.name?.startsWith('@harness-desktop/')) {
     const allowedSources = publicationSourceAllowlist[manifest.name] ?? []
     for (const file of manifest.files ?? []) {
       if (isForbiddenPublicationFile(file) && !allowedSources.includes(file)) {
@@ -284,7 +284,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (isReleaseMember && dir.startsWith('apps/') && (manifest.name?.startsWith('@deepseek-ai/') || manifest.name?.startsWith('@harness-desktop/'))) {
+  if (isReleaseMember && dir.startsWith('apps/') && manifest.name?.startsWith('@harness-desktop/')) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)
@@ -302,14 +302,14 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('packages/') && manifest.name?.startsWith('@deepseek-ai/dsh-')) {
-    const peer = manifest.peerDependencies?.['@deepseek-ai/cordis']
-    const dev = manifest.devDependencies?.['@deepseek-ai/cordis']
+  if (dir.startsWith('packages/') && manifest.name?.startsWith('@harness-desktop/dsh-')) {
+    const peer = manifest.peerDependencies?.['@harness-desktop/cordis']
+    const dev = manifest.devDependencies?.['@harness-desktop/cordis']
 
-    if (!peer) errors.push(`${label}: @deepseek-ai/cordis must be a peerDependency`)
-    if (!dev) errors.push(`${label}: @deepseek-ai/cordis must also be a devDependency`)
+    if (!peer) errors.push(`${label}: @harness-desktop/cordis must be a peerDependency`)
+    if (!dev) errors.push(`${label}: @harness-desktop/cordis must also be a devDependency`)
     if (peer && dev && peer !== dev) {
-      errors.push(`${label}: @deepseek-ai/cordis peer (${peer}) and dev (${dev}) ranges must match`)
+      errors.push(`${label}: @harness-desktop/cordis peer (${peer}) and dev (${dev}) ranges must match`)
     }
     if (manifest.version !== repositoryVersion) {
       errors.push(`${label}: package.json version must match root version ${repositoryVersion ?? '(missing)'}`)

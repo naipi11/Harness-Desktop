@@ -4,18 +4,18 @@
  * through the seam, and every write re-reads the document under a
  * cross-process writer lock before patching it as a comment-preserving
  * leaf-level diff.
- * @module @deepseek-ai/dsh-settings-file
+ * @module @harness-desktop/dsh-settings-file
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import { Context, Service } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
 import { watch as chokidarWatch } from 'chokidar'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { Document, parseDocument } from 'yaml'
-import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { withFileLock, writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
+import { canonicalizeWatchPath, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@harness-desktop/dsh-settings'
 
 /** Plugin config: file location and hot-reload behavior. */
 export interface Config {

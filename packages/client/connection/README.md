@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-connection
+# @harness-desktop/dsh-client-connection
 
 English | [中文](README.zh.md)
 

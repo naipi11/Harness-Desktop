@@ -17,7 +17,7 @@ const productMetadataSource = fileURLToPath(
 // This built-only package subpath needs an exact source alias on clean checkouts.
 const sourceResolve = () => ({
   alias: {
-    '@deepseek-ai/dsh-app-boot/product-metadata': productMetadataSource,
+    '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
   },
 })
 

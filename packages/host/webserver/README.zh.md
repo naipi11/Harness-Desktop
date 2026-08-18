@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-host-webserver
+# @harness-desktop/dsh-host-webserver
 
 [English](README.md) | 中文
 

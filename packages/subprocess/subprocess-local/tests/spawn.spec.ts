@@ -8,8 +8,8 @@ import {
   spawnSubprocess,
   taskkillProcessTree,
 } from '../src/spawn.ts'
-import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import type { SubprocessHandle, SubprocessOutputReader } from '@harness-desktop/dsh-subprocess'
+import { MAX_TIMER_DELAY_MS } from '@harness-desktop/dsh-timeout'
 
 const { failNextClose, failNextUnlink } = vi.hoisted(() => ({
   failNextClose: { value: false },
@@ -705,8 +705,8 @@ describe('tree-survivor escalation (terminate and bounded waits reach helpers th
   })
 
   it('service teardown awaits tree survivors, not just handle settlement', async () => {
-    const { Context } = await import('@deepseek-ai/cordis')
-    const { default: LocalSubprocessRuntime } = await import('@deepseek-ai/dsh-subprocess-local')
+    const { Context } = await import('@harness-desktop/cordis')
+    const { default: LocalSubprocessRuntime } = await import('@harness-desktop/dsh-subprocess-local')
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
     ;(ctx.subprocess as InstanceType<typeof LocalSubprocessRuntime>).internals = { spillDir }

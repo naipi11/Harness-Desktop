@@ -1,4 +1,4 @@
-import { productMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { expect, it, vi } from 'vitest'
 import { createDesktopBridge } from '../src/preload/bridge.ts'
 import { desktopChannels } from '../src/shared/desktop-api.ts'

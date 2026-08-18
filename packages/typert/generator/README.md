@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-typert-generator
+# @harness-desktop/dsh-typert-generator
 
 English | [中文](README.zh.md)
 

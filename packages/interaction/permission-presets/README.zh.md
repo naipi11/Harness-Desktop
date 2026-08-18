@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-permission-presets
+# @harness-desktop/dsh-permission-presets
 
 [English](README.md) | 中文
 

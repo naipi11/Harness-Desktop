@@ -22,8 +22,8 @@ import {
   resolveProfileDir,
   writeProfileManifest,
   type ProfileManifest,
-} from '@deepseek-ai/dsh-app-boot'
-import { productMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+} from '@harness-desktop/dsh-app-boot'
+import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 import type { CliCommandName } from './main.ts'
 

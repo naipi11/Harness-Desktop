@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-hmr
+# @harness-desktop/dsh-client-hmr
 
 [English](README.md) | 中文
 

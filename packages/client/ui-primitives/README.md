@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-primitives
+# @harness-desktop/dsh-client-ui-primitives
 
 English | [中文](README.zh.md)
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { productMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'

@@ -1,4 +1,4 @@
-import type { ProductMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import type { ProductMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 
 /** Props for the initial Desktop shell. */
 export interface DesktopShellProps {

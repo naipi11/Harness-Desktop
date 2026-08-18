@@ -1,4 +1,4 @@
-/** Durable attachment vocabulary. @module @deepseek-ai/dsh-attachment/types */
+/** Durable attachment vocabulary. @module @harness-desktop/dsh-attachment/types */
 
 import type { AttachmentId } from './brand.ts'
 

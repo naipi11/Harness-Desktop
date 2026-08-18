@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { productMetadata } from '@deepseek-ai/dsh-app-boot/product-metadata'
+import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { desktopChannels } from '../shared/desktop-api.ts'
 import { createWindowOptions } from './window-options.ts'

@@ -47,7 +47,7 @@ export default defineConfig({
   plugins: [tsconfigPaths({ projects: ['./tsconfig.base.json'] }), standardDecoratorPlugin()],
   resolve: {
     alias: {
-      '@deepseek-ai/dsh-app-boot/product-metadata': productMetadataSource,
+      '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
     },
   },
   test: {

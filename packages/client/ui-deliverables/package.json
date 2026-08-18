@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-deliverables",
+  "name": "@harness-desktop/dsh-client-ui-deliverables",
   "description": "Produced-files turn tail and clickable final-response file references for Web",
   "version": "0.1.0-rc.5",
   "publishConfig": {
@@ -32,10 +32,10 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@harness-desktop/dsh-client-connection",
+        "@harness-desktop/dsh-client-locale",
+        "@harness-desktop/dsh-client-runtime",
+        "@harness-desktop/dsh-client-ui-conversation"
       ],
       "platform": "web"
     }
@@ -49,26 +49,26 @@
     "react": "^18.2.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-conversation": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-test-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-conversation": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
     "@types/react": "~18.3.1",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/cordis": "workspace:^"
   },
   "files": [
     "lib/index.js",

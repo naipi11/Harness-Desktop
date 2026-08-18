@@ -14,7 +14,7 @@ English | [中文](2026-08-15-harness-desktop-foundation.zh.md)
 
 - The outward product name is `Harness Desktop`; the repository is `naipi11/Harness-Desktop`; the primary command is `harness`.
 - `dsh` remains a compatibility binary backed by the same parser and runners; `$DSH_HOME` remains the only data namespace in this workstream.
-- Internal `@deepseek-ai/dsh-*` packages keep their names; only centralized metadata and public-facing applications depend on the new brand.
+- Internal `@harness-desktop/dsh-*` packages keep their names; only centralized metadata and public-facing applications depend on the new brand.
 - The Electron renderer uses `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, and a typed preload API.
 - This workstream delivers a launchable Desktop shell, not conversation, Host supervision, session leases, interactive CLI, signing, publishing, updating, or rollback.
 - `harness web --daemon` and `harness web --background` work from built and source launches; help never detaches.
@@ -105,7 +105,7 @@ Expected: the merge commit is present and the worktree is clean.
 
 **Interfaces:**
 - Consumes: the existing app-boot package, its package-local build, and bilingual README conventions.
-- Produces: the dependency-light `@deepseek-ai/dsh-app-boot/product-metadata` subpath with `ProductCommandName`, `ProductMetadata`, and frozen `productMetadata`.
+- Produces: the dependency-light `@harness-desktop/dsh-app-boot/product-metadata` subpath with `ProductCommandName`, `ProductMetadata`, and frozen `productMetadata`.
 
 - [ ] **Step 1: Write the failing metadata test**
 
@@ -273,7 +273,7 @@ Expected: FAIL because `parseDshArgs` has no command-name parameter and `dsh-bin
 
 - [ ] **Step 3: Extract the shared command runner and add thin entries**
 
-Define `CliCommandName` as `ProductCommandName` from `@deepseek-ai/dsh-app-boot/product-metadata` in `apps/cli/src/main.ts`. Export `runCli(commandName: CliCommandName, argv: readonly string[] = process.argv.slice(2)): Promise<void>`; it calls `parseDshArgs(argv, readVersion(), commandName)` and awaits `dispatchInvocation(commandName, invocation)`.
+Define `CliCommandName` as `ProductCommandName` from `@harness-desktop/dsh-app-boot/product-metadata` in `apps/cli/src/main.ts`. Export `runCli(commandName: CliCommandName, argv: readonly string[] = process.argv.slice(2)): Promise<void>`; it calls `parseDshArgs(argv, readVersion(), commandName)` and awaits `dispatchInvocation(commandName, invocation)`.
 
 Keep version loading and the existing mode switch inside this module. Make `apps/cli/src/bin.ts` contain only `import { runCli } from './main.ts'` followed by `await runCli('harness')`. Make `apps/cli/src/dsh-bin.ts` contain the same import followed by `await runCli('dsh')`.
 
@@ -412,11 +412,11 @@ The main entry registers only `desktopChannels.productMetadata`, calls `app.setA
 
 - [ ] **Step 7: Add package configuration and dependencies**
 
-Set `apps/desktop/package.json` to `name: "@deepseek-ai/dsh-desktop"`, `version: "0.1.0-rc.5"`, `private: true`, `main: "out/main/index.js"`, and scripts `dev`, `build`, `typecheck`, `test`, and `test:e2e`. Add `@deepseek-ai/dsh-app-boot` as a workspace dependency and Electron, electron-vite, React 18, React DOM 18, Vite React plugin, TypeScript, Vitest, Playwright, and relevant type packages. Run the following after the manifest exists, add `electron: true` to `pnpm-workspace.yaml` `allowBuilds`, and extend `vitest.snapshot.config.ts` to include `apps/desktop/tests/**/*.snapshot.tsx`:
+Set `apps/desktop/package.json` to `name: "@harness-desktop/dsh-desktop"`, `version: "0.1.0-rc.5"`, `private: true`, `main: "out/main/index.js"`, and scripts `dev`, `build`, `typecheck`, `test`, and `test:e2e`. Add `@harness-desktop/dsh-app-boot` as a workspace dependency and Electron, electron-vite, React 18, React DOM 18, Vite React plugin, TypeScript, Vitest, Playwright, and relevant type packages. Run the following after the manifest exists, add `electron: true` to `pnpm-workspace.yaml` `allowBuilds`, and extend `vitest.snapshot.config.ts` to include `apps/desktop/tests/**/*.snapshot.tsx`:
 
 ```powershell
-pnpm --filter @deepseek-ai/dsh-desktop add '@deepseek-ai/dsh-app-boot@workspace:^' 'react@^18.2.0' 'react-dom@^18.2.0'
-pnpm --filter @deepseek-ai/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' 'vite@^7.0.0' typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
+pnpm --filter @harness-desktop/dsh-desktop add '@harness-desktop/dsh-app-boot@workspace:^' 'react@^18.2.0' 'react-dom@^18.2.0'
+pnpm --filter @harness-desktop/dsh-desktop add -D electron electron-vite electron-builder '@playwright/test' '@vitejs/plugin-react' 'vite@^7.0.0' typescript vitest '@types/react@~18.3.1' '@types/react-dom@~18.3.1'
 ```
 
 - [ ] **Step 8: Run tests and commit the shell**
@@ -457,7 +457,7 @@ Create a Playwright Electron test that launches `../out/main/index.js` and alway
 Run:
 
 ```powershell
-pnpm --filter @deepseek-ai/dsh-desktop run test:e2e
+pnpm --filter @harness-desktop/dsh-desktop run test:e2e
 ```
 
 Expected: FAIL because `out/main/index.js` has not been built.
@@ -470,10 +470,10 @@ Add root scripts:
 
 ```json
 {
-  "desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
-  "desktop:build": "pnpm --filter @deepseek-ai/dsh-desktop run build",
-  "desktop:test": "pnpm --filter @deepseek-ai/dsh-desktop run test",
-  "desktop:e2e": "pnpm --filter @deepseek-ai/dsh-desktop run test:e2e"
+  "desktop": "pnpm --filter @harness-desktop/dsh-desktop run dev",
+  "desktop:build": "pnpm --filter @harness-desktop/dsh-desktop run build",
+  "desktop:test": "pnpm --filter @harness-desktop/dsh-desktop run test",
+  "desktop:e2e": "pnpm --filter @harness-desktop/dsh-desktop run test:e2e"
 }
 ```
 
@@ -707,7 +707,7 @@ pnpm install
 pnpm exec vitest run scripts/desktop-release-config.spec.ts
 pnpm run verify:desktop-release-config
 pnpm run desktop:build
-pnpm --filter @deepseek-ai/dsh-desktop run package:dir
+pnpm --filter @harness-desktop/dsh-desktop run package:dir
 ```
 
 Expected: tests and verifier pass; the current platform produces an unpacked app under `apps/desktop/release` without publishing.
