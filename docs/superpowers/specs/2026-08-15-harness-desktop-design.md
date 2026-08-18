@@ -4,20 +4,22 @@ English | [中文](2026-08-15-harness-desktop-design.zh.md)
 
 ## Status and scope
 
-This document defines the approved product architecture for Harness Desktop, a local-first coding agent product derived from DeepSeek Harness. It covers the outward brand, Electron desktop application, interactive CLI, shared local data, security model, release channels, and acceptance requirements for Windows, macOS, and Linux.
+This document defines the approved product architecture for Harness Desktop, a local-first coding agent product derived from DeepSeek Harness. It covers the outward brand, Electron desktop application, interactive CLI, browser Dashboard, shared local Runtime and data, security model, release channels, and acceptance requirements for Windows, macOS, and Linux.
 
 This is a program-level design divided into five implementation workstreams. Each workstream receives a focused implementation plan and independently reviewable changes. The first implementation plan covers the brand and application foundation; later plans must preserve the interfaces and invariants defined here.
+
+The [Harness unified local Runtime design](2026-08-18-harness-unified-local-runtime-design.md) is authoritative for Runtime ownership, `HARNESS_HOME`, the public `harness` command graph, Dashboard integration, and the three-client topology. This document applies those decisions to the wider Desktop product and release architecture.
 
 The long-lived rationale and rejected topologies are recorded in the [Harness Desktop product topology Agent Note](../../../.agents/notes/proposed/architecture/2026-08-15-harness-desktop-product-topology.md).
 
 ## Goals
 
 - Present one outward product named Harness Desktop with the primary `harness` command.
-- Ship a native-feeling desktop client and an interactive terminal client on Windows, macOS, and Linux.
-- Reuse one Harness runtime, plugin composition model, session format, settings store, and credential-reference system across both clients.
+- Ship independently usable native desktop, interactive terminal, and browser Dashboard clients on Windows, macOS, and Linux.
+- Connect all three clients to one on-demand local Runtime per `HARNESS_HOME`, with one plugin composition model, session format, settings store, and credential-reference system.
 - Preserve source launches, including background Web startup, alongside installed releases.
 - Publish signed desktop installers, standalone CLI archives, an npm CLI package, automatic desktop updates, and rollback metadata.
-- Let users inspect the same sessions from either client while preventing concurrent writers from corrupting a session.
+- Let users inspect the same projects and sessions from every client while the Runtime prevents concurrent operations from corrupting a session.
 
 ## Non-goals
 
@@ -25,7 +27,8 @@ The long-lived rationale and rejected topologies are recorded in the [Harness De
 - The first stable release does not require a repository-wide rename of every internal `@harness-desktop/dsh-*` package.
 - The first release matrix does not promise Windows ARM64, Linux ARM64, RPM, Flatpak, or distribution-specific packages beyond the listed targets.
 - The renderer never runs agent plugins, reads credentials, or receives unrestricted Node.js access.
-- A client never forcefully steals a live session writer lease.
+- The Runtime never listens on a LAN address or remains as a permanent external service.
+- A client never bypasses Runtime ownership or forcefully steals an active session operation.
 
 ## System architecture
 
@@ -33,55 +36,59 @@ The long-lived rationale and rejected topologies are recorded in the [Harness De
 
 ```mermaid
 flowchart LR
-  Renderer["Desktop Renderer"] --> Preload["Typed Preload API"]
-  Preload --> Main["Electron Main"]
-  Main -->|"stdio JSON-RPC"| Host["Harness Host child"]
-  CLI["harness CLI"] --> Runtime["Shared Harness Runtime"]
-  Host --> Runtime
-  Runtime --> Data["Settings, credentials, sessions"]
+  CLI["harness terminal client"] --> Runtime["Harness local Runtime"]
+  Browser["harness web Dashboard"] --> Runtime
+  Renderer["Desktop Dashboard renderer"] --> Runtime
+  Renderer --> Preload["Typed native preload API"]
+  Preload --> Main["Electron main"]
+  Main --> Runtime
+  Runtime --> Data["HARNESS_HOME: projects, sessions, settings, credential references"]
 ```
 
-`apps/desktop` owns the Electron main process, preload script, renderer entry, operating-system integration, packaging, and update client. The renderer reuses `@harness-desktop/dsh-client-web` and the existing client UI packages instead of creating a second conversation implementation.
+`apps/desktop` owns the Electron main process, preload script, renderer entry, operating-system integration, packaging, and update client. The renderer hosts the real Harness Dashboard from `@harness-desktop/dsh-client-web` and the existing client UI packages instead of creating a second conversation implementation.
 
-The Electron main process starts one Harness Host child for each desktop application instance. The child is a complete Cordis application assembled from existing plugins. The main process communicates with it over the repository's newline-delimited stdio JSON-RPC transport, keeps stdout protocol-pure, routes diagnostics through stderr, and restarts the child only after the previous process and streams have settled.
+The Electron main process owns windows, the tray, menus, native dialogs, notifications, external-link opening, updates, and Runtime attachment and recovery. It starts the on-demand Runtime only when no healthy instance owns the selected `HARNESS_HOME` and any recorded owner is absent or proved dead; otherwise it authenticates and attaches to the existing instance or fails safely. It retains the endpoint token for native control operations and mints the one-time Dashboard handoff without exposing either secret to the renderer.
 
-The preload script exposes a versioned, typed API containing only desktop operations. It translates renderer requests to Host protocol calls and Electron-owned operating-system actions. The renderer has no direct access to Electron IPC primitives, arbitrary filesystem paths, environment variables, or child-process handles.
+The preload script exposes a versioned, typed API containing only Electron-owned desktop operations. The renderer uses the Runtime API as the Dashboard and has no direct access to Electron IPC primitives, arbitrary filesystem paths, environment variables, child-process handles, the Runtime endpoint token, or credential values.
 
-The CLI composes the same runtime packages in its own Node.js process. It does not require the desktop application or a permanent local service. A future shared broker may replace the two ownership modes without changing session identities or client-visible commands, but it is not part of the first stable release.
+The terminal CLI, browser Dashboard, and Desktop independently attach to one loopback-only Runtime per `HARNESS_HOME`. No frontend composes a private Runtime or reads persistence directly. The CLI launcher, `harness web` launcher, or Electron main starts the Runtime under an atomic per-home lock when needed; every client must complete Runtime health, identity, and protocol-version checks before attaching.
 
 ### Component responsibilities
 
 | Component | Responsibility | Direct dependencies |
 |---|---|---|
-| `apps/desktop` main | Window, tray, menus, Host supervision, native dialogs, updates | Electron, Host launcher, desktop protocol |
-| `apps/desktop` preload | Narrow typed renderer API and event subscription | Electron context bridge, desktop protocol |
-| Desktop renderer | Conversation, approvals, workbench, settings, recovery UI | Existing client Web and UI packages |
-| Harness Host child | Agent runtime, tools, terminal, persistence, model access | Existing Cordis profiles and stdio JSON-RPC server |
-| `apps/cli` | Command parsing, interactive terminal UI, non-interactive output | Commander, Ink, shared runtime packages |
-| Session lease service | Single-writer acquisition, release, takeover request, stale-owner recovery | SQLite persistence and process identity probe |
+| `apps/desktop` main | Windows, tray, menus, native dialogs, notifications, updates, Runtime attachment and recovery | Electron, Runtime launcher and connection layer |
+| `apps/desktop` preload | Narrow typed API for Electron-owned native operations | Electron context bridge, desktop protocol |
+| Desktop renderer | Real Dashboard, conversation, approvals, workbench, settings, recovery UI | Existing client Web and UI packages, Runtime API |
+| Browser Dashboard | Independently usable Web frontend authenticated by a one-time handoff and cookie | Existing client Web and UI packages, Runtime API |
+| Harness local Runtime | Agent composition, tools, persistence, model access, local API, write serialization | Existing Cordis profiles, API and event-stream mechanisms |
+| `apps/cli` | Command parsing, interactive terminal UI, non-interactive output, Runtime attachment | Commander, Ink, Runtime connection layer |
+| Runtime coordination | Per-home discovery, atomic ownership, process identity, health, background leases, idle shutdown | Endpoint record, process identity probe, persistence |
 | Credential providers | Resolve credential references without exposing plaintext to clients | Native OS credential store or environment references |
 
-The desktop protocol and session lease service use branded identifiers for process, client, and lease identities. Runtime defaults are resolved by the owning plugin before execution; the clients do not duplicate model, permission, storage, or tool defaults.
+The desktop protocol and Runtime connection layer use branded identifiers for process, client, and session identities. Runtime defaults are resolved by the owning plugin before execution; clients do not duplicate model, permission, storage, tool, or lifecycle defaults.
 
 ## Shared data and session ownership
 
-Desktop and CLI use the same settings, credential references, workspace catalog, session history, and event log under the existing Harness home layout during the compatibility phase. Both clients may read a session concurrently, but only one process may append model-visible or lifecycle events.
+`HARNESS_HOME` is the sole writable Harness data root. The Runtime owns its settings, credential references, project catalog, session history, event logs, locks, and endpoint records; Desktop, the terminal CLI, and the browser Dashboard use those records only through the authenticated Runtime API. Reads may proceed concurrently, but the Runtime serializes every durable write and allows only one active agent operation to write a given session.
 
-The session lease service stores an owner token, process identifier, process start identity, client kind, heartbeat deadline, and takeover request in SQLite. Acquisition and release use transactions. A client that cannot acquire the lease opens the session read-only and shows the live owner.
+An endpoint record contains the Runtime protocol version, random loopback port, process identifier, process-start identity, and opaque endpoint token. The record is atomically replaced and readable only by the current operating-system user. A client trusts it only after health, identity, and version checks succeed; a stale lock or record is removed only after the recorded process identity is proved dead, so attachment failure never creates duplicate Runtime ownership.
 
-A takeover request asks the live owner to finish its current durable step, stop issuing new model or tool work, flush the event log, and release the lease. The requesting client acquires the lease only after observing the committed release. If the owner stops responding, recovery requires proof that the recorded process identity is no longer alive; expiry alone never permits a second writer.
+A second client that requests work in an active session receives a typed busy response and may observe the session, open a new session, or wait to resume it. The Runtime emits invalidations so every attached client converges on committed project, session, settings, and credential-reference state without polling or client-specific ownership.
 
-Desktop exposes a copyable `harness resume <session-id>` command. CLI exposes the same session identifier in machine-readable output. Resuming from another client follows the lease rules and never creates a hidden duplicate session.
+Desktop exposes a copyable `harness resume <session-id>` command. CLI exposes the same session identifier in machine-readable output. Resuming from another client follows Runtime serialization and never creates a hidden duplicate session.
+
+On first start, a detected legacy `DSH_HOME` is only an import source. Import copies supported data into an empty `HARNESS_HOME`, preserves the legacy directory, records the result, and stops on a destination collision; no client writes the legacy root or silently overwrites or deletes its contents.
 
 ## Desktop experience
 
-The default desktop layout uses a conversation center with a collapsible engineering workbench. The left sidebar contains workspaces, new-task entry, search, pinned sessions, and history. The center contains the transcript, tool-call cards, plans, approval cards, and composer. The right workbench contains Files, Diff, Terminal, Artifacts, and Tasks tabs. A bottom status bar shows the model, workspace, Git branch, permission mode, Host health, and token usage.
+The default desktop layout uses a conversation center with a collapsible engineering workbench. The left sidebar contains workspaces, new-task entry, search, pinned sessions, and history. The center contains the transcript, tool-call cards, plans, approval cards, and composer. The right workbench contains Files, Diff, Terminal, Artifacts, and Tasks tabs. A bottom status bar shows the model, workspace, Git branch, permission mode, Runtime health, and token usage.
 
 Focus mode hides the workbench and emphasizes conversation. Engineering mode opens the workbench and preserves its selected tab and width per workspace. Both modes use one component tree and one navigation model; they are layout states, not separate applications.
 
-Tool calls render as collapsed cards with the operation, state, elapsed time, and result summary. Diff review supports per-file acceptance and restoration. High-risk operations render explicit approval cards. Terminal sessions support tabs and persistence through the Host. Artifacts open in the workbench without replacing the conversation.
+Tool calls render as collapsed cards with the operation, state, elapsed time, and result summary. Diff review supports per-file acceptance and restoration. High-risk operations render explicit approval cards. Terminal sessions support tabs and persistence through the Runtime. Artifacts open in the workbench without replacing the conversation.
 
-When the Host exits unexpectedly, the renderer remains available, displays the categorized failure, and offers restart or diagnostic export. Closing the final window while work is active offers three explicit actions: continue in the tray, stop safely, or cancel closing.
+When the Runtime becomes unavailable, the renderer shows a local recovery page with the categorized attachment failure, retry, and redacted diagnostic export. Electron main proves stale ownership before starting a replacement Runtime and mints a new handoff before reloading the Dashboard. Closing the final window while work is active offers three explicit actions: continue in the tray, stop safely, or cancel closing.
 
 ## CLI experience
 
@@ -92,30 +99,25 @@ The supported command set is:
 ```text
 harness
 harness "fix the failing tests"
-harness run "task"
 harness run "task" --json
-harness resume [session]
-harness web --background
+harness web --daemon
+harness web --background --no-open
+harness web --status
+harness web --stop
 harness desktop
-harness serve
-harness auth
-harness config
-harness models
-harness doctor
-harness update
 ```
 
 Interactive mode provides `/model`, `/permissions`, `/plan`, `/compact`, `/resume`, `/diff`, `/terminal`, `/doctor`, and `/exit`. Ctrl+C first cancels the active agent operation and a second Ctrl+C forces process exit. Prompts, approvals, tool events, and final output remain visible in terminal history.
 
 `harness run --json` writes protocol JSONL only to stdout. Diagnostics, warnings, progress, and human-readable failures go to stderr. Stable exit codes distinguish success, task failure, configuration failure, permission denial, cancellation, and internal failure.
 
-Source development exposes `pnpm harness` and accepts the same arguments as the installed binary, including `pnpm harness web --background`. The `dsh` compatibility binary invokes the same command graph and data layout.
+The terminal client starts or attaches to the Runtime, can list and resume shared sessions, and exits without stopping work used by other clients. Source development exposes `pnpm harness` and accepts the same arguments as the installed binary, including `pnpm harness web --background`. The `dsh` compatibility binary invokes the same command graph, Runtime, and data root.
 
 ## Brand and compatibility
 
 The repository and GitHub release project use `Harness-Desktop`; user-facing prose uses Harness Desktop; the primary executable is `harness`; the desktop application identifier is `io.github.naipi11.harness-desktop`; and the public npm package is `@harness-desktop/cli`.
 
-The first stable release keeps `dsh` as a second binary name and retains the existing Harness home layout. The compatibility binary does not maintain a separate parser or runtime. Deprecation messaging may begin after the first stable release, and removal requires at least one complete stable release cycle with the warning present.
+The first stable release keeps `dsh` as a second binary name. The compatibility binary does not maintain a separate parser, Runtime, or data root. `HARNESS_HOME` is the only writable root; legacy `DSH_HOME` data can only be copied through the collision-safe import. Deprecation messaging may begin after the first stable release, and removal requires at least one complete stable release cycle with the warning present.
 
 Internal `@harness-desktop/dsh-*` workspace package names remain private implementation details during the initial product migration. Public CLI artifacts bundle their runtime dependency graph and do not publish new packages under the `@harness-desktop` scope. A later scope migration updates all references atomically and includes an explicit data migration with rollback verification.
 
@@ -123,7 +125,11 @@ Internal `@harness-desktop/dsh-*` workspace package names remain private impleme
 
 Electron enables renderer sandboxing and context isolation and disables Node integration. The Content Security Policy rejects inline script execution and unapproved remote origins. External links open through an allowlisted main-process operation.
 
-The Host transport uses owned stdio streams and exposes no fixed TCP listener. Protocol inputs are validated at the process boundary. The main process treats an unexpected frame, stdout contamination, protocol-version mismatch, or child identity mismatch as a Host failure and closes the channel.
+The Runtime binds an operating-system-selected random port on `127.0.0.1` only and creates no fixed, LAN, or permanent external listener. Its endpoint token is available only to native launchers such as the CLI launcher and Electron main; it never appears in a command line, browser URL, transcript, diagnostic bundle, renderer message, or persisted browser storage.
+
+An authenticated native launcher mints a one-time, 60-second browser handoff that is retained only in Runtime memory until its first successful exchange. Navigation carries it in a URL fragment such as `/#handoff=<secret>`. The Dashboard exchanges the fragment on the exact loopback origin, immediately clears it with `history.replaceState`, and receives a session cookie marked `HttpOnly; SameSite=Strict; Path=/`. Runtime API endpoints and event streams reject Dashboard requests without that cookie and exact origin, as well as cross-origin credential requests.
+
+Handoff secrets and browser session identifiers never enter localStorage, sessionStorage, IndexedDB, diagnostics, or transcripts. Runtime shutdown invalidates every handoff and browser session. A recovered Desktop mints a replacement handoff; an ordinary browser tab shows a copyable `harness web` reconnection command.
 
 Credential providers store references in Harness data and secrets in Windows Credential Manager, macOS Keychain, or Linux Secret Service. Headless Linux and automation may use environment or `.env` references. A missing native credential store fails with guidance; the application does not create a custom plaintext or home-grown encrypted vault.
 
@@ -135,9 +141,11 @@ Telemetry and crash upload are disabled by default. Diagnostic bundles are gener
 
 ## Lifecycle and failure handling
 
-The desktop main process waits for a versioned ready handshake before exposing an operational Host. Heartbeats distinguish a busy Host from an exited or unreachable Host. Restart uses bounded backoff and stops after repeated early crashes so a configuration error cannot create an infinite restart loop.
+Every client waits for the Runtime health, process-identity, and protocol-version handshake before exposing an operational connection. A mismatch or unreachable recorded owner fails safely with a typed recovery result. No client starts a second Runtime or removes its lock until the recorded process identity is proved dead; replacement startup uses bounded backoff and stops after repeated early crashes.
 
-The Host flushes durable session events before reporting a completed step. On shutdown it stops accepting new work, cancels or settles active operations according to the user's choice, flushes persistence, closes protocol output, and then exits. The supervisor never reports success until process exit and stream settlement agree.
+The Runtime stays alive while it has an attached client, active agent work, or explicit background lease. `--daemon` and `--background` create the same in-process lease. `harness web --status` reports redacted health and lease state without starting a Runtime; `harness web --stop` releases only the background lease and never cancels agent work or disconnects another client.
+
+When no client, active work, or background lease remains, the Runtime begins its configurable idle period. It then stops accepting new work, cancels or settles active operations according to the user's choice, flushes persistence, removes its endpoint record, releases its lock, and exits. A background lease never causes automatic restart after a crash, sign-out, or application upgrade, and closing one frontend never stops work still used by another.
 
 Failures cross client boundaries as typed categories with a safe user message, stable code, optional corrective action, and redacted diagnostic detail. Desktop presents recovery actions; interactive CLI prints a concise error and keeps the session usable where possible; JSON mode emits a terminal error event and a non-zero exit code.
 
@@ -159,20 +167,20 @@ The `stable` channel cannot publish unless native install, first launch, task ex
 
 ## Delivery workstreams
 
-1. **Brand and application foundation:** establish centralized product metadata, `harness` and `dsh` entries, `apps/desktop`, build faces, source launches, and release scaffolding.
-2. **Desktop minimum loop:** deliver workspace selection, Host supervision, conversation streaming, approval, persistence, recovery, and the focus layout.
-3. **Desktop engineering workbench:** deliver Files, Diff, Terminal, Artifacts, Tasks, engineering layout, session leases, and cross-client takeover.
-4. **CLI productization:** deliver the Ink interaction loop, slash commands, JSON mode, exit-code contract, resume flow, diagnostics, and updater behavior.
+1. **Brand and Runtime foundation:** establish centralized product metadata, `harness` and `dsh` entries, `HARNESS_HOME` resolution and import, Runtime discovery, locking and local authentication, build faces, source launches, and release scaffolding.
+2. **Desktop minimum loop:** deliver Runtime discovery and attachment, the secured real Dashboard, conversation streaming, approval, recovery, and the focus layout.
+3. **Desktop engineering workbench:** deliver Files, Diff, Terminal, Artifacts, Tasks, the engineering layout, and shared-session observation and resume.
+4. **CLI and Web productization:** deliver the Ink interaction loop, slash commands, JSON mode, browser Dashboard handoff, background-lease status and stop, resume flow, diagnostics, and updater behavior.
 5. **Release completion:** deliver native packaging, signing, notarization, channel manifests, automatic updates, rollback, and the full platform smoke matrix.
 
-Each workstream must leave the repository runnable from source and produce an independently reviewable change. A later workstream may extend an earlier interface but may not create a second runtime, session format, settings store, or permission model.
+Each workstream must leave the repository runnable from source and produce an independently reviewable change. A later workstream may extend an earlier interface but may not create a second Runtime owner, persistence writer, session format, settings store, credential store, or permission model.
 
 ## Verification and acceptance
 
-Unit tests cover command parsing, desktop protocol validation, permission decisions, session lease transactions, takeover ordering, update manifests, and redaction. Package integration tests cover Host ready, crash, restart, graceful shutdown, stream settlement, and credential-provider failure.
+Unit tests cover command parsing, desktop protocol validation, permission decisions, Runtime discovery and identity checks, background leases, update manifests, and redaction. Package integration tests cover Runtime ready, attachment, crash recovery, idle and graceful shutdown, endpoint cleanup, and credential-provider failure.
 
-Keyless snapshots cover every new model-visible or product-user-visible transcript through a real runnable composition. Electron end-to-end tests use Playwright against the packaged renderer and real Host protocol. CLI end-to-end tests use a real pseudo-terminal to verify input editing, scrollback, streaming, Ctrl+C, terminal resize, color fallback, and exit codes.
+Keyless snapshots cover every new model-visible or product-user-visible transcript through a real runnable composition. Electron end-to-end tests use Playwright against the packaged renderer and real Runtime API. CLI end-to-end tests use a real pseudo-terminal to verify input editing, scrollback, streaming, Ctrl+C, terminal resize, color fallback, and exit codes.
 
-Cross-client tests open one persisted session from Desktop and CLI, prove concurrent read access, reject a second writer, complete a cooperative takeover, and recover a stale lease only after the recorded process identity is dead. Security tests exercise renderer privilege denial, malformed protocol frames, stdout contamination, credential redaction, malicious update manifests, and workspace escape requests.
+Cross-client tests create a project and session from each of the terminal CLI, browser Dashboard, and Desktop, observe the same durable state from the other two, reject concurrent session operations, and recover stale Runtime records only after the recorded process identity is dead. Lifecycle tests prove `harness web --status` never starts a Runtime, `harness web --stop` releases only the background lease, and one client closing does not stop another client's work. Security tests exercise loopback-only binding, endpoint-token non-disclosure, handoff expiry and single use, cookie-only Dashboard authentication, renderer privilege denial, credential redaction, malicious update manifests, and workspace escape requests.
 
-The first usable release is accepted when a user can install either client, open a local project, start an agent task, approve tools, inspect modifications, resume the durable session, and transfer write ownership between Desktop and CLI on every supported platform. The first stable release additionally requires signed artifacts, verified automatic update, verified rollback, no known secret leakage, and green platform smoke tests.
+The first usable release is accepted when a user can install the CLI and Desktop, run the terminal CLI, browser Dashboard, and Desktop independently, open the same local project, exchange work through one shared session history, approve tools, inspect modifications, and close any one client without losing another client's active work on every supported platform. Background Web acceptance also requires observable lease status and a stop operation that leaves active work and attached clients intact. The first stable release additionally requires signed artifacts, verified automatic update, verified rollback, no known secret leakage, and green platform smoke tests.
