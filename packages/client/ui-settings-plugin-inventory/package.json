@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-client-ui-settings-plugin-inventory",
   "description": "Read-only Cordis Loader inventory tab in Web Plugins settings",
-  "version": "0.1.0-rc.6",
+  "version": "1.0.0",
   "publishConfig": {
     "access": "public"
   },
