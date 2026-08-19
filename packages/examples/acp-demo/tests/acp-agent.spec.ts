@@ -64,7 +64,7 @@ async function withIsolatedSkillHomes<T>(run: () => Promise<T>): Promise<T> {
   const oldHarnessHome = process.env.HARNESS_HOME
   const oldAgentsHome = process.env.DSH_AGENTS_HOME
   const home = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-default-skills-'))
-  process.env.HARNESS_HOME = join(home, '.dsh')
+  process.env.HARNESS_HOME = join(home, '.harness-home')
   process.env.DSH_AGENTS_HOME = join(home, '.agents')
   try {
     return await run()

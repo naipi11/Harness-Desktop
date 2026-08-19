@@ -23,7 +23,7 @@ describe('web daemon help snapshot', () => {
     try {
       const command = cliCommand()
       const result = await execa(command.executable, [...command.args, 'web', '--daemon', '--help'], {
-        env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
+        env: { ...process.env, HARNESS_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
         extendEnv: false,
         input: '',
         reject: false,

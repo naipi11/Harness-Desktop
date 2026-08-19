@@ -96,7 +96,7 @@ function createProfileLifecycleFixture(): ProfileLifecycleFixture {
     '  }, 20)',
     '  // Echo the mounted generation so the hot-reload e2e can assert both an',
     '  // applied override and its removal reverting to this bundle default.',
-    "  writeFileSync(join(process.env.DSH_HOME, 'config-echo'), String(config.generation ?? 'bundle-default'))",
+    "  writeFileSync(join(process.env.HARNESS_HOME, 'config-echo'), String(config.generation ?? 'bundle-default'))",
     "  writeFileSync(process.env.RAW_READY_FILE, 'ready')",
     '  void ctx.loader.await().then(() => {',
     "    if (active) writeFileSync(process.env.RAW_SETTLED_FILE, 'settled')",
@@ -150,7 +150,7 @@ function startProfileLifecycle(fixture: ProfileLifecycleFixture, args: readonly 
     input: '',
     reject: false,
     env: {
-      DSH_HOME: fixture.home,
+      HARNESS_HOME: fixture.home,
       RAW_READY_FILE: fixture.ready,
       RAW_SETTLED_FILE: fixture.settled,
       RAW_DISPOSED_FILE: fixture.disposed,
@@ -256,7 +256,7 @@ function createStartupFixture(): StartupFixture {
     '    interrupted = true',
     "    process.emit('SIGTERM')",
     '  }, 20)',
-    "  writeFileSync(join(process.env.DSH_HOME, 'config-echo'), String(config.generation ?? 'bundle-default'))",
+    "  writeFileSync(join(process.env.HARNESS_HOME, 'config-echo'), String(config.generation ?? 'bundle-default'))",
     "  writeFileSync(process.env.RAW_READY_FILE, 'ready')",
     '  ctx.effect(() => () => { clearInterval(heartbeat) })',
     '}',
@@ -267,7 +267,7 @@ function createStartupFixture(): StartupFixture {
     "import { join } from 'node:path'",
     "export const name = 'reload-witness'",
     'export function apply(ctx, config = {}) {',
-    "  writeFileSync(join(process.env.DSH_HOME, 'witness'), String(config.generation ?? 'bundle-default'))",
+    "  writeFileSync(join(process.env.HARNESS_HOME, 'witness'), String(config.generation ?? 'bundle-default'))",
     '}',
     '',
   ].join('\n'))
@@ -315,7 +315,7 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
     timeout: 25_000,
     killSignal: 'SIGKILL',
     env: {
-      DSH_HOME: fixture.home,
+      HARNESS_HOME: fixture.home,
       RAW_READY_FILE: fixture.ready,
       RAW_INTERRUPT_FILE: fixture.interrupt,
     },
@@ -364,7 +364,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
     const home = mkdtempSync(join(tmpdir(), 'dsh-app-help-'))
     try {
       const web = await runBuiltBin(['--profile', 'web', '--help'], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
       expect(web.code).toBe(0)
@@ -374,7 +374,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       expect(web.stdout).not.toContain('dsh web: http://')
 
       const wildcardHost = await runBuiltBin(['web', '--host', '0.0.0.0'], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
       expect(wildcardHost.code).toBe(1)
@@ -383,7 +383,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       expect(wildcardHost.stderr).not.toContain('dsh web: http://')
 
       const headlessHelp = await runBuiltBin(['--profile', 'headless', '--help'], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
       expect(headlessHelp.code).toBe(0)
@@ -391,7 +391,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       expect(headlessHelp.stdout).toContain('Usage: dsh --profile headless')
 
       const missingTask = await runBuiltBin(['--profile', 'headless'], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
       })
       expect(missingTask.code).toBe(1)
@@ -411,7 +411,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-headless-'))
     try {
       const result = await runBuiltBin(['--profile', 'headless', 'answer', 'from', 'the', 'published', 'entry'], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
         DEEPSEEK_API_KEY: apiKey,
         DEEPSEEK_BASE_URL: server.baseURL,
@@ -442,7 +442,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
   it('fails loud on a nonexistent profile with the plugin-command hint', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-missing-profile-'))
     try {
-      const result = await runBuiltBin(['--profile', 'nope'], { DSH_HOME: home })
+      const result = await runBuiltBin(['--profile', 'nope'], { HARNESS_HOME: home })
       expect(result.code).toBe(1)
       expect(result.stderr).toContain('profile "nope" does not exist')
       expect(result.stderr).toContain('dsh plugin --profile nope add')
@@ -466,7 +466,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       const result = await runBuiltBin(
         ['--profile', 'environment-probe'],
         {
-          DSH_HOME: home,
+          HARNESS_HOME: home,
           DSH_TELEMETRY_DISABLED: '1',
           DEEPSEEK_API_KEY: undefined,
           DEEPSEEK_BASE_URL: server.baseURL,
@@ -499,7 +499,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
     const home = mkdtempSync(join(tmpdir(), 'dsh-invalid-patch-'))
     try {
       const result = await runBuiltBin(['--profile', 'web', '--patch', invalidProvider], {
-        DSH_HOME: home,
+        HARNESS_HOME: home,
         DEEPSEEK_API_KEY: 'keyless-invalid-config',
         DSH_TELEMETRY_DISABLED: '1',
       })
@@ -557,7 +557,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       writeFileSync(profilePatch, '[]\n')
       await waitForFile(fixture.ready)
       expect(readFileSync(configFile, 'utf8')).toBe('bundle-default')
-      // The home-level user layer ($DSH_HOME/cordis.patch.yml) is live too
+      // The home-level user layer ($HARNESS_HOME/cordis.patch.yml) is live too
       // and outranks the per-profile layer.
       rmSync(fixture.ready)
       writeFileSync(join(fixture.home, 'cordis.patch.yml'), [
@@ -675,7 +675,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
         timeout: 60_000,
         killSignal: 'SIGKILL',
         reject: false,
-        env: { DSH_HOME: home },
+        env: { HARNESS_HOME: home },
       })
       expect(result.exitCode).toBe(0)
       const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'anchor', 'package.json'), 'utf8')) as {
@@ -709,7 +709,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       writeFileSync(join(profileDir, 'cordis.patch.yml'), '[]\n')
       // v1: no dsh manifest — a plain dependency.
       writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: 'late-bundle', version: '1.0.0' }))
-      const first = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { DSH_HOME: home })
+      const first = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { HARNESS_HOME: home })
       expect(first.code).toBe(0)
       let manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as { dsh: { profile: { bundles: string[] } } }
       expect(manifest.dsh.profile.bundles).toEqual(['@harness-desktop/dsh-base'])
@@ -718,7 +718,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
         name: 'late-bundle', version: '2.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
       }))
       writeFileSync(join(installed, 'cordis.patch.yml'), '[]\n')
-      const second = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { DSH_HOME: home })
+      const second = await runBuiltBin(['plugin', '--profile', 'up', 'root'], { HARNESS_HOME: home })
       expect(second.code).toBe(0)
       manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as { dsh: { profile: { bundles: string[] } } }
       expect(manifest.dsh.profile.bundles).toEqual(['@harness-desktop/dsh-base', 'late-bundle'])
@@ -733,7 +733,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
     afterEach(() => { rmSync(home, { recursive: true, force: true }) })
 
     it('prints the web profile bundle layers without a user layer', async () => {
-      const { stdout, code, stderr } = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { DSH_HOME: home })
+      const { stdout, code, stderr } = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { HARNESS_HOME: home })
       expect(code).toBe(0)
       expect(stderr).toBe('')
       expect(stdout).toContain("name: '@harness-desktop/dsh-agent-loop'")
@@ -745,7 +745,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
     it('prints the headless profile without Host or browser layers', async () => {
       const { stdout, code, stderr } = await runBuiltBin(
         ['--profile', 'headless', '--dump-default-config'],
-        { DSH_HOME: home },
+        { HARNESS_HOME: home },
       )
       expect(code).toBe(0)
       expect(stderr).toBe('')
@@ -757,7 +757,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
 
     it('composes the profile user layer and a --patch overlay in order', async () => {
       // Auto-init the web profile first, then write its user layer.
-      const init = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { DSH_HOME: home })
+      const init = await runBuiltBin(['--profile', 'web', '--dump-default-config'], { HARNESS_HOME: home })
       expect(init.code).toBe(0)
       const profilePatch = join(home, 'profiles', 'web', 'cordis.patch.yml')
       writeFileSync(profilePatch, [
@@ -784,7 +784,7 @@ describe.skipIf(!existsSync(harnessBin) || !existsSync(dshBin))('CLI BUILT bins 
       ].join('\n'))
       const { stdout, code, stderr } = await runBuiltBin(
         ['--profile', 'web', '--patch', overlay, '--dump-config'],
-        { DSH_HOME: home },
+        { HARNESS_HOME: home },
       )
       expect(code).toBe(0)
       expect(stdout).toContain('provider: configured-provider')

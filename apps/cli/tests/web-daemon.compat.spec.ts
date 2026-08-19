@@ -33,7 +33,7 @@ async function runCli(args: readonly string[], home: string): Promise<{ code: nu
     env: {
       ...process.env,
       DEEPSEEK_API_KEY: 'dsh-web-daemon-smoke-key',
-      DSH_HOME: home,
+      HARNESS_HOME: home,
       DSH_TELEMETRY_DISABLED: '1',
     },
     extendEnv: false,

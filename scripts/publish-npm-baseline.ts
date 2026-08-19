@@ -470,6 +470,12 @@ class InstalledBundleSmoke {
         )
       }
       this.probeWeb(bin, consumerRoot, environment)
+      const harnessHome = environment.HARNESS_HOME
+      if (harnessHome === undefined) throw new Error('installed artifact environment omitted HARNESS_HOME')
+      const profileManifest = resolve(harnessHome, 'profiles', 'web', 'package.json')
+      if (!existsSync(profileManifest)) {
+        throw new Error(`installed dsh Web probe did not create its profile under HARNESS_HOME: ${profileManifest}`)
+      }
       console.log('publish-npm-baseline: installed dsh entry and Web startup probes passed')
     } finally {
       rmSync(consumerRoot, { recursive: true, force: true })
@@ -912,6 +918,7 @@ function installedArtifactEnvironment(consumerRoot: string): NodeJS.ProcessEnv {
   const environment = npmClientEnvironment()
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
+  delete environment.DSH_HOME
   environment.HARNESS_HOME = resolve(consumerRoot, '.harness-home')
   environment.DSH_AGENTS_HOME = resolve(consumerRoot, '.agents')
   environment.DSH_TELEMETRY_DISABLED = '1'

@@ -16,7 +16,7 @@
  * checkout cannot stand in for a missing file here.
  */
 
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -37,6 +37,7 @@ function consumerEnvironment(consumerRoot: string): NodeJS.ProcessEnv {
   delete environment.NPM_CONFIG_USER_AGENT
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
+  delete environment.DSH_HOME
   environment.HARNESS_HOME = resolve(consumerRoot, '.harness-home')
   environment.DSH_AGENTS_HOME = resolve(consumerRoot, '.agents')
   environment.DSH_TELEMETRY_DISABLED = '1'
@@ -111,6 +112,13 @@ function main(): void {
     const version = capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment })
     if (version !== expected.version) {
       throw new Error(`installed ${entry.packageName} --version reported ${JSON.stringify(version)}, expected ${expected.version}`)
+    }
+    capture(process.execPath, [bin, '--profile', 'headless', '--dump-default-config'], { cwd: consumerRoot, env: environment })
+    const harnessHome = environment.HARNESS_HOME
+    if (harnessHome === undefined) throw new Error('installed artifact environment omitted HARNESS_HOME')
+    const profileManifest = join(harnessHome, 'profiles', 'headless', 'package.json')
+    if (!existsSync(profileManifest)) {
+      throw new Error(`installed ${entry.packageName} did not create its profile under HARNESS_HOME: ${profileManifest}`)
     }
     console.log(`release verify-packed-install: installed ${entry.packageName} reports ${version}`)
   } finally {

@@ -990,6 +990,9 @@ importers:
       '@harness-desktop/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../../vendor/timer
+      '@harness-desktop/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../credentials/credentials
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths

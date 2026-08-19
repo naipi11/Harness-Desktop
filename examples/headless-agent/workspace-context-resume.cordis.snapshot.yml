@@ -22,10 +22,10 @@
 - id: agent
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js process.env.HARNESS_HOME
     agents: []
     workspaceContext:
       maxBytes: 65536
-      harnessHome: !!js process.cwd() + '/.harness-home'
     skills:
       enabled: false
     toolBash: false

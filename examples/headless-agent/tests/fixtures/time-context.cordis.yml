@@ -15,6 +15,7 @@
 - id: agent-spine
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js process.env.HARNESS_HOME
     agents:
       - id: main
         provider: time-context-mock

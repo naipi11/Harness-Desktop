@@ -3,17 +3,21 @@
 # the composition base, while user-plane values resolve per request through
 # the two providers below.
 
-# User-settings document (`$DSH_HOME/settings.yaml`, hot-reloaded): a
+# User-settings document (`$HARNESS_HOME/settings.yaml`, hot-reloaded): a
 # `llm-deepseek:` section there overrides the adapter entry below without a
 # restart.
 - id: settings
   name: '@harness-desktop/dsh-settings-file'
+  config:
+    harnessHome: !!js process.env.HARNESS_HOME
 
-# Credential store: the live process environment over `$DSH_HOME/.credentials.yaml`
+# Credential store: the live process environment over `$HARNESS_HOME/.credentials.yaml`
 # (owner-only file, hot-reloaded). The adapter resolves `DEEPSEEK_API_KEY`
 # through it at each request, so no key is inlined in this file.
 - id: credentials
   name: '@harness-desktop/dsh-credentials-local'
+  config:
+    harnessHome: !!js process.env.HARNESS_HOME
 
 # The DeepSeek adapter. Swap to '@harness-desktop/dsh-llm-pi-ai' for the pi-ai-backed
 # twin (a `providers` dict keyed by route; `reasoning: high` replaces
@@ -44,6 +48,7 @@
 - id: agent-spine
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js process.env.HARNESS_HOME
     agents:
       - id: main
         provider: deepseek-official
@@ -63,7 +68,7 @@
 - id: persistence
   name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: './.sessions'
+    root: !!js process.env.HARNESS_HOME + '/sessions'
     compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
 
 - id: checkpoint-policy

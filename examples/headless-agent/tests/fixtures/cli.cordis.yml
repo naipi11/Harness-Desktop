@@ -12,13 +12,13 @@
       - id: agent-spine
         name: '@harness-desktop/dsh-agent-spine-demo'
         config:
+          harnessHome: !!js process.env.HARNESS_HOME
           agents:
             - id: main
               provider: cli-mock
               model: cli-mock
               cwd: !!js process.cwd()
           workspaceContext: false
-          dshHome: './.dsh-home'
           skills:
             filesystem:
               agentsHome: './.agents-home'
@@ -26,4 +26,4 @@
       - id: persistence
         name: '@harness-desktop/dsh-session-persistence-jsonl'
         config:
-          root: './.sessions'
+          root: !!js process.env.HARNESS_HOME + '/sessions'
