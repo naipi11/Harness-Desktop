@@ -11,6 +11,7 @@ import {
 import * as localRuntime from '@harness-desktop/dsh-host-local-runtime'
 import { Context } from '@harness-desktop/cordis'
 import { ShellEnvRegistry } from '@harness-desktop/dsh-shell-env'
+import { LocalAttachmentStore } from '@harness-desktop/dsh-attachment-local'
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)))
 
@@ -147,6 +148,17 @@ describe('Harness data-root resolver', () => {
 
     expect(provider.home).toBe('/srv/harness' as HarnessHome)
     expect(provider.path('settings.yaml')).toBe('/srv/harness/settings.yaml')
+  })
+
+  it('mounts a durable writer from the resolved provider, not a caller path', () => {
+    const provider = createLocalRuntimePlugin({
+      platform: 'linux',
+      env: { HARNESS_HOME: '/srv/harness' },
+      homeDir: '/home/ada',
+    })
+
+    const attachment = new LocalAttachmentStore(new Context(), { harnessHome: provider })
+    expect(attachment.root).toBe('/srv/harness/attachments/v1')
   })
 
   it('derives platform defaults from explicit test inputs', () => {

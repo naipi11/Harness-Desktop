@@ -24,6 +24,7 @@ import {
   type ProfileManifest,
 } from '@harness-desktop/dsh-app-boot'
 import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 import type { CliCommandName } from './main.ts'
 
@@ -121,7 +122,7 @@ function anchorPathSpec(argument: string, cwd: string): string {
  * @returns the pnpm exit code.
  */
 export function runPlugin(commandName: CliCommandName, profile: string, args: readonly string[]): number {
-  const dir = resolveProfileDir(profile)
+  const dir = resolveProfileDir(profile, createLocalRuntimePlugin().home)
   if (!existsSync(join(dir, 'package.json'))) {
     initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
     process.stderr.write(`${commandName}: initialized profile ${profile} at ${dir}\n`)

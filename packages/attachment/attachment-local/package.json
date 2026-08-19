@@ -25,6 +25,7 @@
     "@harness-desktop/dsh-attachment": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^",
     "@harness-desktop/dsh-home-paths": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@harness-desktop/dsh-attachment": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^",
     "@harness-desktop/dsh-home-paths": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   }
 }

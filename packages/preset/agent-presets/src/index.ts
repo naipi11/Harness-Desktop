@@ -28,7 +28,7 @@ import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type 
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@harness-desktop/dsh-agent'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@harness-desktop/dsh-settings'
-import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
+import type { HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
@@ -84,6 +84,7 @@ export class AgentPresets extends Service {
 
   /** Runtime schema for the preset roster. */
   static Config = z.object({
+    harnessHome: z.object({ home: z.string(), path: z.any() }) as z<HarnessHomeProvider>,
     default: z.string().required(),
     roots: z.array(z.object({
       path: z.string().required(),
@@ -130,9 +131,13 @@ export class AgentPresets extends Service {
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
     this.selfCtx = ctx
-    this.resolvedRoots = config.includeUserRoot
-      ? [...config.roots, { path: createLocalRuntimePlugin().path(USER_PRESET_DIR), trust: 'user' }]
-      : [...config.roots]
+    if (config.includeUserRoot && config.harnessHome === undefined) {
+      throw new Error('agent-presets: harnessHome is required when includeUserRoot is enabled')
+    }
+    const userRoot = config.harnessHome?.path(USER_PRESET_DIR)
+    this.resolvedRoots = userRoot === undefined
+      ? [...config.roots]
+      : [...config.roots, { path: userRoot, trust: 'user' }]
     // Deliberately not `installSettingsSection`: that helper exists to re-judge
     // what a consumer DERIVED from the source — memoized resolutions,
     // registration-level facts — across attach, detach, and change. Nothing

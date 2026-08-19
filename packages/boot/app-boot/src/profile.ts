@@ -29,7 +29,6 @@ import {
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@harness-desktop/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@harness-desktop/cordis-plugin-include'
-import { resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { loadOverlayPatches } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
@@ -101,7 +100,7 @@ export interface Profile {
  * @param home - the Harness home; defaults to {@link resolveHarnessHome}.
  * @returns the absolute profile directory (which may not exist yet).
  */
-export function resolveProfileDir(name: string, home: string = resolveHarnessHome().path): string {
+export function resolveProfileDir(name: string, home: string): string {
   if (name === '' || name.includes('/') || name.includes('\\') || name === '.' || name === '..'
     // The launcher-maintained flat module fallback lives at this sibling path.
     || name === 'node_modules') {
@@ -227,7 +226,7 @@ function ensureSymlink(link: string, target: string): void {
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveHarnessHome}.
  */
-export function healProfilesModuleFallback(installAnchor: string, home: string = resolveHarnessHome().path): void {
+export function healProfilesModuleFallback(installAnchor: string, home: string): void {
   const profilesDir = join(home, PROFILES_DIR)
   const modulesDir = join(profilesDir, 'node_modules')
   mkdirSync(modulesDir, { recursive: true })
@@ -377,7 +376,7 @@ export function resolveBundleDir(
  * @returns the loaded profile (empty `patches` when the user layer is skipped).
  */
 export function loadProfile(
-  binName: string, name: string, installAnchor: string, home: string = resolveHarnessHome().path,
+  binName: string, name: string, installAnchor: string, home: string,
   options: { userLayer?: boolean } = {},
 ): Profile {
   const dir = resolveProfileDir(name, home)

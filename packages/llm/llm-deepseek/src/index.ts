@@ -13,6 +13,7 @@
 
 import type { Context } from '@harness-desktop/cordis'
 import z from '@harness-desktop/schemastery'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@harness-desktop/dsh-llm'
 import type { RetryPolicyConfig } from '@harness-desktop/dsh-llm'
 import { credentialRef } from '@harness-desktop/dsh-credentials'
@@ -39,7 +40,7 @@ export type { RequestDefaults } from './serialize.ts'
 export type * from './types.ts'
 
 export const name = 'llm-deepseek'
-export const inject = ['llm']
+export const inject = ['llm', 'harnessHome']
 
 const NS = settingsNamespace('llm-deepseek')
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
@@ -246,7 +247,11 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   let userId: AnonymousUserId | undefined
-  const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
+  const resolveUserId = (): AnonymousUserId => {
+    const harnessHome = (ctx as unknown as { harnessHome?: HarnessHome }).harnessHome
+    if (harnessHome === undefined) throw new Error('llm-deepseek: harnessHome must be injected before provider requests')
+    return userId ??= getOrCreateAnonymousUserId(harnessHome)
+  }
   const adapter = new DeepSeekAdapter({ options, resolveApiKey, resolveUserId })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },

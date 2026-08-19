@@ -15,7 +15,7 @@ import { Context, type FiberState } from '@harness-desktop/cordis'
 import Loader, { type Entry, type EntryOptions } from '@harness-desktop/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@harness-desktop/cordis-plugin-include'
 import Group from '@harness-desktop/cordis-plugin-group'
-import { createLocalRuntimePlugin, resolveHarnessHome, type HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import { createLocalRuntimePlugin, resolveHarnessHome, type HarnessHome, type HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
 import type {} from '@harness-desktop/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
@@ -25,6 +25,7 @@ declare module '@harness-desktop/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
     harnessHome?: HarnessHome
+    harnessHomeProvider?: HarnessHomeProvider
     harnessHomePath?: ReturnType<typeof createLocalRuntimePlugin>['path']
   }
 }
@@ -770,6 +771,7 @@ export async function boot(
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     const harnessHome = createLocalRuntimePlugin()
     ctx.provide('harnessHome', harnessHome.home)
+    ctx.provide('harnessHomeProvider', harnessHome)
     ctx.provide('harnessHomePath', harnessHome.path)
     await ctx.plugin(Loader)
     await prepare?.(ctx)

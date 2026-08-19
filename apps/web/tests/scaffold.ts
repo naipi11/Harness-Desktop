@@ -507,6 +507,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // This direct Loader harness supplies the same root-path capability as app-boot.
     const homeProvider = createLocalRuntimePlugin({ env: { ...process.env, HARNESS_HOME: harnessHome } })
     ctx.provide('harnessHome', homeProvider.home)
+    ctx.provide('harnessHomeProvider', homeProvider)
     ctx.provide('harnessHomePath', homeProvider.path)
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on

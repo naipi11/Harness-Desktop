@@ -22,6 +22,7 @@ import LocalCredentialProvider from '@harness-desktop/dsh-credentials-local'
 import { settingsNamespace } from '@harness-desktop/dsh-settings'
 import FileSettingsProvider from '@harness-desktop/dsh-settings-file'
 import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import * as LlmDeepSeek from '@harness-desktop/dsh-llm-deepseek'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -82,6 +83,7 @@ async function loadComposition(
   ].join('\n'))
 
   const ctx = new Context()
+  ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('harnessHome', root)
   context = ctx
   ctx.baseUrl = pathToFileURL(root).href + '/'
   await ctx.plugin(Loader)
@@ -117,7 +119,7 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(ctx.get('settings')!.describe().map(entry => entry.ns)).toEqual([NS])
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(serverA.headers[0]?.authorization).toBe('Bearer boot-key')
-    expect(serverA.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())
+    expect(serverA.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId(root! as HarnessHome))
 
     // External edits, exactly as a user or the web UI would leave them on disk.
     await writeFile(settingsPath, `llm-deepseek:\n  baseURL: ${serverB.url}\n`)

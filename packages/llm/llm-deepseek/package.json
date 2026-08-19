@@ -39,6 +39,7 @@
     "@harness-desktop/dsh-settings": "workspace:^",
     "@harness-desktop/dsh-timeout": "workspace:^",
     "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
@@ -53,6 +54,7 @@
     "@harness-desktop/dsh-settings": "workspace:^",
     "@harness-desktop/dsh-timeout": "workspace:^",
     "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   }
 }

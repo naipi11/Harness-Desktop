@@ -50,6 +50,8 @@ export interface PresetRoot {
 
 /** Plugin config: which preset is the default, and where presets live. */
 export interface Config {
+  /** The one resolved writable root supplied by the application entrypoint. */
+  harnessHome?: import('@harness-desktop/dsh-host-local-runtime').HarnessHomeProvider
   /** Preset id mounted when a caller names none. Missing at mount time fails loud. */
   default: string
   /** Scanned roots in precedence order; an earlier root wins a duplicate id. */

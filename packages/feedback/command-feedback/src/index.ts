@@ -7,13 +7,14 @@
  */
 
 import type { Context } from '@harness-desktop/cordis'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import type { CommandInvocation, CommandResult } from '@harness-desktop/dsh-commands'
 import type { SessionTelemetryBackend, SessionTelemetrySharingStatus } from '@harness-desktop/dsh-session-telemetry'
 import type { Session } from '@harness-desktop/dsh-session'
 import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
 
 export const name = 'command-feedback'
-export const inject = ['commands']
+export const inject = ['commands', 'harnessHome']
 
 const USAGE = 'Usage: /feedback <text>'
 
@@ -89,10 +90,12 @@ function executeFeedbackCommand(invocation: CommandInvocation, ctx: Context): Co
     return { kind: 'error', text: `Feedback text is required. ${USAGE}` }
   }
   recordFeedback(invocation.agent.session, invocation.rawInput)
+  const harnessHome = (ctx as unknown as { harnessHome?: HarnessHome }).harnessHome
+  if (harnessHome === undefined) throw new Error('command-feedback: harnessHome must be injected before command registration')
   const telemetry = ctx.get('sessionTelemetry')
   return {
     kind: 'success',
-    text: `Feedback recorded for session ${invocation.agent.session.id}\nAnonymous user: ${getOrCreateAnonymousUserId()}. ${sharingDisclosure(telemetry)}`,
+    text: `Feedback recorded for session ${invocation.agent.session.id}\nAnonymous user: ${getOrCreateAnonymousUserId(harnessHome)}. ${sharingDisclosure(telemetry)}`,
   }
 }
 

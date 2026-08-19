@@ -1,10 +1,10 @@
 /** Local durable attachment backend rooted below `HARNESS_HOME`. @module @harness-desktop/dsh-attachment-local */
 
-import { join, resolve } from 'node:path'
 import { Context } from '@harness-desktop/cordis'
 import z from '@harness-desktop/schemastery'
 import { AttachmentStore } from '@harness-desktop/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@harness-desktop/dsh-attachment'
+import type { HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
 
 export { detectImage } from './image.ts'
@@ -22,7 +22,7 @@ export const DEFAULT_MAX_IMAGE_PIXELS = 40_000_000
 /** Local attachment backend configuration. */
 export interface Config {
   /** Absolute Harness home injected by the host composition. */
-  harnessHome?: string
+  harnessHome?: HarnessHomeProvider
   /** Maximum encoded bytes accepted for one image. */
   maxImageBytes?: number
   /** Maximum image count accepted in one submitted message. */
@@ -36,7 +36,7 @@ export interface Config {
 /** Persistent content-addressed local attachment store. */
 export class LocalAttachmentStore extends AttachmentStore {
   static Config: z<Config> = z.object({
-    harnessHome: z.string(),
+    harnessHome: z.object({ home: z.string(), path: z.any() }) as z<HarnessHomeProvider>,
     maxImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_BYTES),
     maxImagesPerMessage: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGES_PER_MESSAGE),
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
@@ -50,7 +50,7 @@ export class LocalAttachmentStore extends AttachmentStore {
   constructor(ctx: Context, config: Config) {
     super(ctx)
     if (config.harnessHome === undefined) throw new Error('attachment-local: harnessHome is required')
-    this.root = resolve(join(config.harnessHome, 'attachments', 'v1'))
+    this.root = config.harnessHome.path('attachments', 'v1')
     this.imageLimits = Object.freeze({
       maxImageBytes: config.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES,
       maxImagesPerMessage: config.maxImagesPerMessage ?? DEFAULT_MAX_IMAGES_PER_MESSAGE,

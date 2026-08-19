@@ -29,7 +29,7 @@ import {
   watchUserPatches,
   type Profile,
 } from '@harness-desktop/dsh-app-boot'
-import { resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import { createLocalRuntimePlugin, type HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
@@ -46,8 +46,8 @@ const NAME = 'dsh'
  * `$HARNESS_HOME` may be set by the test or launcher after import.
  * @returns the absolute patch-file path.
  */
-export function homePatchPath(): string {
-  return join(resolveHarnessHome().path, PROFILE_PATCH_FILENAME)
+export function homePatchPath(home: HarnessHome): string {
+  return join(home, PROFILE_PATCH_FILENAME)
 }
 
 /** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
@@ -95,9 +95,9 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
-  healProfilesModuleFallback(INSTALL_ANCHOR)
-  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
+export function prepareProfile(name: string, home: HarnessHome, userLayer = true): Profile {
+  healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, home, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
 }
@@ -142,9 +142,10 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  home: HarnessHome,
 ): ComposedProfile {
-  const profile = prepareProfile(name)
-  const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const profile = prepareProfile(name, home)
+  const homePatches = loadOptionalPatches(NAME, homePatchPath(home)) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
@@ -205,7 +206,8 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const harnessHome = createLocalRuntimePlugin().home
+  const composed = composeProfile(options.profile, options.patchFiles, harnessHome)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -240,7 +242,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const composeLive = (): PatchOptions[] => structuredClone([
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    ...loadOptionalPatches(NAME, homePatchPath(harnessHome)) ?? [],
     ...composed.overlays,
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
@@ -289,7 +291,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       })
       await watchUserPatches(ctx, {
         binName: NAME,
-        filename: homePatchPath(),
+        filename: homePatchPath(harnessHome),
         compose: composeLive,
       })
     } catch (error) {

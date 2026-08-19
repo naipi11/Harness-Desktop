@@ -12,6 +12,7 @@ import CommandRuntime from '@harness-desktop/dsh-commands'
 import SessionStore, { SessionId } from '@harness-desktop/dsh-session'
 import * as CommandFeedback from '@harness-desktop/dsh-command-feedback'
 import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 let root: string | undefined
 let context: Context | undefined
@@ -64,6 +65,7 @@ describe('/feedback real Loader composition through cordis.yml', () => {
     ].join('\n'))
 
     context = new Context()
+    ;(context as unknown as { provide(name: string, value: unknown): void }).provide('harnessHome', root)
     context.baseUrl = pathToFileURL(root).href + '/'
     await context.plugin(Loader)
     context.loader.builtins.include = Include
@@ -90,7 +92,7 @@ describe('/feedback real Loader composition through cordis.yml', () => {
     expect(context.commands.list(owner).map(command => command.name)).toContain('feedback')
 
     const accepted = await context.commands.execute(owner, '/feedback the diff view is unreadable', signal)
-    const userId = getOrCreateAnonymousUserId({ env: { DSH_HOME: root } })
+    const userId = getOrCreateAnonymousUserId(root as HarnessHome)
     expect(accepted?.result).toEqual({
       kind: 'success',
       text: `Feedback recorded for session feedback-loader-agent\nAnonymous user: ${userId}. Session sharing is not configured.`,

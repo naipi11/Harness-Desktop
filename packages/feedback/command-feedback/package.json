@@ -37,6 +37,7 @@
     "@harness-desktop/dsh-session": "workspace:^",
     "@harness-desktop/dsh-session-telemetry": "workspace:^",
     "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
@@ -49,6 +50,7 @@
     "@harness-desktop/dsh-session": "workspace:^",
     "@harness-desktop/dsh-session-telemetry": "workspace:^",
     "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"
   }
 }

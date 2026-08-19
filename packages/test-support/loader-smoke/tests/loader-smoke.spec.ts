@@ -37,7 +37,7 @@ describe('runLoaderSmoke', () => {
       marker: 'present',
       input: '',
     })
-    expect(canonicalTempPath(output.harnessHome)).toBe(canonicalTempPath(join(output.cwd, '.dsh')))
+    expect(canonicalTempPath(output.harnessHome)).toBe(canonicalTempPath(join(output.cwd, '.harness-home')))
     expect(canonicalTempPath(output.agentsHome)).toBe(canonicalTempPath(join(output.cwd, '.agents')))
     expect(result.stderr).toContain('fixture stderr')
     expect(existsSync(output.cwd)).toBe(false)

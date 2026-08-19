@@ -15,6 +15,7 @@
 import { createRequire } from 'node:module'
 import z from '@harness-desktop/schemastery'
 import type { Context } from '@harness-desktop/cordis'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import type {} from '@harness-desktop/dsh-command-feedback'
 import {
   SessionTelemetryBackend,
@@ -145,7 +146,7 @@ const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumbe
  * SDK state and listens only to warn when recorded feedback stays local.
  */
 export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
-  static inject = ['sessions']
+  static inject = ['sessions', 'harnessHome']
   static Config = Config
 
   private readonly directEmit: SessionTelemetrySink['emit']
@@ -171,6 +172,8 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     if (url === undefined || url.length === 0) {
       throw new Error('session-telemetry-otel: exporter.url is required (the full OTLP logs endpoint)')
     }
+    const harnessHome = (ctx as unknown as { harnessHome?: HarnessHome }).harnessHome
+    if (harnessHome === undefined) throw new Error('session-telemetry-otel: harnessHome must be injected before telemetry starts')
     let parsed: URL
     try {
       parsed = new URL(url)
@@ -201,7 +204,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
         // OTel semconv's standard user attribute, carried once per export
         // batch on the Resource rather than per record: the collector
         // aggregates by Resource, and the id is process-stable anyway.
-        'user.id': getOrCreateAnonymousUserId(),
+        'user.id': getOrCreateAnonymousUserId(harnessHome),
       }),
       processors: [
         new BatchLogRecordProcessor({

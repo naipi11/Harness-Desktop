@@ -422,3 +422,4 @@
       name: '@harness-desktop/dsh-agent-presets'
       config:
         default: standard
+        harnessHome: !!js harnessHomeProvider
