@@ -34,7 +34,7 @@ With no injected adapter, values come from the launcher's frozen process environ
 
 Values never enter files this package writes, so the reference metadata is not a secret-bearing document. The adapter is the only value holder: the read-only environment snapshot, or a writable platform store the model's tool processes cannot read.
 
-Each mutation is serialized. The provider atomically persists candidate reference metadata before calling the adapter, so a metadata-write failure leaves the adapter untouched. An adapter mutation must reject without changing its durable value; when it rejects, the provider restores the previous metadata and reports the adapter failure, including a metadata-rollback failure if both occur. After both commits succeed, the provider publishes the update.
+Mutations issued to one provider instance are serialized. The provider atomically persists candidate reference metadata before calling the adapter, so a metadata-write failure leaves the adapter untouched. An adapter mutation must reject without changing its durable value; when it rejects, the provider restores the previous metadata and reports the adapter failure, including a metadata-rollback failure if both occur. After both commits succeed, the provider publishes the update. Concurrently mounting multiple provider instances or processes against the same `HARNESS_HOME` is unsupported because their independently loaded metadata snapshots can lose a reference update.
 
 ## Known Limitations and Deferred Work
 
