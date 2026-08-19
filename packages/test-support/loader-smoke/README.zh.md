@@ -4,7 +4,7 @@
 
 用于测试通过 Cordis Loader 启动应用和 `cordis.yml` 的共享子进程 harness。`resolveExampleLaunch` 选择本地 `src` mode（tsx 和根 tsconfig 路径）或 CI `lib` mode（普通 Node 和包导出）；选择依据为显式 mode 或 `DSH_EXAMPLE_MODE`。
 
-`runLoaderSmoke` 接受可执行文件路径和配置路径、可选的完整可执行文件参数、环境变量覆盖、标准输入、运行前准备和清理前检查。它负责隔离工作目录、唯一的 Harness home、诊断、截止时间、终止、EOF 和清理；两个回调都会收到完全相同的 `(cwd, harnessHome)` 参数。进程以零状态退出后返回两个流，失败时则返回拒绝并附带两个流。
+`runLoaderSmoke` 接受可执行文件路径和配置路径、可选的完整可执行文件参数、环境变量覆盖、标准输入、运行前准备和清理前检查。它负责隔离工作目录、唯一的 Harness home、诊断、截止时间、终止、EOF 和清理。环境中的绝对 `HARNESS_HOME` 覆盖值会成为实际 home；相对路径和带波浪号的值会在启动前失败，因为回调无法共享子进程基于 cwd 的解析。两个回调都会收到注入子进程的同一个绝对值。进程以零状态退出后返回两个流，失败时则返回拒绝并附带两个流。
 
 `runFixtureTurn` 通过恰好一个已配置的根 agent（智能体）驱动一项任务，在该任务进入持久收件箱后转发规范事件，刷写会话，并返回最终 assistant 文本和累计用量。示例本地 driver 继续负责配置、渲染和断言。
 

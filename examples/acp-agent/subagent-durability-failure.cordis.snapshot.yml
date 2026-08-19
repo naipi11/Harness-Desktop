@@ -14,7 +14,7 @@
           harnessHome: !!js harnessHome
           provider: deepseek-official
           model: deepseek-v4-flash
-          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? harnessHomePath('sessions')
+          persistenceRoot: !!js harnessHomePath('sessions')
           persistenceCompression: none
           workspaceContext:
             maxBytes: 65536

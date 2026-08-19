@@ -25,7 +25,7 @@
           harnessHome: !!js harnessHome
           provider: deepseek-official
           model: deepseek-v4-flash
-          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? harnessHomePath('sessions')
+          persistenceRoot: !!js harnessHomePath('sessions')
           # Replay fixtures are raw JSONL; the whole-config patch must restate
           # the compression choice or the default zstd frames hide the logs
           # from the harness's harvest.

@@ -267,7 +267,8 @@ async function runScenario(scenario: SdkScenario): Promise<{
   cwd: string
 }> {
   const cwd = await mkdtemp(join(tmpdir(), `sdk-snapshot-${scenario.name}-`))
-  const sessionsRoot = join(cwd, '.sessions')
+  const harnessHome = join(cwd, '.harness-home')
+  const sessionsRoot = join(harnessHome, 'sessions')
   const replayFixtures = recording ? [] : await hydrateReplayFixtures(scenario, cwd)
   const launch = resolveExampleLaunch({
     srcBin: runtimeBin,
@@ -281,7 +282,7 @@ async function runScenario(scenario: SdkScenario): Promise<{
     DSH_CORDIS_CONFIG: recording
       ? scenario.configs?.live ?? liveConfig
       : scenario.configs?.replay ?? replayConfig,
-    DSH_SESSION_ROOT: sessionsRoot,
+    HARNESS_HOME: harnessHome,
     DSH_CWD: cwd,
     DSH_SNAPSHOT: mode,
     NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),

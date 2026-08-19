@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,10 +48,11 @@ describe('ACP subagent cwd inheritance through a real cordis.yml', () => {
       configPath,
       tsconfigPath: repoTsconfig,
       env: { DSH_TEST_MOCK_ACP_SERVER: mockServer },
-      inspect: async (cwd) => {
+      inspect: async (cwd, harnessHome) => {
         // The child reports realpaths; canonicalize the temp workspace to match.
         workspace = realpathSync(cwd)
-        const logs = await jsonlFiles(join(cwd, '.sessions'))
+        expect(existsSync(join(cwd, '.sessions'))).toBe(false)
+        const logs = await jsonlFiles(join(harnessHome, 'sessions'))
         expect(logs).toHaveLength(1)
         const lines = (await readFile(logs[0] as string, 'utf8')).trimEnd().split('\n')
         events = lines.slice(1).map(line => JSON.parse(line) as SessionEvent)

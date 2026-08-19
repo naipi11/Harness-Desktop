@@ -2,6 +2,7 @@
 /** Inspect both public product-provider compositions without invoking them. */
 
 import { boot, resolveConfigPath } from '@harness-desktop/dsh-app-boot'
+import { SESSION_FORMAT_VERSION, SessionId } from '@harness-desktop/dsh-session'
 import type {} from '@harness-desktop/dsh-subagent'
 import type {} from '@harness-desktop/dsh-tools'
 
@@ -23,6 +24,15 @@ const ctx = await boot(
 )
 
 try {
+  const persistenceProbe = SessionId('product-provider-composition-root')
+  await ctx.sessionPersistence.create({
+    version: SESSION_FORMAT_VERSION,
+    id: persistenceProbe,
+    createdAt: 0,
+  })
+  await ctx.sessionPersistence.append(persistenceProbe, [
+    { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+  ])
   const providerNames = ['codex', 'claude-code'] as const
   const toolNames = ['subagent_codex', 'subagent_claude_code'] as const
   const providers = providerNames.map((providerName) => {

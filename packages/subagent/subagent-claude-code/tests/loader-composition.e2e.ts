@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +16,12 @@ const driver = join(fixtureDir, 'driver.ts')
 const configPath = join(fixtureDir, 'cordis.yml')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
+async function jsonlFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true })
+  return entries.filter(entry => entry.endsWith('.jsonl') || entry.endsWith('.jsonl.zstd'))
+    .map(entry => join(dir, entry))
+}
+
 describe('product-provider public Loader composition', () => {
   it('loads both opt-in packages and foreground tools without starting either product', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
@@ -26,6 +34,10 @@ describe('product-provider public Loader composition', () => {
       env: {
         // Loading either optional package must not probe or start its binary.
         PATH: '',
+      },
+      inspect: async (cwd, harnessHome) => {
+        expect(existsSync(join(cwd, '.sessions'))).toBe(false)
+        expect(await jsonlFiles(join(harnessHome, 'sessions'))).toHaveLength(1)
       },
     })
 

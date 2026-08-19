@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -74,6 +75,48 @@ describe('runLoaderSmoke', () => {
     expect(marker).toBe('prepared')
     expect(existsSync(inspected)).toBe(false)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('uses an environment override as the callback and child Harness home', async () => {
+    const owner = await mkdtemp(join(tmpdir(), 'loader-smoke-home-override-'))
+    const override = `${join(owner, 'nested')}/../effective-home`
+    const expected = join(owner, 'effective-home')
+    let preparedHarnessHome = ''
+    let inspectedHarnessHome = ''
+    try {
+      const result = await runLoaderSmoke({
+        label: 'Harness home override fixture',
+        tempDirPrefix: 'loader-smoke-home-override-cwd-',
+        binScript: fixture('success'),
+        libBinScript: fixture('success'),
+        configPath,
+        tsconfigPath,
+        env: { HARNESS_HOME: override },
+        prepare: (_cwd, harnessHome) => { preparedHarnessHome = harnessHome },
+        inspect: (_cwd, harnessHome) => { inspectedHarnessHome = harnessHome },
+      })
+      const output = JSON.parse(result.stdout) as { harnessHome: string }
+      expect(canonicalTempPath(preparedHarnessHome)).toBe(canonicalTempPath(expected))
+      expect(canonicalTempPath(inspectedHarnessHome)).toBe(canonicalTempPath(expected))
+      expect(canonicalTempPath(output.harnessHome)).toBe(canonicalTempPath(expected))
+    } finally {
+      await rm(owner, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('rejects a relative Harness home before callbacks or child startup', async () => {
+    let prepared = false
+    await expect(runLoaderSmoke({
+      label: 'relative Harness home fixture',
+      tempDirPrefix: 'loader-smoke-relative-home-',
+      binScript: fixture('success'),
+      libBinScript: fixture('success'),
+      configPath,
+      tsconfigPath,
+      env: { HARNESS_HOME: './relative-home' },
+      prepare: () => { prepared = true },
+    })).rejects.toThrow('runLoaderSmoke: env.HARNESS_HOME must be an absolute path')
+    expect(prepared).toBe(false)
+  })
 
   it('rejects a non-zero exit with captured diagnostics', async () => {
     await expect(runLoaderSmoke({

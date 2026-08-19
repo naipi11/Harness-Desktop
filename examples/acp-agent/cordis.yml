@@ -45,8 +45,7 @@
     policy: !!js "(process.env.DSH_PERMISSION_MODE ?? (process.env.DSH_SNAPSHOT === undefined ? 'workspace-write' : 'danger-full-access')) === 'danger-full-access' ? 'never' : 'ask'"
 
 # The ACP automation app: agent spine + JSONL persistence + protocol bridge.
-# Persistence root: $DSH_SNAPSHOT_SESSIONS_ROOT when the snapshot harness sets it
-# (so it can harvest / isolate the log), else `$HARNESS_HOME/sessions` for the demo.
+# Persistence remains under the Loader-resolved Harness home in every mode.
 # Snapshot modes use raw JSONL fixtures; ordinary runs keep the compressed default.
 - id: acp-agent
   name: '@harness-desktop/dsh-acp-demo'
@@ -54,7 +53,7 @@
     harnessHome: !!js harnessHome
     provider: deepseek-official
     model: deepseek-v4-pro
-    persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? harnessHomePath('sessions')
+    persistenceRoot: !!js harnessHomePath('sessions')
     persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
     workspaceContext:
       maxBytes: 65536

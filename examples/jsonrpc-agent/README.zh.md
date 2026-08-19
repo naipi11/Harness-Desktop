@@ -19,11 +19,11 @@
 |---|---|
 | `DEEPSEEK_API_KEY` | 传给 OpenAI 兼容宿主端点的凭据 |
 | `DEEPSEEK_BASE_URL` | `dsh-llm-deepseek` 使用的宿主端点 |
+| `HARNESS_HOME` | Harness 可写数据根目录；JSONL 会话始终位于其 `sessions/` 子目录 |
 | `DSH_CWD` | bash 和文件系统工具使用的 agent workspace |
 | `DSH_CONTEXT_WINDOW` | 极简变体中为 `DSH_MODEL` 目录项记录的上下文容量 |
 | `DSH_MAX_TOKENS_AS_SUCCESS` | `true`（默认）接受受 token 上限限制的结果；`false` 将其报告为错误 |
 | `DSH_MODEL` | `minimal.py` 使用的默认模型；`--model` 优先 |
-| `DSH_SESSION_ROOT` | JSONL 会话目录 |
 | `DSH_SYSTEM_PROMPT` | 由部署提供的编码人格 |
 
 通过 Python SDK 的 `cordis` 选项或 `DSH_CORDIS_CONFIG` 传入配置路径。内置可执行文件已携带此文件中指定的每个插件；目标机器无需 Node.js。

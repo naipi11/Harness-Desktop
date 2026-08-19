@@ -25,7 +25,7 @@ import { createInterface } from 'node:readline'
 
 /** One scripted session log: a transcript path under the sessions root plus its JSONL lines. */
 interface ScriptedLog {
-  /** Path relative to `$DSH_SNAPSHOT_SESSIONS_ROOT`, e.g. `project/session/session.jsonl`. */
+  /** Path relative to `$HARNESS_HOME/sessions`, e.g. `project/session/session.jsonl`. */
   file: string
   /**
    * The JSONL records. String templates `{{CWD}}` and `{{SID}}` are replaced
@@ -67,7 +67,8 @@ interface Behavior {
   deleteSessionsRoot?: boolean
 }
 
-const sessionsRoot = process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? ''
+const harnessHome = process.env.HARNESS_HOME ?? ''
+const sessionsRoot = harnessHome === '' ? '' : join(harnessHome, 'sessions')
 const fixtureFile = process.env.DSH_SNAPSHOT_FILE ?? ''
 const behavior: Behavior = fixtureFile === ''
   ? {}
@@ -149,7 +150,9 @@ async function handlePrompt(id: number | string): Promise<void> {
       override: process.env.DSH_SNAPSHOT_OVERRIDE ?? null,
       childFiles: process.env.DSH_SNAPSHOT_CHILD_FILES ?? null,
       spillRoot: process.env.DSH_SNAPSHOT_SPILL_ROOT ?? null,
-      harnessHome: process.env.HARNESS_HOME ?? null,
+      harnessHome: harnessHome || null,
+      sessionsRoot,
+      legacySessionsRoot: process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? null,
       dshHome: process.env.DSH_HOME ?? null,
       // Scenario-supplied deployment env (the `Scenario.env` layering hook).
       permissionMode: process.env.DSH_PERMISSION_MODE ?? null,

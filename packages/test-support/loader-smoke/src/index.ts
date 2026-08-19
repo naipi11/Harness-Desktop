@@ -13,7 +13,7 @@
 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { execa } from 'execa'
 
 export {
@@ -139,7 +139,7 @@ export interface LoaderSmokeOptions {
   readonly tsconfigPath: string
   /** Boot from source via tsx (`src`) or built lib via plain Node (`lib`); defaults to the environment's mode. */
   readonly mode?: ExampleMode
-  /** Environment overrides layered over the parent and isolated DSH homes. */
+  /** Environment overrides layered over the parent and isolated DSH homes; a `HARNESS_HOME` override must be absolute. */
   readonly env?: Readonly<NodeJS.ProcessEnv>
   /** Process deadline override for harness tests. */
   readonly processTimeoutMs?: number
@@ -172,8 +172,14 @@ export interface LoaderSmokeResult {
  * @returns captured stdout and stderr after a zero exit.
  */
 export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<LoaderSmokeResult> {
+  const configuredHarnessHome = options.env?.HARNESS_HOME
+  if (configuredHarnessHome !== undefined && !isAbsolute(configuredHarnessHome)) {
+    throw new Error('runLoaderSmoke: env.HARNESS_HOME must be an absolute path')
+  }
   const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
-  const harnessHome = join(cwd, '.harness-home')
+  const harnessHome = configuredHarnessHome === undefined
+    ? join(cwd, '.harness-home')
+    : resolve(configuredHarnessHome)
   const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
   try {
     await options.prepare?.(cwd, harnessHome)
@@ -183,7 +189,7 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
       configArgs: options.binArgs ?? [options.configPath],
       ...options.mode !== undefined ? { mode: options.mode } : {},
       tsconfigPath: options.tsconfigPath,
-      env: { HARNESS_HOME: harnessHome, DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
+      env: { DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env, HARNESS_HOME: harnessHome },
     })
     // `input: ''` writes nothing and closes stdin — the fixture-visible
     // stdin-close contract. `reject: false` folds spawn errors, the SIGKILL

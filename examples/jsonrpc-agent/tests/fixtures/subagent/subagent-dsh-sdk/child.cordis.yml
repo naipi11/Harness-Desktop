@@ -11,6 +11,7 @@
 - id: agent-core
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js harnessHome
     persona: 'Echo where you run.'
     workspaceContext: false
     skills:
@@ -19,12 +20,12 @@
       enableRunInBackground: false
     toolJobs: false
 
-# The child persists its own session log beside the parent's (distinct root),
-# so the driving e2e can inspect both transcripts after the run.
+# The child receives its own Harness home from the driving e2e, so both
+# complete applications retain one writable root while their logs stay isolated.
 - id: sessions
   name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: !!js process.env.DSH_SESSION_ROOT ?? './.child-sessions'
+    root: !!js harnessHomePath('sessions')
     compression: none
 
 - id: session-checkpoints
