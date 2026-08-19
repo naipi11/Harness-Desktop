@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
 import {
   detectLegacyImport,
   importLegacyDshHome,
@@ -11,6 +12,11 @@ import {
   type HarnessHomeResolution,
   type LegacyImportFs,
 } from '@harness-desktop/dsh-host-local-runtime/legacy-import'
+
+vi.mock('@harness-desktop/dsh-atomic-write', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@harness-desktop/dsh-atomic-write')>()
+  return { ...actual, writeFileAtomic: vi.fn(actual.writeFileAtomic) }
+})
 
 /** One non-secret legacy data root; .credentials.yaml is never a candidate. */
 const ROOTS = ['sessions', 'settings.yaml', 'projects'] as const
@@ -135,6 +141,48 @@ describe('importLegacyDshHome', () => {
     expect(siblings).toEqual([])
   })
 
+  it.each([
+    ['source readdir', 'source-readdir'],
+    ['target readdir', 'target-readdir'],
+    ['target mkdir', 'target-mkdir'],
+    ['staging mkdtemp', 'staging-mkdtemp'],
+  ] as const)('returns failed and preserves both roots after a %s failure', async (_label, failure) => {
+    const source = await tempDir('dsh-legacy-import-source-')
+    const target = await tempDir('dsh-legacy-import-target-')
+    await seedLegacy(source)
+    const fsp = await import('node:fs/promises')
+    const fs: LegacyImportFs = {
+      ...fsp,
+      readdir: (async (path: string) => {
+        if ((failure === 'source-readdir' && path === source)
+          || (failure === 'target-readdir' && path === target)) {
+          throw Object.assign(new Error('injected readdir failure'), { code: 'EACCES' })
+        }
+        return fsp.readdir(path, { withFileTypes: true })
+      }) as unknown as LegacyImportFs['readdir'],
+      mkdir: (async (path: string) => {
+        if (failure === 'target-mkdir' && path === target) throw new Error('injected mkdir failure')
+        await fsp.mkdir(path, { recursive: true, mode: 0o700 })
+      }) as unknown as LegacyImportFs['mkdir'],
+      mkdtemp: (async (prefix: string) => {
+        if (failure === 'staging-mkdtemp') throw new Error('injected mkdtemp failure')
+        return fsp.mkdtemp(prefix)
+      }) as unknown as LegacyImportFs['mkdtemp'],
+    }
+
+    const result = await importLegacyDshHome({ source, target: target as HarnessHome, fs })
+
+    expect(result).toMatchObject({
+      kind: 'failed',
+      retained: [],
+      source,
+      target: target as HarnessHome,
+    })
+    expect(result.kind === 'failed' && typeof result.diagnosticId).toBe('string')
+    expect(await allFiles(source)).toContain(join(source, 'sessions', 'one.jsonl'))
+    expect(await allFiles(target)).toEqual([])
+  })
+
   it('continues an accepted import from the retained roots on retry', async () => {
     const source = await tempDir('dsh-legacy-import-source-')
     const target = await tempDir('dsh-legacy-import-target-')
@@ -180,16 +228,6 @@ describe('detectLegacyImport and recordLegacyImportDecision', () => {
     await recordLegacyImportDecision({ decision: 'declined', resolution: resolved })
     await expect(detectLegacyImport(resolved)).resolves.toEqual({ kind: 'declined' })
 
-    await recordLegacyImportDecision({ decision: 'accepted', resolution: resolved })
-    await expect(detectLegacyImport(resolved)).resolves.toMatchObject({
-      kind: 'imported',
-      copied: [...ROOTS],
-    })
-    const stateText = await readFile(join(target, 'legacy-migration.json'), 'utf8')
-    expect(stateText).not.toContain(SENTINEL)
-    expect(stateText).not.toContain(source)
-    await assertNoSentinel(target)
-
     await writeFile(join(target, 'collision.txt'), 'blocking\n')
     await recordLegacyImportDecision({ decision: 'accepted', resolution: resolved })
     await expect(detectLegacyImport(resolved)).resolves.toMatchObject({
@@ -202,12 +240,42 @@ describe('detectLegacyImport and recordLegacyImportDecision', () => {
 
     await rm(join(target, 'collision.txt'))
     await recordLegacyImportDecision({ decision: 'accepted', resolution: resolved })
-    // The retry is idempotent: roots already moved before the collision are
-    // retained, so a fixed collision reports imported without re-copying them.
     await expect(detectLegacyImport(resolved)).resolves.toMatchObject({
       kind: 'imported',
-      copied: [],
+      copied: [...ROOTS],
     })
+    const stateText = await readFile(join(target, 'legacy-migration.json'), 'utf8')
+    expect(stateText).not.toContain(SENTINEL)
+    expect(stateText).not.toContain(source)
+    await assertNoSentinel(target)
+  })
+
+  it('returns an imported state unchanged when acceptance is repeated', async () => {
+    const source = await tempDir('dsh-legacy-import-source-')
+    const target = await tempDir('dsh-legacy-import-target-')
+    await seedLegacy(source)
+    const resolved = resolution(target, source)
+    const imported = await recordLegacyImportDecision({ decision: 'accepted', resolution: resolved })
+    await writeFile(join(target, 'later.txt'), 'must not trigger another import\n')
+
+    await expect(recordLegacyImportDecision({ decision: 'accepted', resolution: resolved })).resolves.toEqual(imported)
+    await expect(detectLegacyImport(resolved)).resolves.toEqual(imported)
+  })
+
+  it('keeps the previous complete state file when the atomic replacement fails', async () => {
+    const source = await tempDir('dsh-legacy-import-source-')
+    const target = await tempDir('dsh-legacy-import-target-')
+    await seedLegacy(source)
+    const stateFile = join(target, 'legacy-migration.json')
+    const prior = JSON.stringify({ kind: 'imported', copied: [] }, null, 2) + '\n'
+    await writeFile(stateFile, prior)
+    vi.mocked(writeFileAtomic).mockRejectedValueOnce(new Error('injected atomic replacement failure'))
+
+    await expect(recordLegacyImportDecision({
+      decision: 'declined',
+      resolution: resolution(target, source),
+    })).rejects.toThrow(/injected atomic replacement failure/)
+    await expect(readFile(stateFile, 'utf8')).resolves.toBe(prior)
   })
 
   it('reports not-needed when no legacy home exists', async () => {

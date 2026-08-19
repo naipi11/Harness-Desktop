@@ -12,8 +12,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile, cp } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, cp } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import type { HarnessHome, HarnessHomeResolution } from './data-root.ts'
 export type { HarnessHome, HarnessHomeResolution } from './data-root.ts'
@@ -79,8 +80,9 @@ function isENOENT(error: unknown): boolean {
  * Copy the supported non-secret roots from `source` into an empty `target`.
  * Each root is copied into a staging sibling first, then moved into the target
  * in one rename, so a reader never observes a partial root. The source and the
- * target are never deleted; on failure the staging directory is removed and
- * both roots stay untouched so an accepted import can retry.
+ * target are never deleted; on failure the staging directory is removed, the
+ * source stays untouched, and the target retains only fully moved roots so an
+ * accepted import can retry. Setup and copy failures use the same typed result.
  * @param request - source, target, and optional injected filesystem.
  * @returns the typed result.
  */
@@ -89,19 +91,20 @@ export async function importLegacyDshHome(request: LegacyImportRequest): Promise
   const source = request.source
   const target = request.target
   const moved: string[] = []
+  let staging: string | undefined
 
-  const sourceEntries = await safeReaddir(source, fs)
-  const supported = LEGACY_IMPORT_ROOTS.filter(root => sourceEntries.has(root))
-  if (supported.length === 0) return { kind: 'not-found' }
-
-  const targetEntries = await safeReaddir(target, fs)
-  const retained = new Set(request.retained ?? [])
-  const blocker = [...targetEntries].filter(name => name !== LEGACY_MIGRATION_FILENAME && !retained.has(name))
-  if (blocker.length > 0) return { kind: 'target-not-empty', target }
-
-  await fs.mkdir(target, { recursive: true, mode: 0o700 })
-  const staging = await fs.mkdtemp(join(dirname(target), '.harness-legacy-import-'))
   try {
+    const sourceEntries = await safeReaddir(source, fs)
+    const supported = LEGACY_IMPORT_ROOTS.filter(root => sourceEntries.has(root))
+    if (supported.length === 0) return { kind: 'not-found' }
+
+    const targetEntries = await safeReaddir(target, fs)
+    const retained = new Set(request.retained ?? [])
+    const blocker = [...targetEntries].filter(name => name !== LEGACY_MIGRATION_FILENAME && !retained.has(name))
+    if (blocker.length > 0) return { kind: 'target-not-empty', target }
+
+    await fs.mkdir(target, { recursive: true, mode: 0o700 })
+    staging = await fs.mkdtemp(join(dirname(target), '.harness-legacy-import-'))
     for (const root of supported) {
       // Roots moved by an earlier partial attempt stay in the target and are
       // never re-copied or re-reported as copied.
@@ -110,21 +113,28 @@ export async function importLegacyDshHome(request: LegacyImportRequest): Promise
       await fs.rename(join(staging, root), join(target, root))
       moved.push(root)
     }
+    await fs.rm(staging, { recursive: true, force: true })
+    return { kind: 'imported', copied: moved, source, target }
   } catch (_error) {
     // Any failure is a typed 'failed' result with a random diagnosticId; the
     // error text is intentionally not surfaced because it may embed paths or
     // values that must stay out of diagnostics and logs.
-    await fs.rm(staging, { recursive: true, force: true })
+    if (staging !== undefined) {
+      try {
+        await fs.rm(staging, { recursive: true, force: true })
+      } catch (_cleanupError) {
+        // Staging cleanup cannot replace the typed import failure. Source and
+        // target roots remain intact, and the diagnostic id identifies retry.
+      }
+    }
     return {
       kind: 'failed',
       source,
       target,
-      retained: [...(request.retained ?? []), ...moved],
+      retained: [...new Set([...(request.retained ?? []), ...moved])],
       diagnosticId: randomUUID() as RuntimeDiagnosticId,
     }
   }
-  await fs.rm(staging, { recursive: true, force: true })
-  return { kind: 'imported', copied: moved, source, target }
 }
 
 /** Readdir treating ENOENT as an empty directory. */
@@ -183,6 +193,7 @@ export async function recordLegacyImportDecision(decision: {
   }
 
   const prior = await readMigrationState(resolution.path)
+  if (prior.kind === 'imported') return prior
   const retained = prior.kind === 'failed' || prior.kind === 'target-not-empty' ? prior.retained : undefined
   const result = await importLegacyDshHome({
     source: resolution.legacyDshHome,
@@ -266,7 +277,7 @@ function readStringArray(value: unknown): string[] {
   if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
     throw new Error('host-local-runtime: legacy-migration.json contains an invalid root list')
   }
-  return value
+  return value as string[]
 }
 
 /** Validate a stored diagnostic id. */
@@ -277,8 +288,10 @@ function readDiagnosticId(state: Record<string, unknown>): RuntimeDiagnosticId {
   return state.diagnosticId as RuntimeDiagnosticId
 }
 
-/** Persist the state under the target home with owner-only access. */
+/** Atomically persist the state under the target home with owner-only access. */
 async function writeMigrationState(home: HarnessHome, state: LegacyMigrationState): Promise<void> {
-  await mkdir(home, { recursive: true, mode: 0o700 })
-  await writeFile(join(home, LEGACY_MIGRATION_FILENAME), JSON.stringify(state, null, 2) + '\n', { mode: 0o600 })
+  await writeFileAtomic(join(home, LEGACY_MIGRATION_FILENAME), JSON.stringify(state, null, 2) + '\n', {
+    mode: 0o600,
+    dirMode: 0o700,
+  })
 }

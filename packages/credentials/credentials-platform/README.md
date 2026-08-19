@@ -24,7 +24,7 @@ Runtime-only [credentials](../credentials/README.md) provider: the harness home 
 }
 ```
 
-The document is a strict version-1 shape: a `version` plus a sorted `references` array, and nothing else. It holds opaque reference names only — a secret value never appears in it, in command lines, in logs, or in diagnostics. Writes persist the document atomically with mode `0600` under an owner-only (`0700`) directory via [`dsh-atomic-write`](../../util/atomic-write/README.md).
+The provider loads and validates this strict version-1 document before becoming ready; an absent document means no recorded references. The only fields are `version` and a sorted, unique `references` array. It holds opaque reference names only — a secret value never appears in it, in command lines, in logs, or in diagnostics. Writes persist the document atomically with mode `0600` under an owner-only (`0700`) directory via [`dsh-atomic-write`](../../util/atomic-write/README.md).
 
 ## Environment adapter
 
@@ -32,7 +32,9 @@ With no injected adapter, values come from the launcher's frozen process environ
 
 ## Security boundary
 
-Values never enter files this package writes, so the reference metadata is not a secret-bearing document. The adapter is the only value holder: the read-only environment snapshot, or a writable platform store the model's tool processes cannot read. Storing a reference through a writable adapter persists the value there and adds the reference name to the metadata document.
+Values never enter files this package writes, so the reference metadata is not a secret-bearing document. The adapter is the only value holder: the read-only environment snapshot, or a writable platform store the model's tool processes cannot read.
+
+Each mutation is serialized. The provider atomically persists candidate reference metadata before calling the adapter, so a metadata-write failure leaves the adapter untouched. An adapter mutation must reject without changing its durable value; when it rejects, the provider restores the previous metadata and reports the adapter failure, including a metadata-rollback failure if both occur. After both commits succeed, the provider publishes the update.
 
 ## Known Limitations and Deferred Work
 

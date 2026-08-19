@@ -4985,6 +4985,9 @@ importers:
       '@harness-desktop/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@harness-desktop/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
       '@harness-desktop/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand

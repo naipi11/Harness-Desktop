@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,12 +40,25 @@ async function boot(
   config: ConstructorParameters<typeof PlatformCredentialProvider>[1],
   snapshot?: LaunchEnvironmentSnapshot,
 ): Promise<Context> {
+  return (await bootInstance(config, snapshot)).ctx
+}
+
+async function bootInstance(
+  config: ConstructorParameters<typeof PlatformCredentialProvider>[1],
+  snapshot?: LaunchEnvironmentSnapshot,
+): Promise<{ ctx: Context; dispose: () => Promise<void> }> {
   const ctx = new Context()
   if (snapshot !== undefined) ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, snapshot)
   const fiber = ctx.plugin(PlatformCredentialProvider, config)
-  cleanups.push(async () => { await fiber.dispose() })
+  let disposed = false
+  const dispose = async (): Promise<void> => {
+    if (disposed) return
+    disposed = true
+    await fiber.dispose()
+  }
+  cleanups.push(dispose)
   await fiber
-  return ctx
+  return { ctx, dispose }
 }
 
 function updates(ctx: Context): CredentialRef[] {
@@ -126,6 +139,92 @@ describe('platform provider', () => {
 
     await ctx.credentials.unset(OTHER)
     expect(seen).toEqual([KEY])
+  })
+
+  it('retains recorded references across restart and later set and unset operations', async () => {
+    const dir = await tempDir()
+    const { adapter } = spyAdapter()
+    const first = await bootInstance({ harnessHome: dir, adapter })
+    await first.ctx.credentials.set(KEY, SECRET)
+    await first.dispose()
+
+    const second = await boot({ harnessHome: dir, adapter })
+    await second.credentials.set(OTHER, SECRET)
+    await second.credentials.unset(OTHER)
+
+    const metadata = JSON.parse(readFileSync(join(dir, CREDENTIAL_REFERENCES_FILENAME), 'utf8')) as {
+      references: string[]
+    }
+    expect(metadata.references).toEqual([KEY])
+  })
+
+  it('fails provider boot when persisted reference metadata is invalid', async () => {
+    const dir = await tempDir()
+    await writeFile(join(dir, CREDENTIAL_REFERENCES_FILENAME), '{"version":2,"references":[]}\n')
+    const { adapter } = spyAdapter()
+
+    const outcome: unknown = await boot({ harnessHome: dir, adapter }).then(
+      () => 'provider boot unexpectedly succeeded',
+      (error: unknown) => error,
+    )
+    expect(outcome).toBeInstanceOf(Error)
+    expect((outcome as Error).message).toMatch(/credential-references/)
+  })
+
+  it('does not change the adapter when metadata persistence fails during set', async () => {
+    const dir = await tempDir()
+    const { adapter, values } = spyAdapter()
+    const ctx = await boot({ harnessHome: dir, adapter })
+    const seen = updates(ctx)
+    await mkdir(join(dir, CREDENTIAL_REFERENCES_FILENAME))
+
+    await expect(ctx.credentials.set(KEY, SECRET)).rejects.toThrow()
+    expect(values.has(KEY)).toBe(false)
+    expect(seen).toEqual([])
+  })
+
+  it('does not change the adapter when metadata persistence fails during unset', async () => {
+    const dir = await tempDir()
+    const { adapter, values } = spyAdapter()
+    const ctx = await boot({ harnessHome: dir, adapter })
+    await ctx.credentials.set(KEY, SECRET)
+    const metadataFilename = join(dir, CREDENTIAL_REFERENCES_FILENAME)
+    await rm(metadataFilename)
+    await mkdir(metadataFilename)
+    const seen = updates(ctx)
+
+    await expect(ctx.credentials.unset(KEY)).rejects.toThrow()
+    expect(values.get(KEY)).toBe(SECRET)
+    expect(seen).toEqual([])
+  })
+
+  it('rolls metadata back when the adapter rejects set', async () => {
+    const dir = await tempDir()
+    const { adapter, values } = spyAdapter()
+    adapter.set = async () => { throw new Error('injected adapter set failure') }
+    const ctx = await boot({ harnessHome: dir, adapter })
+
+    await expect(ctx.credentials.set(KEY, SECRET)).rejects.toThrow(/injected adapter set failure/)
+    expect(values.has(KEY)).toBe(false)
+    const metadata = JSON.parse(readFileSync(join(dir, CREDENTIAL_REFERENCES_FILENAME), 'utf8')) as {
+      references: string[]
+    }
+    expect(metadata.references).toEqual([])
+  })
+
+  it('rolls metadata back when the adapter rejects unset', async () => {
+    const dir = await tempDir()
+    const { adapter, values } = spyAdapter()
+    const ctx = await boot({ harnessHome: dir, adapter })
+    await ctx.credentials.set(KEY, SECRET)
+    adapter.unset = async () => { throw new Error('injected adapter unset failure') }
+
+    await expect(ctx.credentials.unset(KEY)).rejects.toThrow(/injected adapter unset failure/)
+    expect(values.get(KEY)).toBe(SECRET)
+    const metadata = JSON.parse(readFileSync(join(dir, CREDENTIAL_REFERENCES_FILENAME), 'utf8')) as {
+      references: string[]
+    }
+    expect(metadata.references).toEqual([KEY])
   })
 
   it('resolves and describes from the environment adapter without ever writing', async () => {

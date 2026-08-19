@@ -12,11 +12,11 @@ Status: implemented
 
 ## 决策
 
-`@harness-desktop/dsh-host-local-runtime/legacy-import` 拥有该边界。`importLegacyDshHome()` 只把已知的非机密根目录（`sessions`、`settings.yaml`、`projects`）复制到空的 `HARNESS_HOME` 目标：先复制到暂存同级目录，再通过一次原子 rename 把每个根目录移入目标。源与目标都绝不删除。目标非空时返回 `{ kind: 'target-not-empty' }`；复制失败时删除暂存目录，返回 `{ kind: 'failed', retained, diagnosticId }`，并保留两个根目录以便从 `retained` 继续重试。
+`@harness-desktop/dsh-host-local-runtime/legacy-import` 拥有该边界。`importLegacyDshHome()` 只把已知的非机密根目录（`sessions`、`settings.yaml`、`projects`）复制到空的 `HARNESS_HOME` 目标：先复制到暂存同级目录，再通过一次原子 rename 把每个根目录移入目标。源与目标都绝不删除。目标非空时返回 `{ kind: 'target-not-empty' }`；任何文件系统失败（包括准备阶段失败）都会在暂存目录存在时尝试删除它，返回 `{ kind: 'failed', retained, diagnosticId }`，并保留源与目标中已完整移入的根目录，以便从 `retained` 继续重试。
 
-Runtime 在 `$HARNESS_HOME/legacy-migration.json` 中存储 `pending`/`declined`/`imported`/`failed`/`target-not-empty` 状态，并使用仅所有者模式。存储状态绝不包含旧来源路径或任何机密。`detectLegacyImport()` 在首次启动时暴露类型化的待决决策；`recordLegacyImportDecision()` 持久化拒绝、执行已接受的导入，并把类型化结果映射为可重试状态。`.credentials.yaml` 和 `.env` 绝不是复制候选。
+Runtime 在 `$HARNESS_HOME/legacy-migration.json` 中以仅所有者模式原子存储 `not-needed`/`decision-required`/`declined`/`imported`/`target-not-empty`/`failed` 状态。存储状态绝不包含旧来源路径或任何机密。`detectLegacyImport()` 在首次启动时暴露 `decision-required`；`recordLegacyImportDecision()` 持久化拒绝、执行已接受的导入、把类型化结果映射为可重试状态，并原样返回已有的 `imported` 状态。`.credentials.yaml` 和 `.env` 绝不是复制候选。
 
-Runtime 基础组合挂载 `@harness-desktop/dsh-credentials-platform`，不再挂载 `@harness-desktop/dsh-credentials-local`，因此旧 `.credentials.yaml` 绝不会被读入 Runtime。平台提供方只持久化不透明引用（`$HARNESS_HOME/.credential-references.json`），并在每次请求时从平台/环境适配器解析值；默认适配器是启动器冻结的只读进程环境。文件型包保持完整，公共行为不变，供有意选择它的嵌入方使用。
+Runtime 基础组合挂载 `@harness-desktop/dsh-credentials-platform`，且不挂载 `@harness-desktop/dsh-credentials-local`，因此旧 `.credentials.yaml` 绝不会被读入 Runtime。平台提供方在启动时从 `$HARNESS_HOME/.credential-references.json` 加载并验证不透明引用，并在每次请求时从平台/环境适配器解析值；默认适配器是启动器冻结的只读进程环境。每次变更先原子持久化候选元数据，再更改适配器；适配器拒绝时恢复先前元数据。文件型包保持完整，公共行为不变，供有意选择它的嵌入方使用。
 
 ## 备选方案
 

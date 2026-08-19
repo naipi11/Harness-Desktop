@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-legacy-import-boundary.md
-2026-08-19-legacy-import-boundary.md: e7d0e4d810296d8f9fc564d3023cd79d36cf5eaa
-2026-08-19-legacy-import-boundary.zh.md: 29eb20f3db1490c97b6854ef37778baabaeb9e56
+2026-08-19-legacy-import-boundary.md: 3ab0d8b0f8747ac36911350d525348c4f6d322b8
+2026-08-19-legacy-import-boundary.zh.md: ec39fe13db8811af11328ea32c43b37172b5da9f

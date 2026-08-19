@@ -37,12 +37,14 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "@harness-desktop/dsh-atomic-write": "workspace:^",
     "@harness-desktop/cordis": "workspace:^",
     "@harness-desktop/dsh-brand": "workspace:^",
     "@harness-desktop/dsh-home-paths": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^"
   },
   "devDependencies": {
+    "@harness-desktop/dsh-atomic-write": "workspace:^",
     "@harness-desktop/cordis": "workspace:^",
     "@harness-desktop/dsh-brand": "workspace:^",
     "@harness-desktop/dsh-home-paths": "workspace:^",

@@ -11,11 +11,12 @@
  * @module @harness-desktop/dsh-credentials-platform
  */
 
-import { Context } from '@harness-desktop/cordis'
+import { Context, Service } from '@harness-desktop/cordis'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
 import { launchEnvironmentOf } from '@harness-desktop/dsh-launch-environment'
-import { CredentialProvider } from '@harness-desktop/dsh-credentials'
+import { CredentialProvider, credentialRef } from '@harness-desktop/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@harness-desktop/dsh-credentials'
 import type { LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
 
@@ -59,9 +60,9 @@ export interface PlatformCredentialAdapter {
   readonly writable: boolean
   /** Resolve one reference to its current value, or `undefined` when unconfigured. */
   resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>
-  /** Durably store one value in the platform store. */
+  /** Durably store one value; rejection must leave the current value unchanged. */
   set(ref: CredentialRef, value: string): Promise<void>
-  /** Remove one value from the platform store. */
+  /** Remove one value; rejection must leave the current value unchanged. */
   unset(ref: CredentialRef): Promise<void>
 }
 
@@ -78,18 +79,18 @@ class EnvironmentAdapter implements PlatformCredentialAdapter {
     this.snapshot = snapshot
   }
 
-  async resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+  resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const entry = this.snapshot.getFrom(ref, ['process'])
-    if (entry === undefined || entry.value.length === 0) return undefined
-    return { value: entry.value, source: 'env' }
+    if (entry === undefined || entry.value.length === 0) return Promise.resolve(undefined)
+    return Promise.resolve({ value: entry.value, source: 'env' })
   }
 
-  async set(ref: CredentialRef, _value: string): Promise<void> {
-    throw new Error(`credentials-platform: the environment adapter is read-only; cannot set "${ref}"`)
+  set(ref: CredentialRef, _value: string): Promise<void> {
+    return Promise.reject(new Error(`credentials-platform: the environment adapter is read-only; cannot set "${ref}"`))
   }
 
-  async unset(ref: CredentialRef): Promise<void> {
-    throw new Error(`credentials-platform: the environment adapter is read-only; cannot unset "${ref}"`)
+  unset(ref: CredentialRef): Promise<void> {
+    return Promise.reject(new Error(`credentials-platform: the environment adapter is read-only; cannot unset "${ref}"`))
   }
 }
 
@@ -99,16 +100,57 @@ interface MetadataDocument {
   references: string[]
 }
 
+/** Whether an error means the metadata document is absent. */
+function isENOENT(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+}
+
+/** Parse the strict version-1 reference document without echoing its content. */
+function parseMetadataDocument(text: string): Set<CredentialRef> {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch (_error) {
+    throw new Error('credentials-platform: .credential-references.json must contain valid JSON')
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('credentials-platform: .credential-references.json must contain a version-1 metadata object')
+  }
+  const document = value as Record<string, unknown>
+  const keys = Object.keys(document).sort()
+  if (keys.length !== 2 || keys[0] !== 'references' || keys[1] !== 'version'
+    || document.version !== 1 || !Array.isArray(document.references)) {
+    throw new Error('credentials-platform: .credential-references.json must contain only version and references')
+  }
+  const references: CredentialRef[] = []
+  for (const entry of document.references) {
+    if (typeof entry !== 'string') {
+      throw new Error('credentials-platform: .credential-references.json contains an invalid reference list')
+    }
+    try {
+      references.push(credentialRef(entry))
+    } catch (_error) {
+      throw new Error('credentials-platform: .credential-references.json contains an invalid reference name')
+    }
+  }
+  const sorted = [...references].sort()
+  if (new Set(references).size !== references.length || sorted.some((ref, index) => ref !== references[index])) {
+    throw new Error('credentials-platform: .credential-references.json references must be unique and sorted')
+  }
+  return new Set(references)
+}
+
 /**
  * Runtime-only credentials provider that stores opaque references and
- * resolves values from the platform adapter. `set`/`unset` write through to
- * the adapter and persist the reference list under the harness home; values
- * never enter the metadata document.
+ * resolves values from the platform adapter. Boot loads and validates the
+ * reference list. `set`/`unset` atomically persist candidate metadata before
+ * mutating the adapter and restore the previous metadata if the adapter
+ * rejects; values never enter the metadata document.
  */
 export class PlatformCredentialProvider extends CredentialProvider {
   private readonly spec: ResolvedSpec
   private readonly adapter: PlatformCredentialAdapter
-  private metadata: Set<string> = new Set()
+  private metadata = new Set<CredentialRef>()
   /** Single exclusive operation chain so metadata writes never interleave. */
   private operations: Promise<void> = Promise.resolve()
 
@@ -116,6 +158,17 @@ export class PlatformCredentialProvider extends CredentialProvider {
     super(ctx)
     this.spec = resolveSpec(config)
     this.adapter = config.adapter ?? new EnvironmentAdapter(launchEnvironmentOf(ctx))
+  }
+
+  /** Load the durable reference list before the service becomes ready. */
+  async* [Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
+    yield async () => { await this.operations }
+    try {
+      this.metadata = parseMetadataDocument(await readFile(this.spec.metadataFilename, 'utf8'))
+    } catch (error) {
+      if (!isENOENT(error)) throw error
+      this.metadata = new Set()
+    }
   }
 
   /** Queue one exclusive metadata operation behind every earlier one. */
@@ -142,39 +195,63 @@ export class PlatformCredentialProvider extends CredentialProvider {
     if (!this.adapter.writable) {
       throw new Error(`credentials-platform: the environment adapter is read-only; cannot set "${ref}"`)
     }
-    await this.adapter.set(ref, value)
     await this.enqueue(async () => {
-      this.metadata.add(ref)
-      await this.writeMetadata()
+      const next = new Set(this.metadata).add(ref)
+      await this.writeMetadata(next)
+      try {
+        await this.adapter.set(ref, value)
+      } catch (error) {
+        await this.rollbackMetadata(error, 'set')
+      }
+      this.metadata = next
+      this.notifyUpdated(ref)
     })
-    this.notifyUpdated(ref)
   }
 
   override async unset(ref: CredentialRef): Promise<void> {
-    const resolved = await this.adapter.resolve(ref)
-    if (!this.adapter.writable && resolved !== undefined) {
-      throw new Error(`credentials-platform: "${ref}" is supplied read-only by the platform; cannot unset`)
-    }
-    if (!this.adapter.writable) return
-    const had = this.metadata.has(ref) || resolved !== undefined
-    await this.adapter.unset(ref)
     await this.enqueue(async () => {
-      this.metadata.delete(ref)
-      await this.writeMetadata()
+      const resolved = await this.adapter.resolve(ref)
+      if (!this.adapter.writable && resolved !== undefined) {
+        throw new Error(`credentials-platform: "${ref}" is supplied read-only by the platform; cannot unset`)
+      }
+      if (!this.adapter.writable) return
+      const had = this.metadata.has(ref) || resolved !== undefined
+      const next = new Set(this.metadata)
+      next.delete(ref)
+      await this.writeMetadata(next)
+      try {
+        await this.adapter.unset(ref)
+      } catch (error) {
+        await this.rollbackMetadata(error, 'unset')
+      }
+      this.metadata = next
+      if (had) this.notifyUpdated(ref)
     })
-    if (had) this.notifyUpdated(ref)
   }
 
   /** Persist the sorted reference list atomically with owner-only access. */
-  private async writeMetadata(): Promise<void> {
+  private async writeMetadata(metadata: ReadonlySet<CredentialRef>): Promise<void> {
     const document: MetadataDocument = {
       version: 1,
-      references: [...this.metadata].sort(),
+      references: [...metadata].sort(),
     }
     await writeFileAtomic(this.spec.metadataFilename, JSON.stringify(document, null, 2) + '\n', {
       mode: 0o600,
       dirMode: 0o700,
     })
+  }
+
+  /** Restore the last committed metadata after an adapter mutation rejects. */
+  private async rollbackMetadata(adapterError: unknown, operation: 'set' | 'unset'): Promise<never> {
+    try {
+      await this.writeMetadata(this.metadata)
+    } catch (metadataError) {
+      throw new AggregateError(
+        [adapterError, metadataError],
+        `credentials-platform: adapter ${operation} failed and reference metadata rollback also failed`,
+      )
+    }
+    throw adapterError
   }
 }
 
