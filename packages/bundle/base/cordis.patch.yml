@@ -80,12 +80,13 @@
       config:
         harnessHome: !!js harnessHome
 
-    # Credential sources: inherited environment over the managed
-    # `$HARNESS_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
-    # Adapters resolve references per request; the Models page writes only the
-    # managed document, which is never materialized into the process environment.
+    # Runtime credential source: opaque references under `$HARNESS_HOME` with
+    # values resolved per request from a platform/environment adapter. The
+    # file-backed credentials-local provider is no longer mounted here — a
+    # legacy `$HARNESS_HOME/.credentials.yaml` is an import candidate only and
+    # is never read into the Runtime or copied into a target home.
     - id: credentials
-      name: '@harness-desktop/dsh-credentials-local'
+      name: '@harness-desktop/dsh-credentials-platform'
       config:
         harnessHome: !!js harnessHome
 

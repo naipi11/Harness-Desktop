@@ -53,6 +53,7 @@
     "@harness-desktop/dsh-commands": "workspace:^",
     "@harness-desktop/dsh-compaction-basic": "workspace:^",
     "@harness-desktop/dsh-compaction-tool-result-pruner": "workspace:^",
+    "@harness-desktop/dsh-credentials-platform": "workspace:^",
     "@harness-desktop/dsh-credentials-local": "workspace:^",
     "@harness-desktop/dsh-fs-local": "workspace:^",
     "@harness-desktop/dsh-fs-observation-policy": "workspace:^",

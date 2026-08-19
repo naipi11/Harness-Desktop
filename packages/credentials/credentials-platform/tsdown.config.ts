@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsdown'
 
-/** Node-only data-root resolver and its package invariant companion. */
+/** Node-only reference-metadata provider and its package invariant companion. */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/legacy-import.js'],
+    entry: ['lib/types/index.js', 'lib/types/invariant.js'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

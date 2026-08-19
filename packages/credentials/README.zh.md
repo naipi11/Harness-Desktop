@@ -7,7 +7,8 @@
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`credentials/`](credentials/README.md) | 凭据引用 seam | `ctx.credentials` |
-| [`credentials-local/`](credentials-local/README.md) | 环境与本地文件提供方 | 注册 `ctx.credentials` |
+| [`credentials-local/`](credentials-local/README.md) | 环境与本地文件提供方；Runtime 基础组合不再挂载它 | 注册 `ctx.credentials` |
+| [`credentials-platform/`](credentials-platform/README.md) | 平台/环境提供方（Runtime） | 注册 `ctx.credentials` |
 
 配置携带引用而非机密值。消费方在其操作边界解析这些引用；变更、优先级与存储语义由子级 README 负责。
 

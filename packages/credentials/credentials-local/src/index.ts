@@ -32,6 +32,12 @@
  * as the user's environment layer; a store that doubled as the environment
  * layer would shadow non-secret entries behind its precedence, making them
  * silently unreachable.
+ *
+ * The Harness Desktop local Runtime composition no longer mounts this
+ * provider: `$HARNESS_HOME/.credentials.yaml` is a legacy import candidate
+ * only and is never copied into a target home. The package stays intact for
+ * embedders that deliberately choose the file-backed store; its public
+ * behavior is unchanged.
  * @module @harness-desktop/dsh-credentials-local
  */
 

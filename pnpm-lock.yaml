@@ -1077,6 +1077,9 @@ importers:
       '@harness-desktop/dsh-credentials-local':
         specifier: workspace:^
         version: link:../../credentials/credentials-local
+      '@harness-desktop/dsh-credentials-platform':
+        specifier: workspace:^
+        version: link:../../credentials/credentials-platform
       '@harness-desktop/dsh-fs-local':
         specifier: workspace:^
         version: link:../../fs/fs-local
@@ -3738,6 +3741,24 @@ importers:
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
+      '@harness-desktop/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@harness-desktop/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../util/launch-environment
+
+  packages/credentials/credentials-platform:
+    devDependencies:
+      '@harness-desktop/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@harness-desktop/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
+      '@harness-desktop/dsh-credentials':
+        specifier: workspace:^
+        version: link:../credentials
       '@harness-desktop/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

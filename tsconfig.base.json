@@ -82,6 +82,8 @@
       "@harness-desktop/dsh-commands/types": ["./packages/interaction/commands/src/types.ts"],
       "@harness-desktop/dsh-jobs/brand": ["./packages/jobs/jobs/src/brand.ts"],
       "@harness-desktop/dsh-credentials/types": ["./packages/credentials/credentials/src/types.ts"],
+      "@harness-desktop/dsh-credentials-platform": ["./packages/credentials/credentials-platform/src"],
+      "@harness-desktop/dsh-credentials-platform/*": ["./packages/credentials/credentials-platform/src/*"],
       "@harness-desktop/dsh-settings/types": ["./packages/settings/settings/src/types.ts"],
       "@harness-desktop/dsh-api-remotes/types": ["./packages/api/remotes/src/types.ts"],
       "@harness-desktop/dsh-api-remotes/invariant": ["./packages/api/remotes/src/invariant.ts"],
