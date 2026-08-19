@@ -15,10 +15,10 @@
       - id: acp-agent
         name: '@harness-desktop/dsh-acp-demo'
         config:
-          harnessHome: !!js process.env.HARNESS_HOME
+          harnessHome: !!js harnessHome
           provider: deepseek-official
           model: deepseek-v4-flash
-          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
+          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? harnessHomePath('sessions')
           persistenceCompression: none
           workspaceContext:
             maxBytes: 65536
@@ -29,6 +29,8 @@
       - insert:
           - id: attachment-local
             name: '@harness-desktop/dsh-attachment-local'
+            config:
+              harnessHome: !!js harnessHomeProvider
           - id: llm-replay
             name: '@harness-desktop/dsh-llm-replay'
             config:

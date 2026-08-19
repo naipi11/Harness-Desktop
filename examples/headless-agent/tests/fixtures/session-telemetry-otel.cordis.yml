@@ -33,7 +33,7 @@
 - id: agent-spine
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
-    harnessHome: !!js process.env.HARNESS_HOME
+    harnessHome: !!js harnessHome
     agents:
       - id: main
         provider: cli-mock
@@ -45,7 +45,7 @@
 - id: persistence
   name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: './.sessions'
+    root: !!js harnessHomePath('sessions')
     compression: 'none'
 
 - id: checkpoint-policy

@@ -10,6 +10,7 @@
           streamIdleTimeoutMs: 150
       - id: agent-spine
         config:
+          harnessHome: !!js harnessHome
           agents:
             - id: main
               provider: deepseek-official
@@ -19,4 +20,4 @@
           persona: 'Keyless DeepSeek adapter defaults snapshot.'
       - id: persistence
         config:
-          root: './.sessions'
+          root: !!js harnessHomePath('sessions')

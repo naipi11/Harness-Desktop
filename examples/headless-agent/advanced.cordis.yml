@@ -7,7 +7,7 @@
       - id: agent-spine
         name: '@harness-desktop/dsh-agent-spine-demo'
         config:
-          harnessHome: !!js process.env.HARNESS_HOME
+          harnessHome: !!js harnessHome
           agents:
             - id: main
               provider: deepseek-official
@@ -24,7 +24,7 @@
       - id: persistence
         name: '@harness-desktop/dsh-session-persistence-jsonl'
         config:
-          root: './.sessions'
+          root: !!js harnessHomePath('sessions')
           compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
       - insert:
           - id: code-runtime

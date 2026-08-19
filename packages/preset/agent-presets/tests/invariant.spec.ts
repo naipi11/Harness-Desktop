@@ -13,6 +13,7 @@ import InvariantRegistry from '@harness-desktop/dsh-invariants'
 import { describe, expect, it } from 'vitest'
 import AgentPresets, { livePresetMounts, type Config } from '@harness-desktop/dsh-agent-presets'
 import * as AgentPresetsInvariant from '@harness-desktop/dsh-agent-presets/invariant'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const ROOTS = [
@@ -31,7 +32,13 @@ async function harness(roster: Partial<Config> = {}): Promise<Context> {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(AgentPresets, { default: 'standard', roots: ROOTS, includeUserRoot: false, ...roster })
+  await ctx.plugin(AgentPresets, {
+    default: 'standard',
+    roots: ROOTS,
+    includeUserRoot: false,
+    harnessHome: createLocalRuntimePlugin({ env: { HARNESS_HOME: join(FIXTURES, 'harness-home') } }),
+    ...roster,
+  })
   await ctx.plugin(InvariantRegistry)
   await ctx.plugin(AgentPresetsInvariant)
   return ctx

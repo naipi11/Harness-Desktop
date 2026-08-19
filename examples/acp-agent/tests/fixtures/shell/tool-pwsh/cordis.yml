@@ -16,6 +16,8 @@
 
 - id: shell-env
   name: '@harness-desktop/dsh-shell-env'
+  config:
+    harnessHome: !!js harnessHome
 
 - id: tasks
   name: '@harness-desktop/dsh-jobs-local'

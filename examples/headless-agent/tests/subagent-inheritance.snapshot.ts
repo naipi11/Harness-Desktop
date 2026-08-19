@@ -70,17 +70,17 @@ describe('parent-only override inheritance snapshot', () => {
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
         DSH_SNAPSHOT_CHILD_FILES: childReplay,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
-        await seedReadOnlyParent(join(runCwd, '.sessions'), runCwd)
+        await seedReadOnlyParent(join(harnessHome, 'sessions'), runCwd)
       },
-      inspect: async (runCwd) => {
+      inspect: async (runCwd, harnessHome) => {
         // THE physical fact: the child's write never reached the disk. Under
         // the deployment default (workspace-write) alone it would succeed.
         await expect(readFile(join(runCwd, 'inherited.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 
         // Collect both persisted logs (parent resumed turn + child run).
-        const sessionsDir = join(runCwd, '.sessions')
+        const sessionsDir = join(harnessHome, 'sessions')
         const files = (await readdir(sessionsDir, { recursive: true })).filter(file => file.endsWith('.jsonl'))
         const logs = await Promise.all(files.map(async file => readFile(join(sessionsDir, file), 'utf8')))
         const headerOf = (content: string): Record<string, unknown> =>

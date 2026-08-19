@@ -199,7 +199,8 @@ async function readPersistedLog(file: string): Promise<string> {
   return Buffer.concat(decoded).toString('utf8')
 }
 
-async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions')): Promise<PersistedLog[]> {
+async function persistedLogs(harnessHome: string): Promise<PersistedLog[]> {
+  const root = join(harnessHome, 'sessions')
   const files = (await readdir(root, { recursive: true }))
     .filter(file => file.endsWith('.jsonl') || file.endsWith('.jsonl.zstd'))
   return Promise.all(files.map(async (file) => {
@@ -209,8 +210,8 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
 }
 
 /** Install the keyless product-CLI adapter into the temporary headless profile. */
-async function prepareCliMockFixture(cwd: string): Promise<void> {
-  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+async function prepareCliMockFixture(_cwd: string, harnessHome: string): Promise<void> {
+  const fixtureDir = join(harnessHome, 'profiles', 'headless', 'snapshot-fixtures')
   await mkdir(fixtureDir, { recursive: true })
   await Promise.all([
     copyFile(cliMockLlmPluginPath, join(fixtureDir, 'cli-mock-llm.ts')),
@@ -234,8 +235,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: prepareCliMockFixture,
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
@@ -244,11 +245,11 @@ describe('headless stream-json snapshots', () => {
         if (refreshing) await writeFile(headlessSessionExpected, session)
         expect(session).toBe(await readFile(headlessSessionExpected, 'utf8'))
         expect(session).toContain(task)
-        expect(session).toContain('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP')
+        expect(session).toContain('CLI tool round trip complete: Updated todo list: 1 pending, 0 in progress, 0 completed.')
       },
     })
 
-    expect(result.stdout).toBe('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP\n')
+    expect(result.stdout).toBe('CLI tool round trip complete: Updated todo list: 1 pending, 0 in progress, 0 completed.\n')
     expect(result.stderr).toBe('')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
@@ -305,8 +306,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const records = parseJsonl(logs[0]?.content ?? '')
         const retries = records.filter(record => record.type === 'llm/retry')
@@ -347,8 +348,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('compaction snapshot did not persist its session')
@@ -594,8 +595,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(3)
         const parents = logs.filter(log => typeof log.header.parentSession !== 'string')
         expect(parents).toHaveLength(1)
@@ -663,8 +664,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const records = parseJsonl(logs[0]?.content ?? '')
         const calls = records.filter(record => record.type === 'tool/call')
@@ -724,8 +725,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(3)
         const parent = logs.find(log => typeof log.header.parentSession !== 'string')
         if (parent === undefined) throw new Error('Ralph snapshot did not persist its parent session')
@@ -804,8 +805,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(2)
         const parent = logs.find(log => typeof log.header.parentSession !== 'string')
         const child = logs.find(log => typeof log.header.parentSession === 'string')
@@ -872,8 +873,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('headless PTY snapshot did not persist its session')

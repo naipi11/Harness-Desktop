@@ -127,13 +127,13 @@ describe('agent-instructions resume snapshot', () => {
         DSH_SNAPSHOT_FILE: replayFixture,
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
         await mkdir(join(runCwd, '.git'), { recursive: true })
         await writeFile(join(runCwd, 'AGENTS.md'), `${newInstruction}\n`)
-        sessionPath = await seedVisibleBaseline(join(runCwd, '.sessions'), runCwd)
+        sessionPath = await seedVisibleBaseline(join(harnessHome, 'sessions'), runCwd)
       },
-      inspect: async () => {
+      inspect: async (_runCwd, harnessHome) => {
         const normalization: NormalizeContext = { sessionIds: [sessionId], cwd }
         const session = scrubRequestHeaders(normalizeSessionLog(await readFile(sessionPath, 'utf8'), normalization))
         if (refreshing) await writeFile(sessionExpected, session)
@@ -155,7 +155,7 @@ describe('agent-instructions resume snapshot', () => {
         }])
         expect(JSON.stringify(workspaceEvents.at(-1)?.data?.content)).toContain(newInstruction)
 
-        const files = await readdir(join(cwd, '.sessions'), { recursive: true })
+        const files = await readdir(join(harnessHome, 'sessions'), { recursive: true })
         expect(files.filter(file => file.endsWith('.jsonl'))).toHaveLength(1)
       },
     })
@@ -184,12 +184,12 @@ describe('agent-instructions resume snapshot', () => {
         DSH_SNAPSHOT_FILE: replayFixture,
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
         await mkdir(join(runCwd, '.git'), { recursive: true })
         await writeFile(join(runCwd, 'AGENTS.md'), 'Current AGENTS rule.\n')
         await writeFile(join(runCwd, 'CLAUDE.md'), 'Current CLAUDE rule.\n')
-        sessionPath = await seedVisibleBaseline(join(runCwd, '.sessions'), runCwd, {
+        sessionPath = await seedVisibleBaseline(join(harnessHome, 'sessions'), runCwd, {
           files: [
             { name: 'CLAUDE.md', content: 'Old CLAUDE rule.' },
             { name: 'AGENTS.md', content: 'Old AGENTS rule.' },

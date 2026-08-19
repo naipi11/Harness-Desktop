@@ -392,6 +392,10 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
 function ciArtifactGates(): Gate[] {
   return [
     pnpmScript('build', 'build'),
+    pnpmScript('artifact-test', 'test:artifact:built', {
+      label: 'artifact-only tests',
+      needs: ['build'],
+    }),
     pnpmScript('desktop-release-config', 'verify:desktop-release-config', {
       label: 'desktop release config',
     }),

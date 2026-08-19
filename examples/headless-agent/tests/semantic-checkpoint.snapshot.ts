@@ -95,9 +95,9 @@ describe('semantic checkpoint recovery snapshot', () => {
         DSH_SNAPSHOT_FILE: replayFixture,
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
-        sessionPath = await seedInterruptedSession(join(runCwd, '.sessions'), runCwd)
+        sessionPath = await seedInterruptedSession(join(harnessHome, 'sessions'), runCwd)
       },
       inspect: async () => {
         const normalization: NormalizeContext = { sessionIds: [sessionId], cwd }

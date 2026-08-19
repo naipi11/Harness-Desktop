@@ -134,7 +134,9 @@ export class AgentPresets extends Service {
     if (config.includeUserRoot && config.harnessHome === undefined) {
       throw new Error('agent-presets: harnessHome is required when includeUserRoot is enabled')
     }
-    const userRoot = config.harnessHome?.path(USER_PRESET_DIR)
+    const userRoot = config.includeUserRoot
+      ? config.harnessHome?.path(USER_PRESET_DIR)
+      : undefined
     this.resolvedRoots = userRoot === undefined
       ? [...config.roots]
       : [...config.roots, { path: userRoot, trust: 'user' }]

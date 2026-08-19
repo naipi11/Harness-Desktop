@@ -278,6 +278,16 @@ describe('Node 24 lane ownership', () => {
       env: { DSH_SNAPSHOT: 'replay' },
     })
   })
+
+  it('runs the artifact-only Vitest inventory after the artifact build', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('ci-artifacts'))
+
+    expect(subject.find(item => item.id === 'artifact-test')).toMatchObject({
+      displayCommand: 'pnpm run test:artifact:built',
+      args: ['/private/pnpm.cjs', 'run', 'test:artifact:built'],
+      needs: ['build'],
+    })
+  })
 })
 
 describe('Linux primary graph', () => {

@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,12 +44,39 @@ const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
 const configSchema = yaml.JSON_SCHEMA.extend(jsExprType)
 
 /** Boot the built Web CLI, wait for its settled URL, then dispose through SIGTERM. */
-function runBuiltWeb(cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolveRun, rejectRun) => {
+async function runBuiltWeb(cwd: string, harnessHome: string): Promise<{ stdout: string; stderr: string; code: number }> {
+  const profileDir = join(harnessHome, 'profiles', 'web')
+  const shutdownMarker = join(profileDir, 'shutdown.marker')
+  if (process.platform === 'win32') {
+    await mkdir(profileDir, { recursive: true })
+    await Promise.all([
+      writeFile(join(profileDir, 'cordis.patch.yml'), [
+        '- insert:',
+        '    - id: cooperative-shutdown',
+        "      name: './cooperative-shutdown.mjs'",
+        '',
+      ].join('\n')),
+      writeFile(join(profileDir, 'cooperative-shutdown.mjs'), [
+        "import { existsSync } from 'node:fs'",
+        '',
+        "export const name = 'cooperative-shutdown'",
+        'export function apply(ctx) {',
+        '  const timer = setInterval(() => {',
+        "    if (!existsSync(new URL('./shutdown.marker', import.meta.url))) return",
+        '    clearInterval(timer)',
+        "    process.emit('SIGTERM')",
+        '  }, 25)',
+        "  ctx.effect(() => () => clearInterval(timer), 'cooperativeShutdown.interval()')",
+        '}',
+        '',
+      ].join('\n')),
+    ])
+  }
+  return await new Promise((resolveRun, rejectRun) => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       DEEPSEEK_API_KEY: 'dsh-cli-smoke-dummy-key',
-      HARNESS_HOME: join(cwd, '.harness-home'),
+      HARNESS_HOME: harnessHome,
     }
     delete env.DEEPSEEK_BASE_URL
     delete env.NODE_OPTIONS
@@ -75,7 +102,11 @@ function runBuiltWeb(cwd: string): Promise<{ stdout: string; stderr: string; cod
       stdout += chunk
       if (!settled && /dsh web: http:\/\/127\.0\.0\.1:\d+/u.test(stdout)) {
         settled = true
-        child.kill('SIGTERM')
+        if (process.platform === 'win32') {
+          void writeFile(shutdownMarker, '').catch(rejectRun)
+        } else {
+          child.kill('SIGTERM')
+        }
       }
     })
     child.stderr.on('data', (chunk: string) => { stderr += chunk })
@@ -116,7 +147,9 @@ describe.skipIf(!requireBuiltArtifacts)('built CLI lazy-search startup', () => {
 
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-cli-lazy-search-'))
     try {
-      const result = await runBuiltWeb(cwd)
+      const harnessHome = join(cwd, 'observable-harness-home')
+      const result = await runBuiltWeb(cwd, harnessHome)
+      expect(existsSync(join(harnessHome, 'profiles', 'web', 'package.json'))).toBe(true)
       expect(result.stdout).toMatch(/dsh web: http:\/\/127\.0\.0\.1:\d+/u)
       expect(result.code).toBe(0)
       expect(result.stderr).not.toMatch(/ExperimentalWarning: SQLite/u)

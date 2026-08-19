@@ -102,9 +102,11 @@ async function makeConsumer(): Promise<string> {
     '- id: acp-agent',
     '  name: \'@harness-desktop/dsh-acp-demo\'',
     '  config:',
+    '    harnessHome: !!js harnessHome',
     '    provider: built-acp-mock',
     '    model: built-acp-mock',
     '    persona: \'test agent\'',
+    "    persistenceRoot: !!js harnessHomePath('sessions')",
     '    workspaceContext: false',
     '',
   ].join('\n'))
@@ -179,7 +181,7 @@ describe.skipIf(!existsSync(acpBin))('dsh-acp-demo BUILT bin (node lib/bin.js, n
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'ACP BUILT OK' },
     }])
-    const sessionsRoot = join(sessionCwd, '.sessions')
+    const sessionsRoot = join(consumer, '.harness-home', 'sessions')
     let log: string | undefined
     await expect.poll(async () => {
       log = (await readdir(sessionsRoot, { recursive: true })).find(file => file.endsWith('.jsonl.zstd'))

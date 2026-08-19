@@ -85,12 +85,12 @@ describe('descriptor-less cold child diagnostic snapshot', () => {
         DSH_SNAPSHOT_FILE: replayOverride,
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
-        await seedDescriptorlessChild(join(runCwd, '.sessions'), runCwd)
+        await seedDescriptorlessChild(join(harnessHome, 'sessions'), runCwd)
       },
-      inspect: async (runCwd) => {
-        const sessionsDir = join(runCwd, '.sessions')
+      inspect: async (_runCwd, harnessHome) => {
+        const sessionsDir = join(harnessHome, 'sessions')
         const files = (await readdir(sessionsDir, { recursive: true })).filter(file => file.endsWith('.jsonl'))
         const logs = await Promise.all(files.map(async file => readFile(join(sessionsDir, file), 'utf8')))
         const parent = logs.find(content => content.includes('"subagent-diagnostic-parent"'))

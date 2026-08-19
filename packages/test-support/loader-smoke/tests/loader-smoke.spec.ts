@@ -46,6 +46,8 @@ describe('runLoaderSmoke', () => {
   it('passes an arbitrary bin argv and inspects world state before cleanup', async () => {
     let inspected = ''
     let marker = ''
+    let preparedHarnessHome = ''
+    let inspectedHarnessHome = ''
     const result = await runLoaderSmoke({
       label: 'argv fixture',
       tempDirPrefix: 'loader-smoke-argv-',
@@ -54,15 +56,21 @@ describe('runLoaderSmoke', () => {
       configPath,
       binArgs: ['--config', configPath, '--output-format', 'json', 'task with spaces'],
       tsconfigPath,
-      prepare: cwd => writeFile(join(cwd, 'marker.txt'), 'prepared'),
-      inspect: async (cwd) => {
+      prepare: (cwd, harnessHome) => {
+        preparedHarnessHome = harnessHome
+        return writeFile(join(cwd, 'marker.txt'), 'prepared')
+      },
+      inspect: async (cwd, harnessHome) => {
         inspected = cwd
+        inspectedHarnessHome = harnessHome
         marker = await readFile(join(cwd, 'marker.txt'), 'utf8')
       },
     })
-    const output = JSON.parse(result.stdout) as { args: string[]; cwd: string }
+    const output = JSON.parse(result.stdout) as { args: string[]; cwd: string; harnessHome: string }
     expect(output.args).toEqual(['--config', configPath, '--output-format', 'json', 'task with spaces'])
     expect(canonicalTempPath(inspected)).toBe(canonicalTempPath(output.cwd))
+    expect(canonicalTempPath(preparedHarnessHome)).toBe(canonicalTempPath(output.harnessHome))
+    expect(canonicalTempPath(inspectedHarnessHome)).toBe(canonicalTempPath(output.harnessHome))
     expect(marker).toBe('prepared')
     expect(existsSync(inspected)).toBe(false)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

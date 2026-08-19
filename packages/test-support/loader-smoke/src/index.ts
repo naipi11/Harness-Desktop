@@ -143,10 +143,10 @@ export interface LoaderSmokeOptions {
   readonly env?: Readonly<NodeJS.ProcessEnv>
   /** Process deadline override for harness tests. */
   readonly processTimeoutMs?: number
-  /** Optional world-state setup run in the isolated cwd before process start. */
-  readonly prepare?: (cwd: string) => Promise<void> | void
-  /** Optional world-state assertion run in the isolated cwd before cleanup. */
-  readonly inspect?: (cwd: string) => Promise<void> | void
+  /** Optional world-state setup run with the isolated cwd and injected Harness home before process start. */
+  readonly prepare?: (cwd: string, harnessHome: string) => Promise<void> | void
+  /** Optional world-state assertion run with the isolated cwd and injected Harness home before cleanup. */
+  readonly inspect?: (cwd: string, harnessHome: string) => Promise<void> | void
   /**
    * Exact process exit code this smoke expects; defaults to `0`. Scenarios
    * pinning a designed failure surface (a one-shot turn ending in an error
@@ -173,16 +173,17 @@ export interface LoaderSmokeResult {
  */
 export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<LoaderSmokeResult> {
   const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
+  const harnessHome = join(cwd, '.harness-home')
   const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
   try {
-    await options.prepare?.(cwd)
+    await options.prepare?.(cwd, harnessHome)
     const launch = resolveExampleLaunch({
       srcBin: options.binScript,
       libBin: options.libBinScript,
       configArgs: options.binArgs ?? [options.configPath],
       ...options.mode !== undefined ? { mode: options.mode } : {},
       tsconfigPath: options.tsconfigPath,
-      env: { HARNESS_HOME: join(cwd, '.harness-home'), DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
+      env: { HARNESS_HOME: harnessHome, DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
     })
     // `input: ''` writes nothing and closes stdin — the fixture-visible
     // stdin-close contract. `reject: false` folds spawn errors, the SIGKILL
@@ -204,7 +205,7 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
     if (result.exitCode !== expectedExitCode) {
       throw new Error(`${options.label} exited ${String(result.exitCode)} (expected ${expectedExitCode}). stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
     }
-    await options.inspect?.(cwd)
+    await options.inspect?.(cwd, harnessHome)
     return { stdout: result.stdout, stderr: result.stderr }
   } finally {
     await rm(cwd, { recursive: true, force: true })

@@ -7,7 +7,7 @@
 - id: persistence
   name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: './.sessions'
+    root: !!js harnessHomePath('sessions')
     compression: none
 
 # file/override both default to their DSH_SNAPSHOT_* env vars.
@@ -20,7 +20,7 @@
 - id: agent
   name: '@harness-desktop/dsh-agent-spine-demo'
   config:
-    harnessHome: !!js process.env.HARNESS_HOME
+    harnessHome: !!js harnessHome
     agents: []
     workspaceContext: false
     skills:

@@ -22,10 +22,10 @@
       - id: acp-agent
         name: '@harness-desktop/dsh-acp-demo'
         config:
-          harnessHome: !!js process.env.HARNESS_HOME
+          harnessHome: !!js harnessHome
           provider: deepseek-official
           model: deepseek-v4-flash
-          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
+          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? harnessHomePath('sessions')
           # Replay fixtures are raw JSONL; the whole-config patch must restate
           # the compression choice or the default zstd frames hide the logs
           # from the harness's harvest.
