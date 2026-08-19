@@ -127,9 +127,9 @@ Electron 启用 Renderer 沙箱和 context isolation，并禁用 Node 集成。C
 
 Runtime 只在 `127.0.0.1` 上绑定由操作系统选择的随机端口，不创建固定、局域网或永久外部监听器。它的端点令牌只对 CLI 启动器和 Electron 主进程等原生启动器可用；令牌绝不出现在命令行、浏览器 URL、会话记录、诊断包、Renderer 消息或持久化浏览器存储中。
 
-已认证的原生启动器签发一次性、有效期 60 秒的浏览器 handoff；Runtime 仅在第一次成功交换前将其保留在内存中。导航在 URL fragment 中携带该 handoff，例如 `/#handoff=<secret>`。Dashboard 在精确的 loopback origin 上交换该 fragment，立即通过 `history.replaceState` 清除它，并收到标记为 `HttpOnly; SameSite=Strict; Path=/` 的会话 cookie。Runtime API 端点和事件流拒绝不带该 cookie 或并非来自精确 origin 的 Dashboard 请求，也拒绝跨 origin 的凭据请求。
+已经认证的原生启动器会签发高熵、不透明、一次性的浏览器 handoff；它在 60 秒内过期，Runtime 仅在第一次成功交换前将其保留在内存中。启动器会创建只允许当前用户访问的 bootstrap 目录和文档，验证仅所有者 POSIX mode 或当前用户 Windows ACL，拒绝权限更宽的位置，并打开 file URL 干净、HTML body 含隐藏 handoff 字段的文档。本地 file 具有不透明 origin，因此其顶级表单向 `http://127.0.0.1:<port>/_harness/handoff` 发出的 `POST` 有意跨 origin：handler 不要求 Origin 相等、不发送 CORS permission，只用表单正文中的 handoff 认证、以原子方式只消费一次，并以干净的 `303` 导航到 Dashboard。启动器拥有的 helper 只接收 bootstrap 文档路径，在 `expiresAt` 安排精确一次 cleanup，并在 dispatch failure、exchange success 或 failure，或 expiry 后精确一次删除文档及其所属目录。Runtime API 端点和事件流拒绝不带会话 cookie 或并非来自精确 origin 的 Dashboard 请求，也拒绝跨 origin 的凭据请求。
 
-handoff 密钥和浏览器会话标识符绝不进入 localStorage、sessionStorage、IndexedDB、诊断或会话记录。Runtime 关闭会使每个 handoff 和浏览器会话失效。恢复后的 Desktop 会签发替代 handoff；普通浏览器标签页则显示可复制的 `harness web` 重连命令。
+交换后的随机或签名会话凭据只会出现在 Runtime `Set-Cookie` 响应、浏览器 `Cookie` 请求头和浏览器 HttpOnly cookie jar 中；它使用 `HttpOnly; SameSite=Strict; Path=/`、不带 expiry attribute，且绝不暴露给 Dashboard JavaScript、Renderer IPC、浏览器脚本存储、应用持久化、日志、诊断、快照或会话记录。handoff 本身绝不进入 URL、hash、query、header、referrer、history、浏览器存储、Renderer IPC、日志、诊断或会话记录。Runtime 关闭会使每个 handoff 和浏览器会话失效。恢复后的 Desktop 会签发替代 handoff；普通浏览器标签页则显示可复制的 `harness web` 重连命令。
 
 凭据提供方把引用存入 Harness 数据，把密钥存入 Windows Credential Manager、macOS Keychain 或 Linux Secret Service。无界面 Linux 环境和自动化可以使用环境变量或 `.env` 引用。缺少原生凭据存储时，应用应给出修正指引并失败；应用不创建自定义明文或自行设计的加密保险库。
 
@@ -181,6 +181,6 @@ GitHub Releases 发布 `stable`、`beta` 和 `nightly` 频道。每个版本都�
 
 每项新增模型可见或产品用户可见的 transcript 都通过真实可运行组合加入无密钥快照。Electron 端到端测试使用 Playwright 驱动已打包的 Renderer 和真实 Runtime API。CLI 端到端测试使用真实伪终端验证输入编辑、滚动历史、流式输出、Ctrl+C、终端尺寸变化、颜色降级与退出码。
 
-跨客户端测试从终端 CLI、浏览器 Dashboard 与 Desktop 中的每个前端创建项目和会话，并从另外两个前端观察相同耐久状态；测试还拒绝并发会话操作，并且只在记录的进程身份死亡后恢复陈旧 Runtime 记录。生命周期测试证明 `harness web --status` 绝不启动 Runtime、`harness web --stop` 只释放后台租约，并且一个客户端关闭不会停止另一个客户端的工作。安全测试覆盖仅回环绑定、端点令牌不泄露、handoff 过期与单次使用、仅 cookie 的 Dashboard 认证、Renderer 越权拒绝、凭据脱敏、恶意更新 manifest 与工作区逃逸请求。
+跨客户端测试从终端 CLI、浏览器 Dashboard 与 Desktop 中的每个前端创建项目和会话，并从另外两个前端观察相同耐久状态；测试还拒绝并发会话操作，并且只在记录的进程身份死亡后恢复陈旧 Runtime 记录。生命周期测试证明 `harness web --status` 绝不启动 Runtime、`harness web --stop` 只释放后台租约，并且一个客户端关闭不会停止另一个客户端的工作。安全测试证明仅所有者 bootstrap mode 或 ACL 并拒绝权限更宽的位置，验证 never-dispatched 在 `expiresAt` cleanup 以及 dispatch/exchange failure cleanup，证明不透明 file origin 能到达仅正文的交换、拒绝错误、复用和过期的 handoff、确认无 CORS 的干净 `303`，并强制仅 cookie 且精确 origin 的 Dashboard API 与事件认证；它们还覆盖仅回环绑定、端点令牌不泄露、Renderer 越权拒绝、凭据脱敏、恶意更新 manifest 与工作区逃逸请求。
 
 当用户可以在每个受支持平台安装 CLI 与 Desktop、独立运行终端 CLI、浏览器 Dashboard 和 Desktop、打开同一本地项目、通过一份共享会话历史交换工作、审批工具、查看修改，并且关闭任一客户端而不丢失另一客户端的活动工作时，首个可用版本通过验收。后台 Web 验收还要求租约状态可观察，并且停止操作会保持活动工作和已连接客户端不受影响。第一个稳定版本还要求产物已签名、自动更新和回滚已经验证、没有已知密钥泄露，且平台冒烟测试全部通过。

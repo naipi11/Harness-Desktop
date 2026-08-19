@@ -47,9 +47,9 @@ Runtime 只在 `127.0.0.1` 上绑定由操作系统选择的随机端口。其�
 
 ### 本地 Dashboard 认证
 
-已经认证的启动器或 Electron 主进程会为指定 Runtime 端点签发一次性的浏览器 handoff 密钥。handoff 在 60 秒后过期，并且仅在第一次成功交换之前保留在 Runtime 内存中。浏览器导航只在 URL fragment 中携带它，例如 `/#handoff=<secret>`；fragment 不会随 HTTP 请求或 referrer 发送。Dashboard bootstrap 在渲染受保护状态前于精确的 loopback origin 上交换该 fragment，通过 `history.replaceState` 清除它，并收到标记为 `HttpOnly; SameSite=Strict; Path=/` 的会话 cookie。
+已经认证的启动器或 Electron 主进程会为指定 Runtime 端点签发高熵、不透明、一次性的浏览器 handoff 密钥。handoff 在 60 秒内过期，并且仅在第一次成功交换之前保留在 Runtime 内存中。启动器会创建只允许当前用户访问的一次性本地 bootstrap 目录和文档，验证仅所有者 POSIX mode 或当前用户 Windows ACL，拒绝权限更宽的位置，并打开 file URL 干净、HTML body 含隐藏 handoff 字段的文档。本地 file 具有不透明 origin，因此其顶级表单向 `http://127.0.0.1:<port>/_harness/handoff` 发出的 `POST` 有意跨 origin：handler 不要求 Origin 相等、不发送 CORS permission，只用表单正文中的密钥认证、以原子方式只消费一次，并以干净的 `303` 导航到 Dashboard。启动器拥有的清理 helper 只接收 bootstrap 文档路径，在 `expiresAt` 安排精确一次 cleanup，在 dispatch failure、exchange success 或 failure，或 expiry 后删除文档及所属目录，绝不把 handoff 放入参数、日志、URL、历史记录、referrer、header、浏览器存储、诊断、会话记录、浏览器脚本存储或 Renderer IPC。
 
-Runtime API 端点和事件流只接受带该会话 cookie 且来自精确 `http://127.0.0.1:<port>` origin 的 Dashboard；它们拒绝跨 origin 的凭据请求。handoff 密钥和会话标识符绝不进入 localStorage、sessionStorage、IndexedDB、诊断或会话记录。Runtime 关闭会使每个 handoff 和会话失效。Electron 主进程在重新加载恢复后的 Dashboard 前签发新的 handoff；普通浏览器标签页则显示可复制的 `harness web` 重连命令。
+Runtime 只通过 `Set-Cookie` 签发交换后的随机或签名会话凭据，浏览器只在 `Cookie` 请求头中发送它，并且只保留在其 HttpOnly cookie jar 中。该会话 cookie 使用 `HttpOnly; SameSite=Strict; Path=/`、不带 expiry attribute，绝不暴露给 Dashboard JavaScript、Renderer IPC、localStorage、sessionStorage、IndexedDB、应用持久化、诊断、快照或会话记录。Runtime API 端点和事件流只接受带该会话 cookie 且来自精确 `http://127.0.0.1:<port>` origin 的 Dashboard；它们拒绝跨 origin 的凭据请求。Runtime 关闭会使每个 handoff 和会话失效。Electron 主进程在重新加载恢复后的 Dashboard 前签发新的 handoff；普通浏览器标签页则显示可复制的 `harness web` 重连命令。
 
 ### 连接、顺序与生命周期
 
@@ -138,6 +138,6 @@ Harness Desktop 使用已确认的原创 B 方向“星轨小鲸”：圆润的�
 
 Runtime 为锁冲突、陈旧记录、版本不匹配、不可用凭据、旧数据导入失败、格式错误的本地请求以及子进程或插件启动失败报告类型化、脱敏的失败。客户端报告失败对象、修正方法和可复制的诊断标识符，而不暴露访问令牌或密钥值。
 
-聚焦测试覆盖数据根目录选择、导入冲突处理、锁恢复、仅回环绑定、令牌不泄露、handoff 过期与单次使用、仅 cookie 的 Dashboard 认证、Runtime 空闲行为、后台租约的状态与停止行为、CLI 输入和 JSON 输出、Web daemon 别名、桌面权限隔离、Dashboard 可用性和图标资产打包。跨客户端集成测试从每个前端创建项目和会话，在另两个前端观察相同耐久状态、拒绝并发会话操作，并证明意外客户端退出后的安全恢复。
+聚焦测试覆盖数据根目录选择、导入冲突处理、锁恢复、仅回环绑定、令牌不泄露、仅所有者 bootstrap mode 或 ACL 并拒绝权限更宽的位置、在 `expiresAt` 的精确一次 cleanup timer（包括 never-dispatched 文档以及 dispatch/exchange failure）、来自不透明 file origin 的仅正文 handoff 交换且拒绝错误、复用和过期 handoff、无 CORS permission 与干净 `303`、仅 cookie 且精确 origin 的 Dashboard 认证、Runtime 空闲行为、后台租约的状态与停止行为、CLI 输入和 JSON 输出、Web daemon 别名、桌面权限隔离、Dashboard 可用性和图标资产打包。跨客户端集成测试从每个前端创建项目和会话，在另两个前端观察相同耐久状态、拒绝并发会话操作，并证明意外客户端退出后的安全恢复。
 
 1.1.0 的验收要求为 Windows、macOS 和 Linux 上的干净路径：用户安装 CLI 和桌面应用、独立运行全部三个命令、选择同一个本地工作区、通过一份会话历史交换工作，并且可以关闭任一客户端而不丢失其他客户端的活动工作。

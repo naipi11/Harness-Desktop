@@ -12,7 +12,7 @@ DeepSeek Harness 已提供插件化 agent 运行时、浏览器应用、CLI 启�
 
 ## 提案
 
-Harness Desktop 为每个 `HARNESS_HOME` 使用按需启动、属于当前用户的本地 Runtime。Runtime 拥有 Harness 插件组合、持久化、凭据引用、本地 API、会话写入顺序、端点记录和空闲生命周期。它只绑定随机的 `127.0.0.1` 端口。原生 CLI 启动器和 Electron 主进程使用端点 token；浏览器 Dashboard 用一次性、60 秒有效的 URL fragment handoff 换取 `HttpOnly; SameSite=Strict; Path=/` cookie，而 Renderer 不获得任一密钥。带进程启动身份的原子锁保护陈旧状态恢复。
+Harness Desktop 为每个 `HARNESS_HOME` 使用按需启动、属于当前用户的本地 Runtime。Runtime 拥有 Harness 插件组合、持久化、凭据引用、本地 API、会话写入顺序、端点记录和空闲生命周期。它只绑定随机的 `127.0.0.1` 端口。原生 CLI 启动器和 Electron 主进程使用端点 token；提议的 launcher 拥有只允许当前用户访问的不透明 file bootstrap，其高熵、一次性 handoff 标识符只作为发往该 `127.0.0.1` Runtime 的 hidden `POST` body field 出现，在 60 秒内过期，并交换为干净 redirect 加 `HttpOnly; SameSite=Strict; Path=/` cookie。URL、launch arguments、日志和 Renderer 不接收密钥，launcher 在 exchange result 或 expiry 后删除 bootstrap file。带进程启动身份的原子锁保护陈旧状态恢复。
 
 Electron 提供桌面壳并复用现有 React/Vite Dashboard。它的主进程启动或连接 Runtime，而沙箱化 Renderer 只获得用于原生操作与恢复诊断的带版本 preload API。Renderer 绝不获得 Node.js、凭据、数据根目录、token 或子进程访问。
 
@@ -36,7 +36,7 @@ Desktop 发布使用 Electron Builder、已签名原生产物、GitHub Releases�
 
 ## 验收标准
 
-- 本地 Runtime 拥有一个 `HARNESS_HOME`，只绑定 loopback，将端点 token 限制给原生启动器，为浏览器 Dashboard 提供一次性 handoff 和 cookie 会话，并且只在验证进程身份后清理陈旧所有者。
+- 本地 Runtime 拥有一个 `HARNESS_HOME`，只绑定 loopback，将端点 token 限制给原生启动器，为浏览器 Dashboard 提供只允许当前用户访问的不透明 file bootstrap，其中高熵、一次性、最长 60 秒的 hidden-body handoff 交换为干净 cookie redirect，并且只在验证进程身份后清理陈旧所有者。
 - `apps/desktop` 通过强类型 preload API 在沙箱化 Renderer 中运行真实 Dashboard 并连接 Runtime。
 - `harness` 在当前目录交互运行，`run --json` 则提供 stdout 纯净的机器输出和稳定退出码。
 - Desktop、Web 和 CLI 读取相同设置和会话，拒绝第二个写入者，并在不发生脑裂的前提下完成协作式会话接管。

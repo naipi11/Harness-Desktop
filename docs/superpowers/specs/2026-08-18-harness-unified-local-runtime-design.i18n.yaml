@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-18-harness-unified-local-runtime-design.md
-2026-08-18-harness-unified-local-runtime-design.md: 09a3bd7f8a7192a37d8cc9e8c16c62983ccd9957
-2026-08-18-harness-unified-local-runtime-design.zh.md: df8b8c0e45ae1b2f011c17eb1e4c8def0395f636
+2026-08-18-harness-unified-local-runtime-design.md: bc4aa620c2bbd24992184596034600ec610b120c
+2026-08-18-harness-unified-local-runtime-design.zh.md: 2d02cad6b2ff2f75f9d7c745403e9f9ed8bbb053

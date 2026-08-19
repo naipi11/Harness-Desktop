@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-18-harness-icon-packaging-docs.md
+2026-08-18-harness-icon-packaging-docs.md: 1bd4f1e0c6ae14fe0e8f0b57b2c986f1475fdb9f
+2026-08-18-harness-icon-packaging-docs.zh.md: cbaa22d66e9ee73099a0805476d78bb03a677f66

@@ -12,7 +12,7 @@ The product needs desktop, Web, and terminal clients that share one local data r
 
 ## Proposal
 
-Harness Desktop uses an on-demand per-user local Runtime for every `HARNESS_HOME`. The Runtime owns the Harness plugin composition, persistence, credential references, local API, session writer ordering, endpoint record, and idle lifetime. It binds only a random `127.0.0.1` port. Native CLI launchers and Electron main use its endpoint token; a browser Dashboard exchanges a one-time 60-second fragment handoff for an `HttpOnly; SameSite=Strict; Path=/` cookie, while the renderer receives neither secret. An atomic lock with process-start identity protects stale-state recovery.
+Harness Desktop uses an on-demand per-user local Runtime for every `HARNESS_HOME`. The Runtime owns the Harness plugin composition, persistence, credential references, local API, session writer ordering, endpoint record, and idle lifetime. It binds only a random `127.0.0.1` port. Native CLI launchers and Electron main use its endpoint token; the proposed launcher owns a current-user-only opaque file bootstrap whose high-entropy, one-time handoff identifier appears only as a hidden `POST` body field to that `127.0.0.1` Runtime, expires within 60 seconds, and is exchanged for a clean redirect plus an `HttpOnly; SameSite=Strict; Path=/` cookie. URLs, launch arguments, logs, and the renderer receive no secret, and the launcher removes the bootstrap file after an exchange result or expiry. An atomic lock with process-start identity protects stale-state recovery.
 
 Electron provides the desktop shell and reuses the existing React/Vite Dashboard. Its main process starts or attaches to the Runtime, while the sandboxed renderer receives only a versioned preload API for native operations and recovery diagnostics. The renderer never gains Node.js, credential, data-root, token, or child-process access.
 
@@ -36,7 +36,7 @@ Desktop releases use Electron Builder, signed native artifacts, GitHub Releases,
 
 ## Acceptance criteria
 
-- The local Runtime owns one `HARNESS_HOME`, binds loopback only, limits its endpoint token to native launchers, gives the browser Dashboard a one-time handoff and cookie session, and removes stale ownership only after process-identity verification.
+- The local Runtime owns one `HARNESS_HOME`, binds loopback only, limits its endpoint token to native launchers, gives the browser Dashboard a current-user-only opaque file bootstrap with a high-entropy, one-time, at-most-60-second hidden-body handoff and clean cookie redirect, and removes stale ownership only after process-identity verification.
 - `apps/desktop` runs the real Dashboard in a sandboxed renderer through a typed preload API and attaches to the Runtime.
 - `harness` runs interactively in the current directory, while `run --json` provides stdout-pure machine output and stable exit codes.
 - Desktop, Web, and CLI read the same settings and sessions, reject a second writer, and complete cooperative session takeover without a split brain.

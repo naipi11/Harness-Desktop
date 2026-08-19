@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-15-harness-desktop-design.md
-2026-08-15-harness-desktop-design.md: 8a0f724afcd2208637efc877733a068fd771585e
-2026-08-15-harness-desktop-design.zh.md: 64a4f1ca3f6c745637d44df3bd7ae33fa38aff05
+2026-08-15-harness-desktop-design.md: 1712f104099cc9a58873653babe85c45bb319abd
+2026-08-15-harness-desktop-design.zh.md: 5d138375bd56fdae98da7bf86d1bc23dc67a6db2
