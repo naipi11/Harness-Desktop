@@ -28,7 +28,7 @@ import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type 
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@harness-desktop/dsh-agent'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@harness-desktop/dsh-settings'
-import { dshHomePath } from '@harness-desktop/dsh-home-paths'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
@@ -131,7 +131,7 @@ export class AgentPresets extends Service {
     super(ctx, 'agentPresets')
     this.selfCtx = ctx
     this.resolvedRoots = config.includeUserRoot
-      ? [...config.roots, { path: dshHomePath(USER_PRESET_DIR), trust: 'user' }]
+      ? [...config.roots, { path: createLocalRuntimePlugin().path(USER_PRESET_DIR), trust: 'user' }]
       : [...config.roots]
     // Deliberately not `installSettingsSection`: that helper exists to re-judge
     // what a consumer DERIVED from the source — memoized resolutions,

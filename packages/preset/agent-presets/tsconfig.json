@@ -40,6 +40,9 @@
       "path": "../../util/home-paths"
     },
     {
+      "path": "../../host/local-runtime"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

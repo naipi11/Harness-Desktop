@@ -42,7 +42,8 @@ import { mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { Document, parseDocument, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
-import { canonicalizeWatchPath, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
+import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { launchEnvironmentOf } from '@harness-desktop/dsh-launch-environment'
 import { CredentialProvider, credentialRef } from '@harness-desktop/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@harness-desktop/dsh-credentials'
@@ -78,7 +79,7 @@ interface ResolvedSpec {
  */
 export function resolveSpec(config: Config): ResolvedSpec {
   return {
-    filename: resolve(config.path ?? join(resolveDshHome(config.dshHome), CREDENTIALS_FILENAME)),
+    filename: resolve(config.path ?? join(resolveConfiguredHarnessHome(config.dshHome), CREDENTIALS_FILENAME)),
     watch: config.watch ?? true,
     debounceMs: config.debounceMs ?? 100,
   }

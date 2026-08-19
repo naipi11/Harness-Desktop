@@ -15,7 +15,7 @@ import { Context, type FiberState } from '@harness-desktop/cordis'
 import Loader, { type Entry, type EntryOptions } from '@harness-desktop/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@harness-desktop/cordis-plugin-include'
 import Group from '@harness-desktop/cordis-plugin-group'
-import { dshHomePath, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { createLocalRuntimePlugin, resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
 import type {} from '@harness-desktop/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
@@ -24,7 +24,7 @@ import type {} from '@harness-desktop/dsh-system-prompt'
 declare module '@harness-desktop/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
-    dshHomePath?: typeof dshHomePath
+    harnessHomePath?: ReturnType<typeof createLocalRuntimePlugin>['path']
   }
 }
 
@@ -178,7 +178,7 @@ export function loadLayeredEnv(
   binName: string, cwd: string = process.cwd(),
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): LaunchEnvironmentSnapshot {
-  const home = resolveDshHome()
+  const home = resolveHarnessHome().path
   const inherited = { ...process.env } as Record<string, string>
   // Parse both layers first: a rejection must not leave one file applied.
   const project = readEnvLayer(binName, cwd, warn)
@@ -767,7 +767,7 @@ export async function boot(
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    ctx.provide('dshHomePath', dshHomePath)
+    ctx.provide('harnessHomePath', createLocalRuntimePlugin().path)
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

@@ -29,7 +29,7 @@ import {
   watchUserPatches,
   type Profile,
 } from '@harness-desktop/dsh-app-boot'
-import { resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
@@ -47,7 +47,7 @@ const NAME = 'dsh'
  * @returns the absolute patch-file path.
  */
 export function homePatchPath(): string {
-  return join(resolveDshHome(), PROFILE_PATCH_FILENAME)
+  return join(resolveHarnessHome().path, PROFILE_PATCH_FILENAME)
 }
 
 /** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */

@@ -54,7 +54,7 @@
     - id: storage-json
       name: '@harness-desktop/dsh-storage-json'
       config:
-        root: !!js dshHomePath('storages')
+        root: !!js harnessHomePath('storages')
 
     - id: storage-domain
       name: '@harness-desktop/dsh-storage-domain'

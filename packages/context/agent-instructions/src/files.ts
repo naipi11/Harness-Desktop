@@ -9,7 +9,6 @@ import { stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { FileSystem, FsInfo, FsTarget, FsVersion } from '@harness-desktop/dsh-fs'
 import { assertNever } from '@harness-desktop/dsh-llm'
-import { dshHomeDisplay } from '@harness-desktop/dsh-home-paths'
 import { resolveConfig, resolveDiscoveryConfig, type ResolvedConfig } from './config.ts'
 import { trimmedInstructionDigest } from './digest.ts'
 import {
@@ -516,6 +515,6 @@ export async function readScopeInstruction(
   }
 }
 
-function userGlobalDisplayPath(dshHome: string): string {
-  return `${dshHomeDisplay(dshHome)}/AGENTS.md`
+function userGlobalDisplayPath(_dshHome: string): string {
+  return '$HARNESS_HOME/AGENTS.md'
 }

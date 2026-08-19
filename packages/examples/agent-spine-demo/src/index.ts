@@ -35,7 +35,7 @@ import * as toolSkill from '@harness-desktop/dsh-tool-skill'
 import * as toolJobs from '@harness-desktop/dsh-tool-jobs'
 import AgentLoop, { type Config as AgentLoopConfig } from '@harness-desktop/dsh-agent-loop'
 import * as llmRetry from '@harness-desktop/dsh-llm-retry'
-import { resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 export const name = 'agent-spine-demo'
 
@@ -212,10 +212,10 @@ export function pickSpineConfig(config: Omit<Config, 'agents'>): Omit<Config, 'a
 export function apply(ctx: Context, config: Config): void {
   const nestedDshHome = config.skills?.filesystem?.dshHome
   if (config.dshHome !== undefined && nestedDshHome !== undefined
-    && resolveDshHome(config.dshHome) !== resolveDshHome(nestedDshHome)) {
+    && resolveConfiguredHarnessHome(config.dshHome) !== resolveConfiguredHarnessHome(nestedDshHome)) {
     throw new Error('agent-spine-demo: dshHome and skills.filesystem.dshHome must resolve to the same directory')
   }
-  const dshHome = resolveDshHome(config.dshHome ?? nestedDshHome)
+  const dshHome = resolveConfiguredHarnessHome(config.dshHome ?? nestedDshHome)
 
   ctx.plugin(Timer)
   ctx.plugin(LlmRuntime)

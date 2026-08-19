@@ -19,7 +19,8 @@ import z from '@harness-desktop/schemastery'
 import type Schema from '@harness-desktop/schemastery'
 import { parse as parseYaml } from 'yaml'
 import type { FileSystem, FsDirEntry, FsTarget } from '@harness-desktop/dsh-fs'
-import { canonicalizeWatchPath, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
+import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
@@ -160,7 +161,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   ) {
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
-    this.dshHome = resolveDshHome(config.dshHome)
+    this.dshHome = resolveConfiguredHarnessHome(config.dshHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
     this.watchManager = new SkillWatchManager(ctx, control.invalidate, resolveWatchConfig(config))

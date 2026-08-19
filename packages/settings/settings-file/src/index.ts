@@ -14,7 +14,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { Document, parseDocument } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
-import { canonicalizeWatchPath, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
+import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@harness-desktop/dsh-settings'
 
 /** Plugin config: file location and hot-reload behavior. */
@@ -53,7 +54,7 @@ interface ResolvedSpec {
  * @returns the resolved file location, format, and watch behavior.
  */
 export function resolveSpec(config: Config): ResolvedSpec {
-  const filename = resolve(config.path ?? join(resolveDshHome(config.dshHome), 'settings.yaml'))
+  const filename = resolve(config.path ?? join(resolveConfiguredHarnessHome(config.dshHome), 'settings.yaml'))
   const format = FORMATS[extname(filename)]
   if (format === undefined) {
     throw new Error(`settings-file: extension "${extname(filename)}" is not supported (use .yaml, .yml, or .json)`)

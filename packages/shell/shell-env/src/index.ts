@@ -12,7 +12,7 @@ import { Service, type Context } from '@harness-desktop/cordis'
 import z from '@harness-desktop/schemastery'
 import { DSH_ENV_PREFIX } from '@harness-desktop/dsh-shell'
 import type { DshEnvironment, DshEnvironmentKey } from '@harness-desktop/dsh-shell'
-import { DSH_HOME_ENV, resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import type { ToolExecution } from '@harness-desktop/dsh-tools'
 import type {} from '@harness-desktop/dsh-session-persistence'
 
@@ -69,10 +69,11 @@ export interface BashEnvVariableInfo extends BashEnvVariable {
 }
 
 const DSH_SHELL_KEY = `${DSH_ENV_PREFIX}SHELL` as const
+const DSH_HOME_KEY = `${DSH_ENV_PREFIX}HOME` as const
 const DSH_SESSION_ID_KEY = `${DSH_ENV_PREFIX}SESSION_ID` as const
 const DSH_SESSION_JSONL_KEY = `${DSH_ENV_PREFIX}SESSION_JSONL` as const
 const RESERVED_BASH_ENV_KEYS = new Set<DshEnvironmentKey>([
-  DSH_HOME_ENV,
+  DSH_HOME_KEY,
   DSH_SHELL_KEY,
   DSH_SESSION_ID_KEY,
 ])
@@ -98,7 +99,7 @@ export class ShellEnvRegistry extends Service {
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'shellEnv')
-    this.dshHome = resolveDshHome(config.dshHome)
+    this.dshHome = resolveConfiguredHarnessHome(config.dshHome)
   }
 
   /**
@@ -151,7 +152,7 @@ export class ShellEnvRegistry extends Service {
    */
   collect(execution: ToolExecution): DshEnvironment {
     const values: Record<DshEnvironmentKey, string> = {
-      [DSH_HOME_ENV]: this.dshHome,
+      [DSH_HOME_KEY]: this.dshHome,
       [DSH_SHELL_KEY]: '1',
     }
     if (execution.agent !== undefined) {

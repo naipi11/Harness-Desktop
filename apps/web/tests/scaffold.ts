@@ -40,7 +40,7 @@ import {
   healProfilesModuleFallback,
   loadOverlayPatches,
 } from '@harness-desktop/dsh-app-boot'
-import { dshHomePath } from '@harness-desktop/dsh-home-paths'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 import { settingsNamespace } from '@harness-desktop/dsh-settings'
 import { LlmAdapter } from '@harness-desktop/dsh-llm'
 import type {
@@ -508,7 +508,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
-    ctx.provide('dshHomePath', dshHomePath)
+    ctx.provide('harnessHomePath', createLocalRuntimePlugin().path)
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come

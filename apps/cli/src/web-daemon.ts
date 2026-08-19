@@ -6,7 +6,7 @@
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { closeSync, mkdirSync, mkdtempSync, openSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveDshHome } from '@harness-desktop/dsh-home-paths'
+import { resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 /** A child process observed only through its startup events. */
 export interface WebDaemonChild {
@@ -40,7 +40,7 @@ export interface WebDaemonAdapters {
 
 /** Production adapters; tests provide a small in-memory substitute. */
 export const productionWebDaemonAdapters: WebDaemonAdapters = {
-  home: resolveDshHome,
+  home: () => resolveHarnessHome().path,
   mkdirSync,
   mkdtempSync,
   openSync,
