@@ -86,16 +86,6 @@ export function resolveHarnessHome(input: HarnessHomeInput = {}): HarnessHomeRes
 }
 
 /**
- * Resolve an application-provided root through the single `HARNESS_HOME` policy.
- * @param configuredHome - explicit writer configuration, when supplied.
- * @returns the absolute writable Harness Desktop data root.
- */
-export function resolveConfiguredHarnessHome(configuredHome?: string): HarnessHome {
-  if (configuredHome === undefined) return resolveHarnessHome().path
-  return resolveHarnessHome({ env: { ...process.env, [HARNESS_HOME_ENV]: configuredHome } }).path
-}
-
-/**
  * Resolve one immutable provider for the caller's local durable writers.
  * @param config - platform and environment facts used exactly once to select the root.
  * @returns a provider that joins child paths beneath the resolved root.

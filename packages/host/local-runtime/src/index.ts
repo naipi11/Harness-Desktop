@@ -4,7 +4,6 @@ export {
   createLocalRuntimePlugin,
   defaultHarnessHome,
   HARNESS_HOME_ENV,
-  resolveConfiguredHarnessHome,
   resolveHarnessHome,
   type HarnessHome,
   type HarnessHomeInput,

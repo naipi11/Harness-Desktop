@@ -41,9 +41,9 @@ import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.
 const NAME = 'dsh'
 
 /**
- * The home-level user patch layer (`$DSH_HOME/cordis.patch.yml`), applied
+ * The home-level user patch layer (`$HARNESS_HOME/cordis.patch.yml`), applied
  * over every profile's own layer. Resolved per call, not at module load:
- * `$DSH_HOME` may be set by the test or launcher after import.
+ * `$HARNESS_HOME` may be set by the test or launcher after import.
  * @returns the absolute patch-file path.
  */
 export function homePatchPath(): string {
@@ -107,7 +107,7 @@ interface ComposedProfile {
   profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
-  /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
+  /** The home-level user layer (`$HARNESS_HOME/cordis.patch.yml`), applied after the profile's own. */
   homePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
@@ -132,7 +132,7 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * Load `name` and compose its effective patch stack: bundle layers in
  * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
  * platform on its own rows), the profile's user layer, the home-level user
- * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
+ * layer (`$HARNESS_HOME/cordis.patch.yml` — machine-local preferences that apply
  * to every profile, so it outranks the per-profile layer), `--patch` overlays,
  * then the telemetry switch.
  * @param name - the profile name.

@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 | Command | Purpose |
 |---|---|
-| `harness --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
+| `harness --profile <name>` | Boot the named profile under `$HARNESS_HOME/profiles/<name>`. |
 | `harness --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `harness web` | Alias of `--profile web`; `--daemon` and `--background` launch only Web in the background. |
 | `harness plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
@@ -36,7 +36,7 @@ A profile directory holds a `package.json` (out-of-tree plugin dependencies plus
 
 The tree composes over an empty root:
 - each bundle's patch in `dsh.profile.bundles` order
-- then the profile's `cordis.patch.yml`, then the home-level `$DSH_HOME/cordis.patch.yml`
+- then the profile's `cordis.patch.yml`, then the home-level `$HARNESS_HOME/cordis.patch.yml`
 - then `--patch` overlays
 
 Bundles named in `dsh.profile.bundles` resolve from the Harness Desktop installation first (`@harness-desktop/dsh-base`, `@harness-desktop/dsh-web-app`, `@harness-desktop/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.

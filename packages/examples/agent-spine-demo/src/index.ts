@@ -35,7 +35,6 @@ import * as toolSkill from '@harness-desktop/dsh-tool-skill'
 import * as toolJobs from '@harness-desktop/dsh-tool-jobs'
 import AgentLoop, { type Config as AgentLoopConfig } from '@harness-desktop/dsh-agent-loop'
 import * as llmRetry from '@harness-desktop/dsh-llm-retry'
-import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 export const name = 'agent-spine-demo'
 
@@ -73,7 +72,7 @@ export interface GoalConfig {
  * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
  * dynamic-context policy, deployment persona, and explicit model-facing tool
  * order), the `tools` object to the tool registry (its presentation `mode`),
- * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
+ * `harnessHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
  * skill registry/local provider/tool consumer, `workspaceContext` to the
  * agent-instructions loader, `jobs` to the process-local job provider, and
@@ -105,7 +104,7 @@ export interface Config {
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
   tools?: ToolsConfig
   /** DeepSeek Harness home directory shared by shell context and local skill discovery. */
-  dshHome?: string
+  harnessHome?: string
   /** Deterministic fallback and accepted-title limits; omission uses the bundle's example policy. */
   sessionTitle?: SessionTitleConfig
   /** Workspace-context loader controls with an explicit byte budget; set `false` for hermetic prompts. */
@@ -162,7 +161,7 @@ export const Config = z.intersect([
   SystemPrompt.Config,
   z.object({
     tools: ToolRuntime.Config,
-    dshHome: z.string(),
+    harnessHome: z.string(),
     sessionTitle: SessionTitleConfigSchema,
     skills: SkillConfigSchema,
     workspaceContext: z.union([z.const(false), workspaceContext.Config]).required(),
@@ -171,7 +170,7 @@ export const Config = z.intersect([
     toolJobs: z.union([z.const(false), ToolJobsConfigSchema]),
     invariants: InvariantRegistry.Config,
     goals: z.union([z.const(false), GoalConfigSchema]),
-  }) as unknown as z<Pick<Config, 'tools' | 'dshHome' | 'sessionTitle' | 'skills' | 'workspaceContext' | 'toolBash' | 'jobs' | 'toolJobs' | 'invariants' | 'goals'>>,
+  }) as unknown as z<Pick<Config, 'tools' | 'harnessHome' | 'sessionTitle' | 'skills' | 'workspaceContext' | 'toolBash' | 'jobs' | 'toolJobs' | 'invariants' | 'goals'>>,
 ]) as unknown as z<Config>
 
 /**
@@ -187,7 +186,7 @@ export function pickSpineConfig(config: Omit<Config, 'agents'>): Omit<Config, 'a
     ...config.persona !== undefined ? { persona: config.persona } : {},
     ...config.toolOrder !== undefined ? { toolOrder: config.toolOrder } : {},
     ...config.tools !== undefined ? { tools: config.tools } : {},
-    ...config.dshHome !== undefined ? { dshHome: config.dshHome } : {},
+    ...config.harnessHome !== undefined ? { harnessHome: config.harnessHome } : {},
     ...config.sessionTitle !== undefined ? { sessionTitle: config.sessionTitle } : {},
     workspaceContext: config.workspaceContext,
     ...config.skills !== undefined ? { skills: config.skills } : {},
@@ -210,12 +209,8 @@ export function pickSpineConfig(config: Omit<Config, 'agents'>): Omit<Config, 'a
  * seams, then the loop that drives them.
  */
 export function apply(ctx: Context, config: Config): void {
-  const nestedDshHome = config.skills?.filesystem?.dshHome
-  if (config.dshHome !== undefined && nestedDshHome !== undefined
-    && resolveConfiguredHarnessHome(config.dshHome) !== resolveConfiguredHarnessHome(nestedDshHome)) {
-    throw new Error('agent-spine-demo: dshHome and skills.filesystem.dshHome must resolve to the same directory')
-  }
-  const dshHome = resolveConfiguredHarnessHome(config.dshHome ?? nestedDshHome)
+  if (config.harnessHome === undefined) throw new Error('agent-spine-demo: harnessHome is required')
+  const harnessHome = config.harnessHome
 
   ctx.plugin(Timer)
   ctx.plugin(LlmRuntime)
@@ -232,7 +227,7 @@ export function apply(ctx: Context, config: Config): void {
   const skillsEnabled = config.skills?.enabled ?? true
   if (skillsEnabled) {
     ctx.plugin(SkillRegistry, config.skills?.registry ?? {})
-    ctx.plugin(SkillFileSystem, Object.assign({}, config.skills?.filesystem, { dshHome }))
+    ctx.plugin(SkillFileSystem, Object.assign({}, config.skills?.filesystem, { harnessHome }))
   }
   ctx.plugin(AgentRegistry)
   ctx.plugin(llmRetry)
@@ -248,11 +243,11 @@ export function apply(ctx: Context, config: Config): void {
   ctx.plugin(scopeInvariant)
   ctx.plugin(agentLoopInvariant)
   if (config.toolBash !== false) {
-    ctx.plugin(bashEnv, { dshHome })
+    ctx.plugin(bashEnv, { harnessHome })
     ctx.plugin(toolBash, config.toolBash ?? {})
   }
   if (config.workspaceContext !== false) {
-    ctx.plugin(workspaceContext, config.workspaceContext)
+    ctx.plugin(workspaceContext, Object.assign({}, config.workspaceContext, { harnessHome }))
   }
   // Both plugins prepend session-prefix messages. Registration order is the
   // rendered order, so workspace instructions must precede the skill catalog.

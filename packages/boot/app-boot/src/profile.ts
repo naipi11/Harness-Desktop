@@ -2,7 +2,7 @@
  * Profile discovery, initialization, and patch-layer composition for the
  * `dsh --profile` launcher family.
  *
- * A profile is a directory under `$DSH_HOME/profiles/<name>` holding a
+ * A profile is a directory under `$HARNESS_HOME/profiles/<name>` holding a
  * `package.json` (out-of-tree plugin dependencies plus the profile manifest
  * `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml`
  * (the user's own patch layer, applied after every bundle layer). Bundles are
@@ -16,7 +16,7 @@
  * first from the dsh installation (the launcher's own package), then from the
  * profile directory. The Loader's `baseUrl` is the profile directory, whose
  * `node_modules` pnpm manages for out-of-tree plugins, while the maintained
- * flat fallback directory `$DSH_HOME/profiles/node_modules` (one symlink per
+ * flat fallback directory `$HARNESS_HOME/profiles/node_modules` (one symlink per
  * package the installation's app and bundles depend on) makes every in-box
  * plugin Node-resolvable from any profile through the ordinary parent-walk.
  * @module @harness-desktop/dsh-app-boot/profile
@@ -209,7 +209,7 @@ function ensureSymlink(link: string, target: string): void {
 }
 
 /**
- * Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`: one
+ * Maintain the flat module fallback `$HARNESS_HOME/profiles/node_modules`: one
  * symlink per package in the dsh app's resolvable dependency CLOSURE (BFS
  * over `dependencies` from the app manifest), each resolved from its own
  * real location. Node's parent-directory walk from any profile finds this

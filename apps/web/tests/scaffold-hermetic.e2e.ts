@@ -21,11 +21,11 @@ Ambient host state.
 
 it('isolates replay skill discovery from every ambient host root', async () => {
   const ambient = await mkdtemp(join(tmpdir(), 'dsh-web-ambient-skills-'))
-  const dshHome = join(ambient, 'dsh-home')
+  const harnessHome = join(ambient, 'dsh-home')
   const agentsHome = join(ambient, 'agents-home')
   const bundled = join(ambient, 'bundled')
   await Promise.all([
-    writeSkill(join(dshHome, 'skills'), 'ambient-dsh'),
+    writeSkill(join(harnessHome, 'skills'), 'ambient-dsh'),
     writeSkill(join(agentsHome, 'skills'), 'ambient-agents'),
     writeSkill(bundled, 'ambient-bundled'),
   ])
@@ -33,7 +33,7 @@ it('isolates replay skill discovery from every ambient host root', async () => {
   const originalDshHome = process.env.DSH_HOME
   const originalAgentsHome = process.env.DSH_AGENTS_HOME
   const originalBundled = process.env.DSH_BUNDLED_SKILL_DIR
-  process.env.DSH_HOME = dshHome
+  process.env.DSH_HOME = harnessHome
   process.env.DSH_AGENTS_HOME = agentsHome
   process.env.DSH_BUNDLED_SKILL_DIR = bundled
   let scaffold: WebScaffold | undefined

@@ -142,7 +142,7 @@ async function setupLocal(home: string, config: Partial<SkillFileSystem.Config> 
   const ctx = new Context()
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(SkillFileSystem, {
-    dshHome: join(home, '.dsh'),
+    harnessHome: join(home, '.dsh'),
     agentsHome: join(home, '.agents'),
     watch: false,
     ...config,
@@ -453,7 +453,7 @@ describe('FileSystemSkillProvider', () => {
       size: 0,
     })
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
 
     expect((await ctx.skills.list({ cwd: nestedCwd })).map(skill => [skill.name, skill.source])).toEqual([
       ['backend-root', 'project-agents'],
@@ -470,7 +470,7 @@ describe('FileSystemSkillProvider', () => {
     bundledFs.failResolvePaths.add(bundled)
     await bundledCtx.plugin(SkillRegistry)
     await bundledCtx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       bundledSkillDir: bundled,
     })
@@ -486,7 +486,7 @@ describe('FileSystemSkillProvider', () => {
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: false,
     })
@@ -522,7 +522,7 @@ describe('FileSystemSkillProvider', () => {
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
     await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: false,
     })
@@ -571,7 +571,7 @@ describe('FileSystemSkillProvider', () => {
     await ctx.plugin(TestFileSystem)
     const fs = ctx.fs as TestFileSystem
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['abortable-skill'])
 
     fs.statSignals = []
@@ -604,7 +604,7 @@ describe('FileSystemSkillProvider', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchStabilityThresholdMs: 20,
@@ -712,7 +712,7 @@ describe('FileSystemSkillProvider', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       customSkillDirs: [join(first, '.agents/skills')],
       watch: true,
@@ -734,7 +734,7 @@ describe('FileSystemSkillProvider', () => {
     const noWatch = new Context()
     await noWatch.plugin(SkillRegistry)
     await noWatch.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: false,
       watchMaxProjects: 1,
@@ -753,7 +753,7 @@ describe('FileSystemSkillProvider', () => {
     let provider!: SkillFileSystem.FileSystemSkillProvider
     const disposeProvider = ctx.skills.registerProvider((control) => {
       provider = new SkillFileSystem.FileSystemSkillProvider(ctx, control, {
-        dshHome: join(home, '.dsh'),
+        harnessHome: join(home, '.dsh'),
         agentsHome: join(home, '.agents'),
         customSkillDirs: [nonDirectoryRoot],
         watch: true,
@@ -786,7 +786,7 @@ describe('FileSystemSkillProvider', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchFollowSymlinks: true,
@@ -810,18 +810,18 @@ describe('FileSystemSkillProvider', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
 
-    await expect(ctx.plugin(SkillFileSystem, { watchMaxProjects: 0 })).rejects.toThrow('watchMaxProjects')
-    await expect(ctx.plugin(SkillFileSystem, { watchPollIntervalMs: 1.5 })).rejects.toThrow('watchPollIntervalMs')
-    await expect(ctx.plugin(SkillFileSystem, { watchStabilityThresholdMs: 0 })).rejects.toThrow('watchStabilityThresholdMs')
+    await expect(ctx.plugin(SkillFileSystem, { harnessHome: '/test/harness', watchMaxProjects: 0 })).rejects.toThrow('watchMaxProjects')
+    await expect(ctx.plugin(SkillFileSystem, { harnessHome: '/test/harness', watchPollIntervalMs: 1.5 })).rejects.toThrow('watchPollIntervalMs')
+    await expect(ctx.plugin(SkillFileSystem, { harnessHome: '/test/harness', watchStabilityThresholdMs: 0 })).rejects.toThrow('watchStabilityThresholdMs')
   })
 
-  it('uses default home root resolution without exposing builtin skills', async () => {
-    const previousDshHome = process.env.DSH_HOME
+  it('uses an injected home root without exposing builtin skills', async () => {
+    const previousHarnessHome = process.env.HARNESS_HOME
     const previousAgentsHome = process.env.DSH_AGENTS_HOME
     const previousBundledSkillDir = process.env.DSH_BUNDLED_SKILL_DIR
     const envHome = await tempDir('skill-env-home')
     try {
-      process.env.DSH_HOME = join(envHome, '.dsh')
+      process.env.HARNESS_HOME = join(envHome, '.dsh')
       process.env.DSH_AGENTS_HOME = join(envHome, '.agents')
       const bundled = join(envHome, 'bundled-skills')
       process.env.DSH_BUNDLED_SKILL_DIR = bundled
@@ -829,7 +829,7 @@ describe('FileSystemSkillProvider', () => {
       await writeSkill(bundled, 'env-bundled-skill', 'Env bundled skill')
       const ctx = new Context()
       await ctx.plugin(SkillRegistry)
-      await ctx.plugin(SkillFileSystem, { watch: false })
+      await ctx.plugin(SkillFileSystem, { harnessHome: join(envHome, '.dsh'), watch: false })
       expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['env-bundled-skill', 'env-skill'])
 
       // Isolated providers see only their explicit roots: the environment
@@ -840,6 +840,7 @@ describe('FileSystemSkillProvider', () => {
       const customOnly = join(envHome, 'custom-only')
       await writeSkill(customOnly, 'custom-isolated-skill', 'Custom isolated skill')
       await isolated.plugin(SkillFileSystem, {
+        harnessHome: join(envHome, '.dsh'),
         providerName: 'isolated',
         includeDefaultRoots: false,
         customSkillDirs: [customOnly],
@@ -848,24 +849,24 @@ describe('FileSystemSkillProvider', () => {
       expect((await isolated.skills.list()).map(skill => skill.name)).toEqual(['custom-isolated-skill'])
       await isolated.fiber.dispose()
 
-      process.env.DSH_HOME = join(envHome, 'empty-dsh')
+      process.env.HARNESS_HOME = join(envHome, 'empty-dsh')
       delete process.env.DSH_BUNDLED_SKILL_DIR
       process.env.DSH_AGENTS_HOME = join(envHome, 'empty-agents')
       const empty = new Context()
       await empty.plugin(SkillRegistry)
-      SkillFileSystem.apply(empty, { watch: false })
+      SkillFileSystem.apply(empty, { harnessHome: join(envHome, 'empty-dsh'), watch: false })
       expect(await empty.skills.list()).toEqual([])
 
       delete process.env.DSH_AGENTS_HOME
       expect(new SkillFileSystem.FileSystemSkillProvider(empty, {
         signal: new AbortController().signal,
         invalidate() {},
-      }, { dshHome: join(envHome, 'empty-dsh') }).name).toBe('filesystem')
+      }, { harnessHome: join(envHome, 'empty-dsh') }).name).toBe('filesystem')
     } finally {
-      if (previousDshHome === undefined) {
-        delete process.env.DSH_HOME
+      if (previousHarnessHome === undefined) {
+        delete process.env.HARNESS_HOME
       } else {
-        process.env.DSH_HOME = previousDshHome
+        process.env.HARNESS_HOME = previousHarnessHome
       }
       if (previousAgentsHome === undefined) {
         delete process.env.DSH_AGENTS_HOME

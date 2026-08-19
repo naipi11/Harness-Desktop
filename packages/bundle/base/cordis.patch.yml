@@ -77,13 +77,17 @@
     # below without a restart, and is what the web Models page writes.
     - id: settings
       name: '@harness-desktop/dsh-settings-file'
+      config:
+        harnessHome: !!js harnessHome
 
     # Credential sources: inherited environment over the managed
-    # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
+    # `$HARNESS_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
     # Adapters resolve references per request; the Models page writes only the
     # managed document, which is never materialized into the process environment.
     - id: credentials
       name: '@harness-desktop/dsh-credentials-local'
+      config:
+        harnessHome: !!js harnessHome
 
     # The pi-ai multi-provider twin, mounted dormant: zero routes (and no extra
     # models in the picker) until a `llm-pi-ai:` settings section supplies provider
@@ -105,6 +109,8 @@
     # provider requests and authorized history reads.
     - id: attachment-local
       name: '@harness-desktop/dsh-attachment-local'
+      config:
+        harnessHome: !!js harnessHome
 
     # Full-text session search is opt-in. `openAt: never` keeps
     # ctx.sessionQuery mounted — exact reads, titles, and lineage traces
@@ -134,7 +140,7 @@
     # DSH_TELEMETRY_OTLP_URL overrides the production endpoint. A non-empty
     # DSH_TELEMETRY_DISABLED — any value, including '0'/'false' — opts the
     # process out (the launchers patch the row disabled; config cannot disable
-    # a row). Exports carry the harness home's anonymous user id ($DSH_HOME/.anonymous-user-id,
+    # a row). Exports carry the harness home's anonymous user id ($HARNESS_HOME/.anonymous-user-id,
     # random UUID; delete the file to reset the identity) as the Resource's
     # user.id. The exporter/processor values normally bound the shutdown drain
     # to ~1s against an unreachable collector: exporter.timeoutMillis is both
@@ -206,6 +212,8 @@
 
     - id: shell-env
       name: '@harness-desktop/dsh-shell-env'
+      config:
+        harnessHome: !!js harnessHome
 
     - id: tool-bash
       name: '@harness-desktop/dsh-tool-bash'
@@ -232,6 +240,7 @@
     - id: agent-instructions
       name: '@harness-desktop/dsh-agent-instructions'
       config:
+        harnessHome: !!js harnessHome
         maxBytes: 65536
 
     - id: skill
@@ -239,6 +248,8 @@
 
     - id: skill-filesystem
       name: '@harness-desktop/dsh-skill-filesystem'
+      config:
+        harnessHome: !!js harnessHome
 
     - id: skill-badge
       name: '@harness-desktop/dsh-skill-badge'

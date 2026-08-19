@@ -32,14 +32,15 @@ async function mount(config: acpAgent.Config, withBash = false): Promise<Context
     })
   }
   config.persistenceRoot ??= await mkdtemp(join(tmpdir(), 'dsh-acp-demo-persistence-'))
-  await ctx.plugin(acpAgent, config)
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-home-'))
+  await ctx.plugin(acpAgent, { harnessHome, ...config })
   return ctx
 }
 
 async function isolatedSkillsConfig(catalogDescriptionMaxLength?: number): Promise<NonNullable<acpAgent.Config['skills']>> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-skills-'))
   return {
-    filesystem: { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents') },
+    filesystem: { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents') },
     ...catalogDescriptionMaxLength !== undefined ? { tool: { catalogDescriptionMaxLength } } : {},
   }
 }
@@ -60,18 +61,18 @@ async function composePrefix(ctx: Context): Promise<Message[]> {
 }
 
 async function withIsolatedSkillHomes<T>(run: () => Promise<T>): Promise<T> {
-  const oldDshHome = process.env.DSH_HOME
+  const oldHarnessHome = process.env.HARNESS_HOME
   const oldAgentsHome = process.env.DSH_AGENTS_HOME
   const home = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-default-skills-'))
-  process.env.DSH_HOME = join(home, '.dsh')
+  process.env.HARNESS_HOME = join(home, '.dsh')
   process.env.DSH_AGENTS_HOME = join(home, '.agents')
   try {
     return await run()
   } finally {
-    if (oldDshHome === undefined) {
-      delete process.env.DSH_HOME
+    if (oldHarnessHome === undefined) {
+      delete process.env.HARNESS_HOME
     } else {
-      process.env.DSH_HOME = oldDshHome
+      process.env.HARNESS_HOME = oldHarnessHome
     }
     if (oldAgentsHome === undefined) {
       delete process.env.DSH_AGENTS_HOME
@@ -129,6 +130,7 @@ describe('dsh-acp-demo composition', () => {
     const ctx = new Context()
     // No persona: covers the omitted-persona forwarding branch too.
     await acpAgent.apply(ctx, {
+      harnessHome: '/test/harness',
       provider: 'mock',
       model: 'mock',
       skills: await isolatedSkillsConfig(),
@@ -154,16 +156,16 @@ describe('dsh-acp-demo composition', () => {
   it('uses default skill config when apply is called directly without skills', async () => {
     await withIsolatedSkillHomes(async () => {
       const ctx = new Context()
-      await acpAgent.apply(ctx, { provider: 'mock', model: 'mock', workspaceContext: false })
+      await acpAgent.apply(ctx, { harnessHome: process.env.HARNESS_HOME!, provider: 'mock', model: 'mock', workspaceContext: false })
       expect(ctx.skills).toBeDefined()
       expect(await ctx.skills.list()).toEqual([])
       await ctx.fiber.dispose()
     })
   })
 
-  it('forwards skill config and dshHome into agent-spine-demo', async () => {
+  it('forwards skill config and harnessHome into agent-spine-demo', async () => {
     const skills = await isolatedSkillsConfig(6)
-    const ctx = await mount({ provider: 'mock', model: 'mock', persona: 'hi', dshHome: skills.filesystem!.dshHome!, skills, workspaceContext: false })
+    const ctx = await mount({ provider: 'mock', model: 'mock', persona: 'hi', harnessHome: skills.filesystem!.harnessHome!, skills, workspaceContext: false })
     ctx.skills.register({ name: 'acp-skill', description: 'ACP skill', source: 'runtime', content: 'body' })
     expect(JSON.stringify(await composePrefix(ctx))).toContain('- `acp-skill`: ACP...')
     await ctx.fiber.dispose()

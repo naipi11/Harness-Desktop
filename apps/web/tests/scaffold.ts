@@ -175,7 +175,7 @@ export interface WebScaffold {
   workspaceCwd: string
   /** Temp persistence root (seeded sessions land here through the real API). */
   persistenceRoot: string
-  /** Isolated harness home the settings/credentials rows write ($DSH_HOME double). */
+  /** Isolated harness home the settings/credentials rows write ($HARNESS_HOME double). */
   harnessHome: string
   /** Await a settled turn end: in-process turn/end, then the agent's idle flip (which follows the persistence flush). */
   whenTurnSettled(timeoutMs?: number): Promise<SessionId>
@@ -318,7 +318,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
   }
   const workspaceCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-ws-')))
-  // Isolated harness home: the settings/credentials rows resolve $DSH_HOME
+  // Isolated harness home: the settings/credentials rows resolve $HARNESS_HOME
   // paths at load, and an in-process boot must NEVER touch the developer's
   // real ~/.dsh document or credential file.
   const harnessHome = options.harnessHome ?? join(workspaceCwd, '.dsh-home')
@@ -328,12 +328,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // tree. The row's documented fallback is the environment, so pin that: the
   // whole scaffold lifetime, not just the boot, since presets mount when a
   // session is created. Without this a developer's real ~/.dsh/skills silently
-  // enters replay requests and goldens while CI sees none. `DSH_HOME` follows
+  // enters replay requests and goldens while CI sees none. `HARNESS_HOME` follows
   // the resolved harness home so a scaffold sharing another's home — the
   // cross-port persistence scenario — pins the same roots the settings and
   // credentials rows were configured with.
   const skillRootEnvironment = {
-    DSH_HOME: harnessHome,
+    HARNESS_HOME: harnessHome,
     DSH_AGENTS_HOME: join(workspaceCwd, '.agents-home'),
     DSH_BUNDLED_SKILL_DIR: join(workspaceCwd, '.bundled-skills'),
   }
@@ -352,7 +352,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   Object.assign(process.env, skillRootEnvironment)
   let persistenceRoot: string
   try {
-    persistenceRoot = await mkdtemp(join(tmpdir(), 'dsh-web-e2e-sessions-'))
+    persistenceRoot = join(harnessHome, 'sessions')
+    await mkdir(persistenceRoot, { recursive: true })
   } catch (error) {
     const failures: unknown[] = [error]
     await rm(workspaceCwd, { recursive: true, force: true }).catch((cleanupError: unknown) => failures.push(cleanupError))
@@ -402,10 +403,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // the seeded-session scenarios navigate by content search, and these e2e
     // runs are the assembled coverage for the opt-in search path.
     { id: 'session-query-sqlite', config: { path: ':memory:', openAt: 'first-search' } },
-    // storage-json's yml root is anchored to the real $DSH_HOME; pin the row
-    // to an absolute temp root (removed with the workspace at close) so tests
-    // never write the user's harness home.
-    { id: 'storage-json', config: { root: join(workspaceCwd, '.dsh-storages') } },
     // Skill discovery is model-visible input. Pin every host-level root inside
     // the owned temp world so ~/.dsh, ~/.agents, and a bundled-root env setting
     // cannot change replay requests or conversation goldens. Project roots stay
@@ -413,7 +410,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     {
       id: 'skill-filesystem',
       config: {
-        dshHome: join(workspaceCwd, '.dsh-home'),
+        harnessHome,
         agentsHome: join(workspaceCwd, '.agents-home'),
         bundledSkillDir: join(workspaceCwd, '.bundled-skills'),
         watch: false,
@@ -450,8 +447,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...options.remoteAuthority === undefined
       ? []
       : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
-    { id: 'settings', config: { dshHome: harnessHome } },
-    { id: 'credentials', config: { dshHome: harnessHome } },
+    { id: 'settings', config: { harnessHome } },
+    { id: 'credentials', config: { harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives
@@ -508,7 +505,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
-    ctx.provide('harnessHomePath', createLocalRuntimePlugin().path)
+    const homeProvider = createLocalRuntimePlugin({ env: { ...process.env, HARNESS_HOME: harnessHome } })
+    ctx.provide('harnessHome', homeProvider.home)
+    ctx.provide('harnessHomePath', homeProvider.path)
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come

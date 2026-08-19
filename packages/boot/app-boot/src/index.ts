@@ -1,7 +1,7 @@
 /**
  * Shared boot glue for the app bins (`dsh`, `dsh-acp-demo`): load the gitignored
  * `.env`, install the fail-loud Loader guards, resolve the config path (snapshot-aware), load the
- * optional user patch layers from the Harness home (`~/.dsh`), expose its path resolver to
+ * optional user patch layers from `$HARNESS_HOME`, expose its path resolver to
  * config expressions, and drive the Cordis Loader against a leaf `cordis.yml` until the tree settles.
  * @module @harness-desktop/dsh-app-boot
  */
@@ -15,7 +15,7 @@ import { Context, type FiberState } from '@harness-desktop/cordis'
 import Loader, { type Entry, type EntryOptions } from '@harness-desktop/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@harness-desktop/cordis-plugin-include'
 import Group from '@harness-desktop/cordis-plugin-group'
-import { createLocalRuntimePlugin, resolveHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import { createLocalRuntimePlugin, resolveHarnessHome, type HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
 import type {} from '@harness-desktop/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
@@ -24,6 +24,7 @@ import type {} from '@harness-desktop/dsh-system-prompt'
 declare module '@harness-desktop/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
+    harnessHome?: HarnessHome
     harnessHomePath?: ReturnType<typeof createLocalRuntimePlugin>['path']
   }
 }
@@ -767,7 +768,9 @@ export async function boot(
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    ctx.provide('harnessHomePath', createLocalRuntimePlugin().path)
+    const harnessHome = createLocalRuntimePlugin()
+    ctx.provide('harnessHome', harnessHome.home)
+    ctx.provide('harnessHomePath', harnessHome.path)
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

@@ -20,7 +20,6 @@ import type Schema from '@harness-desktop/schemastery'
 import { parse as parseYaml } from 'yaml'
 import type { FileSystem, FsDirEntry, FsTarget } from '@harness-desktop/dsh-fs'
 import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
-import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
@@ -52,8 +51,8 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
-  /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness root injected for the user skill directory. */
+  harnessHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
   agentsHome?: string
   /** Additional skill roots scanned after project roots and before user roots. */
@@ -77,7 +76,7 @@ export interface Config {
 export const Config: Schema<Config> = z.object({
   providerName: z.string().min(1).default('filesystem'),
   includeDefaultRoots: z.boolean().default(true),
-  dshHome: z.string(),
+  harnessHome: z.string(),
   agentsHome: z.string(),
   customSkillDirs: z.array(z.string()).default([]),
   watch: z.boolean().default(true),
@@ -147,7 +146,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 export class FileSystemSkillProvider implements SkillProvider {
   readonly name: string
   private readonly includeDefaultRoots: boolean
-  private readonly dshHome: string
+  private readonly harnessHome: string
   private readonly agentsHome: string
   private readonly customSkillDirs: string[]
   private readonly watchManager: SkillWatchManager
@@ -161,7 +160,8 @@ export class FileSystemSkillProvider implements SkillProvider {
   ) {
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
-    this.dshHome = resolveConfiguredHarnessHome(config.dshHome)
+    if (config.harnessHome === undefined) throw new Error('skill-filesystem: harnessHome is required')
+    this.harnessHome = resolve(config.harnessHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
     this.watchManager = new SkillWatchManager(ctx, control.invalidate, resolveWatchConfig(config))
@@ -251,7 +251,7 @@ export class FileSystemSkillProvider implements SkillProvider {
     roots.push(...this.customSkillDirs.map(path => ({ path, source: 'custom' as const, rank: CUSTOM_RANK })))
     if (this.includeDefaultRoots) {
       roots.push(
-        { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
+        { path: join(this.harnessHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
         { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK },
       )
     }

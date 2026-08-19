@@ -50,7 +50,7 @@ export interface Config {
   /** Tool-registry config — its presentation `mode` (forwarded through agent-spine-demo; see dsh-tools). */
   tools?: ToolsConfig
   /** DeepSeek Harness home directory exposed to bash and used for local skill discovery. */
-  dshHome?: string
+  harnessHome?: string
   /** Fallback session-title limits forwarded through agent-spine-demo. */
   sessionTitle?: NonNullable<agentCore.Config['sessionTitle']>
   /** Directory for JSONL sessions and the derived query index. Defaults to `./.sessions`. */
@@ -86,7 +86,7 @@ export const Config: z<Config> = z.object({
   // schemastery's native [] default would read as an invalid configured list.
   toolOrder: z.array(z.string()).default(undefined as unknown as string[]),
   tools: ToolRuntime.Config,
-  dshHome: z.string(),
+  harnessHome: z.string(),
   sessionTitle: agentCore.SessionTitleConfigSchema,
   persistenceRoot: z.string().default(DEFAULT_PERSISTENCE_ROOT),
   packChunks: z.boolean().default(true),

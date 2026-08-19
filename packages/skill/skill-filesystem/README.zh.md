@@ -16,7 +16,7 @@
 |---|---|---|
 | `providerName` | `filesystem` | 在 `ctx.skills` 上注册该提供方时使用的唯一名称。 |
 | `includeDefaultRoots` | `true` | 在 `customSkillDirs` 周围包含项目根和用户根；设为 false 时仅使用隔离的自定义根。 |
-| `dshHome` | `$DSH_HOME` 或 `~/.dsh` | 由 [`@harness-desktop/dsh-home-paths`](../../util/home-paths/README.md) 解析的 DeepSeek Harness 配置根目录；扫描该目录下的 `skills`。 |
+| `harnessHome` | 注入的绝对路径 | Harness 根目录；扫描该目录下的 `skills`。 |
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent（智能体）配置根目录。 |
 | `customSkillDirs` | `[]` | 在项目根目录之后、用户根目录之前扫描的其他本地 skill 根目录。 |
 | `watch` | `true` | 监视宿主本地根，并在目录成员或 frontmatter 可能发生变化时使本地提供方失效。 |
@@ -35,7 +35,7 @@
 | 100 | `project-dsh` | `<projectRoot>/.dsh/skills` |
 | 200 | `project-agents` | `<projectRoot>/.agents/skills` |
 | 300 | `custom` | `Config.customSkillDirs` |
-| 400 | `user-dsh` | `<dshHome>/skills` |
+| 400 | `user-dsh` | `<harnessHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
 
 项目根目录是包含 `.git` 的最近祖先目录；如果不存在，则使用当前 cwd。用户 DSH 根目录会跳过其 `.system` 子目录，因此归系统所有的目录不会被当作普通用户 skill。`includeDefaultRoots: false` 会省略项目根、用户根以及 `$DSH_BUNDLED_SKILL_DIR` 环境默认值，同时保留显式配置的自定义根与 bundled 根，因此可以挂载多个只看到自身根的唯一命名隔离提供方。该提供方提供项目和用户 skill；其他提供方可提供内置系统 skill。

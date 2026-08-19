@@ -5,7 +5,7 @@
  * harness home resolved by {@link resolveHarnessHome},
  * and never derived from the hostname, network address, git remote, or any
  * other identifying source. It is scoped to the harness home, not the
- * machine: every process sharing one `$DSH_HOME` reports the same id, and
+ * machine: every process sharing one `$HARNESS_HOME` reports the same id, and
  * deleting the file mints a fresh identity on the next launch.
  *
  * Reads and writes are synchronous so boot-time and command consumers can
@@ -32,7 +32,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 /** Ambient hooks for locating and generating the id; every field has a default. */
 export interface AnonymousUserIdOptions {
-  /** Environment consulted for `DSH_HOME`; defaults to `process.env`. */
+  /** Environment consulted for `HARNESS_HOME`; defaults to `process.env`. */
   env?: NodeJS.ProcessEnv
   /** UUID generator; defaults to `crypto.randomUUID` (test hook). */
   randomUUID?: () => string

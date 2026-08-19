@@ -6,9 +6,9 @@
 
 ## Profile 启动
 
-`harness --profile <name>` 启动位于 `$DSH_HOME/profiles/<name>` 的 profile。生效配置树以空根节点为起点，依次叠加 profile manifest（元数据清单）的 `dsh.profile.bundles` 列表中指定的各组合包 patch、profile 自身的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml`（这是各 profile 共享的机器本地偏好，因此优先于逐 profile 配置层），以及按 argv 顺序指定的各个 `--patch <path>` 覆盖层。对同一配置行，后应用的层优先。patch 会替换目标行的整个 `config` 值，而不是深度合并其中的键；patch 也可以插入新行。配置解析、schema 校验、模块解析或插件启动失败时，系统会报告错误并以非零状态退出。收到 SIGINT 或 SIGTERM 时，挂载的根节点会先 dispose（资源释放）再退出。
+`harness --profile <name>` 启动位于 `$HARNESS_HOME/profiles/<name>` 的 profile。生效配置树以空根节点为起点，依次叠加 profile manifest（元数据清单）的 `dsh.profile.bundles` 列表中指定的各组合包 patch、profile 自身的 `cordis.patch.yml`、home 级的 `$HARNESS_HOME/cordis.patch.yml`（这是各 profile 共享的机器本地偏好，因此优先于逐 profile 配置层），以及按 argv 顺序指定的各个 `--patch <path>` 覆盖层。对同一配置行，后应用的层优先。patch 会替换目标行的整个 `config` 值，而不是深度合并其中的键；patch 也可以插入新行。配置解析、schema 校验、模块解析或插件启动失败时，系统会报告错误并以非零状态退出。收到 SIGINT 或 SIGTERM 时，挂载的根节点会先 dispose（资源释放）再退出。
 
-组合包名称先从 Harness Desktop 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@harness-desktop/dsh-base`、`@harness-desktop/dsh-web-app`、`@harness-desktop/dsh-headless`）始终来自当前运行的 `harness` 所属的安装；树外组合包则来自 profile 中由 pnpm 管理的 `node_modules`。patch 行中的裸插件 `name` 会从 profile 目录开始，按照 Node 的模块解析规则逐级向父目录查找，直至安装后备目录 `$DSH_HOME/profiles/node_modules`。该目录为安装中的应用和组合包所依赖的每个包各维护一个符号链接，并在每次启动时修复这些链接。
+组合包名称先从 Harness Desktop 安装目录解析，再从 profile 目录解析。因此，内置组合包（`@harness-desktop/dsh-base`、`@harness-desktop/dsh-web-app`、`@harness-desktop/dsh-headless`）始终来自当前运行的 `harness` 所属的安装；树外组合包则来自 profile 中由 pnpm 管理的 `node_modules`。patch 行中的裸插件 `name` 会从 profile 目录开始，按照 Node 的模块解析规则逐级向父目录查找，直至安装后备目录 `$HARNESS_HOME/profiles/node_modules`。该目录为安装中的应用和组合包所依赖的每个包各维护一个符号链接，并在每次启动时修复这些链接。
 
 `web` 和 `headless` profile 首次使用时会从随附模板自动初始化（`web`：base + web-app；`headless`：base + headless）。其他缺失的 profile 会显式报错，并提示运行 `harness plugin --profile <name> add <package>`。
 
@@ -36,7 +36,7 @@ harness --profile web --dump-default-config
 harness --profile web --patch ./extra.yml --dump-config
 ```
 
-`--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，找不到目标的 patch 会报告到 stderr。dump 操作不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
+`--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$HARNESS_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，找不到目标的 patch 会报告到 stderr。dump 操作不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
 
 ## 插件管理
 
@@ -63,7 +63,7 @@ harness web --dump-config
 harness web --help
 ```
 
-使用任一后台别名时，父进程会输出子进程 PID 和私有 `$DSH_HOME/logs/.../server.log` 路径，然后退出。该成功只表示已创建子进程，不表示 HTTP 已就绪。调用方使用平台进程工具管理该 PID。在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程。在 Windows 上，`taskkill /PID <pid> /T /F` 会强制终止，不能证明已优雅 dispose。子进程将 URL 和每项启动失败写入私有日志，诊断启动失败必须查看该日志。`harness web --help` 不会创建子进程，不带后台别名的 `harness web` 仍在前台运行。
+使用任一后台别名时，父进程会输出子进程 PID 和私有 `$HARNESS_HOME/logs/.../server.log` 路径，然后退出。该成功只表示已创建子进程，不表示 HTTP 已就绪。调用方使用平台进程工具管理该 PID。在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程。在 Windows 上，`taskkill /PID <pid> /T /F` 会强制终止，不能证明已优雅 dispose。子进程将 URL 和每项启动失败写入私有日志，诊断启动失败必须查看该日志。`harness web --help` 不会创建子进程，不带后台别名的 `harness web` 仍在前台运行。
 
 没有就绪轮询、`status` 或 `stop` 服务管理器、远程 bind 或登录自启。生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。默认服务地址是 `http://127.0.0.1:3080`。CLI 目前有意不支持 `--host 0.0.0.0`，并会以用法错误退出；`--trusted-host` 可添加 `/api` 浏览器信任围栏接受的具名 authority。
 
@@ -77,7 +77,7 @@ harness web --help
 
 ## 共享部署行为
 
-基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索使用 `DEEPSEEK_API_KEY` 并接受 `DEEPSEEK_SEARCH_BASE_URL`；只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。
+基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$HARNESS_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$HARNESS_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索使用 `DEEPSEEK_API_KEY` 并接受 `DEEPSEEK_SEARCH_BASE_URL`；只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。
 
 会话遥测默认留在本地。`DSH_TELEMETRY_MODE=FULL` 将每条已投影会话事件作为 OTLP/HTTP 日志流式发送，`DSH_TELEMETRY_MODE=FEEDBACK_ONLY` 则仅在记录反馈时上传会话日志后缀。`DSH_TELEMETRY_OTLP_URL` 选择其他 collector。任何非空的 `DSH_TELEMETRY_DISABLED` 都是具有最终效力的遥测强制关闭开关。随附基础配置没有遥测脱敏规则，因此显式启用的导出可能包含消息文本、工具参数和结果，以及 workspace 路径；相关部署决策见[默认关闭 Agent Note](../../../.agents/notes/implemented/feature/2026-08-10-telemetry-default-off.md)。
 

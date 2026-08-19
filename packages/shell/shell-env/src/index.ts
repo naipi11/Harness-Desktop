@@ -12,7 +12,6 @@ import { Service, type Context } from '@harness-desktop/cordis'
 import z from '@harness-desktop/schemastery'
 import { DSH_ENV_PREFIX } from '@harness-desktop/dsh-shell'
 import type { DshEnvironment, DshEnvironmentKey } from '@harness-desktop/dsh-shell'
-import { resolveConfiguredHarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 import type { ToolExecution } from '@harness-desktop/dsh-tools'
 import type {} from '@harness-desktop/dsh-session-persistence'
 
@@ -25,15 +24,15 @@ declare module '@harness-desktop/cordis' {
 export const name = 'shell-env'
 export const inject: string[] = []
 
-/** Plugin config (all optional — the built-in facts resolve without defaults). */
+/** Plugin config receives the host-resolved data root. */
 export interface Config {
-  /** DeepSeek Harness home directory exposed as `DSH_HOME`; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home exposed as `HARNESS_HOME`. */
+  harnessHome?: string
 }
 
 /** Runtime configuration schema for the shell-env plugin. */
 export const Config: z<Config> = z.object({
-  dshHome: z.string(),
+  harnessHome: z.string(),
 })
 
 /** Model-visible metadata for one managed `DSH_*` environment variable. */
@@ -69,11 +68,12 @@ export interface BashEnvVariableInfo extends BashEnvVariable {
 }
 
 const DSH_SHELL_KEY = `${DSH_ENV_PREFIX}SHELL` as const
-const DSH_HOME_KEY = `${DSH_ENV_PREFIX}HOME` as const
+const LEGACY_HOME_KEY = `${DSH_ENV_PREFIX}HOME` as const
+const HARNESS_HOME_KEY = 'HARNESS_HOME'
 const DSH_SESSION_ID_KEY = `${DSH_ENV_PREFIX}SESSION_ID` as const
 const DSH_SESSION_JSONL_KEY = `${DSH_ENV_PREFIX}SESSION_JSONL` as const
 const RESERVED_BASH_ENV_KEYS = new Set<DshEnvironmentKey>([
-  DSH_HOME_KEY,
+  LEGACY_HOME_KEY,
   DSH_SHELL_KEY,
   DSH_SESSION_ID_KEY,
 ])
@@ -90,7 +90,7 @@ const BASH_ENV_KEY_SUFFIX = /^[A-Z][A-Z0-9_]*$/
 export class ShellEnvRegistry extends Service {
   private readonly contributors = new Map<string, BashEnvContributor>()
   private readonly keyOwners = new Map<DshEnvironmentKey, string>()
-  private readonly dshHome: string
+  private readonly harnessHome: string
 
   /**
    * Create and install the `ctx.shellEnv` service.
@@ -99,7 +99,8 @@ export class ShellEnvRegistry extends Service {
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'shellEnv')
-    this.dshHome = resolveConfiguredHarnessHome(config.dshHome)
+    if (config.harnessHome === undefined) throw new Error('shell-env: harnessHome is required')
+    this.harnessHome = config.harnessHome
   }
 
   /**
@@ -151,8 +152,8 @@ export class ShellEnvRegistry extends Service {
    * @returns an immutable environment overlay containing built-ins and current contributions.
    */
   collect(execution: ToolExecution): DshEnvironment {
-    const values: Record<DshEnvironmentKey, string> = {
-      [DSH_HOME_KEY]: this.dshHome,
+    const values: Record<string, string> = {
+      [HARNESS_HOME_KEY]: this.harnessHome,
       [DSH_SHELL_KEY]: '1',
     }
     if (execution.agent !== undefined) {
@@ -173,7 +174,7 @@ export class ShellEnvRegistry extends Service {
       }
     }
 
-    return Object.freeze(Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right))))
+    return Object.freeze(Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)))) as DshEnvironment
   }
 
   // TODO(bash-env-list-builtins): Include registry-owned built-ins before diagnostics,
