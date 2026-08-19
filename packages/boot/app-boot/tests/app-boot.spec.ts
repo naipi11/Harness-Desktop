@@ -1,9 +1,10 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 import SystemPrompt, { renderPrompt } from '@harness-desktop/dsh-system-prompt'
 import {
   addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
@@ -683,6 +684,87 @@ describe('boot', () => {
     } finally {
       await ctx?.fiber.dispose()
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('uses the entrypoint provider object before Loader entries mount', async () => {
+    const dir = tmp()
+    const provider = createLocalRuntimePlugin({ env: { HARNESS_HOME: join(dir, 'home') } })
+    writeFileSync(join(dir, 'capture.mjs'), [
+      'export const name = "capture"',
+      'export function apply(ctx, config) {',
+      '  ctx.provide("capturedProvider", config.provider)',
+      '  ctx.provide("capturedPath", config.path)',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: capture',
+      '  name: ./capture.mjs',
+      '  config:',
+      '    provider: !!js harnessHomeProvider',
+      "    path: !!js harnessHomePath('sessions')",
+      '',
+    ].join('\n'))
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined, provider)
+    try {
+      expect(ctx.get('capturedProvider')).toBe(provider)
+      expect(ctx.get('capturedPath')).toBe(provider.path('sessions'))
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('mounts real durable providers beneath one injected provider', async () => {
+    const dir = tmp()
+    const provider = createLocalRuntimePlugin({ env: { HARNESS_HOME: join(dir, 'home') } })
+    const repository = fileURLToPath(new URL('../../../../', import.meta.url))
+    const shellEnv = pathToFileURL(join(repository, 'packages/shell/shell-env/lib/index.js')).href
+    const settings = pathToFileURL(join(repository, 'packages/settings/settings-file/lib/index.js')).href
+    const credentials = pathToFileURL(join(repository, 'packages/credentials/credentials-local/lib/index.js')).href
+    const attachments = pathToFileURL(join(repository, 'packages/attachment/attachment-local/lib/index.js')).href
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: settings',
+      `  name: ${settings}`,
+      '  config:',
+      '    harnessHome: !!js harnessHome',
+      '    watch: false',
+      '- id: credentials',
+      `  name: ${credentials}`,
+      '  config:',
+      '    harnessHome: !!js harnessHome',
+      '    watch: false',
+      '- id: attachment-local',
+      `  name: ${attachments}`,
+      '  config:',
+      '    harnessHome: !!js harnessHomeProvider',
+      '- id: shell-env',
+      `  name: ${shellEnv}`,
+      '  config:',
+      '    harnessHome: !!js harnessHome',
+      '',
+    ].join('\n'))
+    const ctx = await boot(
+      NAME,
+      join(dir, 'cordis.yml'),
+      undefined,
+      undefined,
+      undefined,
+      provider,
+    )
+    try {
+      expect(ctx.harnessHomeProvider).toBe(provider)
+      expect(ctx.loader.entries().find(entry => entry.options.id === 'settings')?.fiber).toBeDefined()
+      expect(ctx.loader.entries().find(entry => entry.options.id === 'credentials')?.fiber).toBeDefined()
+      expect(ctx.loader.entries().find(entry => entry.options.id === 'attachment-local')?.fiber).toBeDefined()
+      expect(ctx.loader.entries().find(entry => entry.options.id === 'shell-env')?.fiber).toBeDefined()
+      expect(ctx.get('settings')).toBeDefined()
+      expect(ctx.get('credentials')).toBeDefined()
+      expect((ctx.get('attachments') as { root?: string } | undefined)?.root).toBe(provider.path('attachments', 'v1'))
+      const shell = ctx.get('shellEnv')?.collect({} as never) as Record<string, string> | undefined
+      expect(shell?.HARNESS_HOME).toBe(provider.home)
+    } finally {
+      await ctx.fiber.dispose()
     }
   })
 

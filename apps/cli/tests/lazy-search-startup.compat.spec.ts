@@ -49,7 +49,7 @@ function runBuiltWeb(cwd: string): Promise<{ stdout: string; stderr: string; cod
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       DEEPSEEK_API_KEY: 'dsh-cli-smoke-dummy-key',
-      DSH_HOME: join(cwd, '.dsh'),
+      HARNESS_HOME: join(cwd, '.harness-home'),
     }
     delete env.DEEPSEEK_BASE_URL
     delete env.NODE_OPTIONS

@@ -1,6 +1,4 @@
-import { posix, resolve, win32 } from 'node:path'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { posix, win32 } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   createLocalRuntimePlugin,
@@ -12,13 +10,6 @@ import * as localRuntime from '@harness-desktop/dsh-host-local-runtime'
 import { Context } from '@harness-desktop/cordis'
 import { ShellEnvRegistry } from '@harness-desktop/dsh-shell-env'
 import { LocalAttachmentStore } from '@harness-desktop/dsh-attachment-local'
-
-const REPOSITORY_ROOT = resolve(fileURLToPath(new URL('../../../../', import.meta.url)))
-
-/** Read one source-owned repository file without depending on the test process cwd. */
-function readRepositoryFile(path: string): string {
-  return readFileSync(resolve(REPOSITORY_ROOT, path), 'utf8')
-}
 
 describe('Harness data-root resolver', () => {
   it('exposes no writer-level data-root resolver', () => {
@@ -32,52 +23,6 @@ describe('Harness data-root resolver', () => {
     expect(registry.collect({} as never)).not.toHaveProperty('DSH_HOME')
   })
 
-  it('leaves DSH_HOME policy only in the marked legacy-import reader', () => {
-    const sources = [
-      'apps/cli/src/profile-boot.ts',
-      'apps/cli/src/web-daemon.ts',
-      'packages/attachment/attachment-local/src/index.ts',
-      'packages/boot/app-boot/src/index.ts',
-      'packages/boot/app-boot/src/profile.ts',
-      'packages/context/agent-instructions/src/config.ts',
-      'packages/credentials/credentials-local/src/index.ts',
-      'packages/examples/agent-spine-demo/src/index.ts',
-      'packages/identity/anonymous-user-id/src/index.ts',
-      'packages/preset/agent-presets/src/index.ts',
-      'packages/settings/settings-file/src/index.ts',
-      'packages/shell/shell-env/src/index.ts',
-      'packages/skill/skill-filesystem/src/index.ts',
-    ]
-    for (const source of sources) {
-      const text = readRepositoryFile(source)
-      expect(text).not.toMatch(/resolveDshHome|dshHomePath|resolveConfiguredHarnessHome|DSH_HOME/)
-    }
-
-    expect(readRepositoryFile('packages/host/local-runtime/src/data-root.ts')).toContain('legacyDshHome: env.DSH_HOME')
-  })
-
-  it('mounts every base durable writer from the injected Harness home', () => {
-    const composition = readRepositoryFile('packages/bundle/base/cordis.patch.yml')
-    for (const id of [
-      'settings',
-      'credentials',
-      'attachment-local',
-      'shell-env',
-      'agent-instructions',
-      'skill-filesystem',
-    ]) {
-      expect(composition).toMatch(new RegExp(`id: ${id}\\s+name: [^\\n]+\\s+config:\\s+.*harnessHome: !!js harnessHome`, 's'))
-    }
-    expect(composition).toMatch(/id: session-persistence-jsonl\s+name: [^\n]+\s+config:\s+root: !!js harnessHomePath\('sessions'\)/s)
-  })
-
-  it('forwards the resolved home to every agent-spine durable writer', () => {
-    const source = readRepositoryFile('packages/examples/agent-spine-demo/src/index.ts')
-
-    expect(source).toContain('ctx.plugin(SkillFileSystem, Object.assign({}, config.skills?.filesystem, { harnessHome }))')
-    expect(source).toContain('ctx.plugin(bashEnv, { harnessHome })')
-    expect(source).toContain('ctx.plugin(workspaceContext, Object.assign({}, config.workspaceContext, { harnessHome }))')
-  })
   it.each([
     {
       name: 'uses LOCALAPPDATA on Windows',

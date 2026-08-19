@@ -750,6 +750,8 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param harnessHomeProvider - an entrypoint-resolved provider; omit only when
+ * `boot()` itself is the entrypoint that selects the writable root.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -762,6 +764,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  harnessHomeProvider: HarnessHomeProvider = createLocalRuntimePlugin(),
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -769,10 +772,9 @@ export async function boot(
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    const harnessHome = createLocalRuntimePlugin()
-    ctx.provide('harnessHome', harnessHome.home)
-    ctx.provide('harnessHomeProvider', harnessHome)
-    ctx.provide('harnessHomePath', harnessHome.path)
+    ctx.provide('harnessHome', harnessHomeProvider.home)
+    ctx.provide('harnessHomeProvider', harnessHomeProvider)
+    ctx.provide('harnessHomePath', harnessHomeProvider.path)
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

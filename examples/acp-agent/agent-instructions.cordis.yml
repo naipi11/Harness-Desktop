@@ -15,7 +15,7 @@
           persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
           workspaceContext:
             maxBytes: 65536
-            dshHome: !!js process.cwd() + '/.dsh'
+            harnessHome: !!js process.cwd() + '/.harness-home'
             projectRootMarkers:
               - .dsh-project
           persona: |

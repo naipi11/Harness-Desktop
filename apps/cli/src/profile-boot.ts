@@ -29,7 +29,7 @@ import {
   watchUserPatches,
   type Profile,
 } from '@harness-desktop/dsh-app-boot'
-import { createLocalRuntimePlugin, type HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import { createLocalRuntimePlugin, type HarnessHome, type HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
@@ -206,7 +206,8 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const harnessHome = createLocalRuntimePlugin().home
+  const harnessHomeProvider: HarnessHomeProvider = createLocalRuntimePlugin()
+  const harnessHome = harnessHomeProvider.home
   const composed = composeProfile(options.profile, options.patchFiles, harnessHome)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
@@ -258,7 +259,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, undefined, harnessHomeProvider)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader

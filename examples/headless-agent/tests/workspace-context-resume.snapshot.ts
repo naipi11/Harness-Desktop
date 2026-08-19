@@ -62,7 +62,7 @@ async function seedVisibleBaseline(
     content: file.content,
   })), { maxBytes: 65536 })
   const config = resolveConfig({
-    harnessHome: join(cwd, '.dsh'),
+    harnessHome: join(cwd, '.harness-home'),
     maxBytes: 65536,
     ...options.instructionFileCandidates === undefined
       ? {}

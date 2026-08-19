@@ -84,7 +84,7 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     tsconfigPath: agent.tsconfigPath,
     env: {
       ...options.env,
-      DSH_HOME: join(cwd, '.dsh'),
+      HARNESS_HOME: join(cwd, '.harness-home'),
       DSH_AGENTS_HOME: join(cwd, '.agents'),
     },
   })
