@@ -3,7 +3,12 @@ import { defineConfig } from 'tsdown'
 /** Node-only local Runtime foundation and its package invariant companion. */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/legacy-import.js'],
+    entry: [
+      'lib/types/index.js',
+      'lib/types/invariant.js',
+      'lib/types/legacy-import.js',
+      'lib/types/runtime-control.js',
+    ],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

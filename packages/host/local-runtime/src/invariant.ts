@@ -10,7 +10,7 @@ export const name = 'host-local-runtime-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: data-root resolution is pure and the provider owns no mutable runtime state. */
+/** No runtime invariant: ownership records and private browser sessions have no model-visible or durable event relation. */
 const install: InvariantInstaller = () => {}
 
 /** Register this package's invariant companion. */

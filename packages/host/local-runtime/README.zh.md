@@ -12,6 +12,8 @@ endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私
 
 Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoint bearer token 接受原生控制。原生调用方会签发一个 60 秒、单次使用的不透明 handoff；`POST /_harness/handoff` 只从一个 URL 编码表单正文消费该值，不发送 CORS permission，并在设置不带 expiry 的 `HttpOnly; SameSite=Strict; Path=/` session cookie 后执行干净重定向。内存认证器要求 Dashboard API 与 event carrier 同时具有该精确 Runtime Origin 和 cookie；启动器拥有的 cleanup controller 在 dispatch、exchange settlement 或 expiry 后只清理一次其 bootstrap document 与 owner directory。token、handoff 和 session 值不会进入公开导出、诊断、URL 或浏览器脚本存储。
 
+发布的包内容包含一个私有 Runtime assembly module，用于挂载这些路由并接收既有的 authenticated Connection callback。它从原生 dispatch 到表单 exchange settlement 全程拥有每个干净本地 bootstrap document；包的 `exports` map 将该含 token 的 assembly 及其输入排除在应用导入之外。
+
 ## 模型体验
 
 ### Runtime owner 与 endpoint 记录

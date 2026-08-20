@@ -15,6 +15,8 @@ export interface LocalControlRouteOptions {
   readonly auth: LocalDashboardAuth
   /** Mounts API and event transport after receiving the cookie validator. */
   readonly mountAuthenticatedDashboard?: (auth: LocalDashboardAuth) => void
+  /** Settles the native launcher's owned bootstrap after this handoff exchanges or rejects. */
+  readonly onHandoffSettled?: (id: string) => Promise<void>
 }
 
 /**
@@ -45,6 +47,7 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
       const id = await formBodyHandoff(request)
       if (id === undefined) return forbidden(response)
       const result = options.auth.consumeBrowserHandoff(id)
+      await options.onHandoffSettled?.(id)
       if (result.kind === 'rejected') return forbidden(response)
       response.writeHead(303, {
         location: '/',
