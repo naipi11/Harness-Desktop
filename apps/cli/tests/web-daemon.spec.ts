@@ -213,11 +213,18 @@ describe('Runtime Web invocation', () => {
 })
 
 describe('browser handoff transport', () => {
-  it('dispatches one owner-only file whose only handoff is in the exact Runtime form body', async () => {
+  it('retains the dispatched owner-only file until handoff expiry', async () => {
+    vi.useFakeTimers()
     let documentPath = ''
+    let markRemoved: (() => void) | undefined
+    const removed = new Promise<void>((resolve) => { markRemoved = resolve })
     const transport = createBrowserHandoffTransport({
       parent: tmpdir(),
       now: () => 0,
+      remove: async (path) => {
+        await rm(dirname(path), { recursive: true, force: true })
+        markRemoved?.()
+      },
       dispatch: async (url) => {
         expect(url).not.toContain(navigation.handoff.id)
         documentPath = fileURLToPath(url)
@@ -235,6 +242,10 @@ describe('browser handoff transport', () => {
 
     await transport.open(navigation)
 
+    await expect(stat(documentPath)).resolves.toBeDefined()
+    await expect(stat(dirname(documentPath))).resolves.toBeDefined()
+    await vi.advanceTimersByTimeAsync(navigation.handoff.expiresAt)
+    await removed
     await expect(stat(documentPath)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(stat(dirname(documentPath))).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -259,7 +270,8 @@ describe('browser handoff transport', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
-  it('uses one cleanup after successful dispatch or dispatch failure', async () => {
+  it('uses one cleanup at successful-dispatch expiry or dispatch failure', async () => {
+    vi.useFakeTimers()
     const successRemove = vi.fn(async (path: string) => { await rm(dirname(path), { recursive: true, force: true }) })
     const failedRemove = vi.fn(async (path: string) => { await rm(dirname(path), { recursive: true, force: true }) })
     const success = createBrowserHandoffTransport({
@@ -273,6 +285,8 @@ describe('browser handoff transport', () => {
     await success.open(navigation)
     await expect(failed.open(navigation)).rejects.toThrow('browser dispatch failed')
 
+    expect(successRemove).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(navigation.handoff.expiresAt)
     expect(successRemove).toHaveBeenCalledOnce()
     expect(failedRemove).toHaveBeenCalledOnce()
   })

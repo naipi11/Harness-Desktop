@@ -1,11 +1,12 @@
 /** Real source/built Web CLI processes sharing one Runtime and named lease. */
 
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { PassThrough } from 'node:stream'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveExampleLaunch, resolveExampleMode } from '@harness-desktop/dsh-loader-smoke'
 import {
   createRuntimeConnector,
@@ -21,6 +22,7 @@ import {
   type RuntimeProcess,
 } from '../../../packages/host/local-runtime/tests/runtime-process-harness.ts'
 import { createBrowserHandoffTransport } from '../src/browser.ts'
+import type { TerminalIO } from '../src/terminal-client.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const harnessSource = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
@@ -32,6 +34,36 @@ let runtime: RuntimeProcess | undefined
 let client: RuntimeClient | undefined
 let terminal: TerminalConnection | undefined
 let dashboard: DashboardAttachment | undefined
+let replayRoot: string | undefined
+
+type BuiltRunCli = (
+  commandName: 'harness' | 'dsh',
+  argv: readonly string[],
+  dependencies: { readonly connector: ReturnType<typeof createRuntimeConnector>; readonly io: TerminalIO },
+) => Promise<number>
+
+type ExecFileCallback = (error: Error | null, stdout: string, stderr: string) => void
+
+async function loadBuiltRunCli(): Promise<BuiltRunCli> {
+  const bin = await readFile(harnessBuilt, 'utf8')
+  const binding = /import \{ ([A-Za-z_$][\w$]*) as runCli \} from "([^"]+)";/u.exec(bin)
+  if (binding === null) throw new Error('built harness bin does not reference its CLI bundle')
+  const module = await import(new URL(binding[2]!, pathToFileURL(harnessBuilt)).href) as Record<string, unknown>
+  const runCli = module[binding[1]!]
+  if (typeof runCli !== 'function') throw new Error('built harness CLI bundle does not export its runner binding')
+  return runCli as BuiltRunCli
+}
+
+function terminalIO(workspace: string): TerminalIO {
+  return {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    workspace,
+    columns: 80,
+    colorDepth: 1,
+  }
+}
 
 afterEach(async () => {
   await dashboard?.close().catch(() => {})
@@ -42,7 +74,27 @@ afterEach(async () => {
   client = undefined
   await cleanupRuntimeProcess(runtime)
   runtime = undefined
+  if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
+  replayRoot = undefined
 })
+
+async function startRuntimeWithHangingReplay(): Promise<RuntimeProcess> {
+  replayRoot = await mkdtemp(join(tmpdir(), 'harness-web-runtime-replay-'))
+  const override = join(replayRoot, 'replay.override.json')
+  await writeFile(override, '[{"kind":"hang"}]\n')
+  const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+  const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+  process.env.DSH_RUNTIME_TEST_REPLAY_FILE = `${override}.missing`
+  process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = override
+  try {
+    return await startRuntimeProcess({ mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true })
+  } finally {
+    if (previousFile === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+    else process.env.DSH_RUNTIME_TEST_REPLAY_FILE = previousFile
+    if (previousOverride === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+    else process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = previousOverride
+  }
+}
 
 async function runProduct(
   runtimeProcess: RuntimeProcess,
@@ -95,11 +147,13 @@ describe('Runtime Web client real entry', () => {
     dashboard = await client.attachDashboard()
     const navigation = await dashboard.createBrowserHandoff()
     let exchangedBody = ''
+    let browserDocumentPath = ''
     const transport = createBrowserHandoffTransport({
       parent: tmpdir(),
       dispatch: async (fileUrl) => {
         expect(fileUrl).not.toContain(navigation.handoff.id)
-        const html = await readFile(fileURLToPath(fileUrl), 'utf8')
+        browserDocumentPath = fileURLToPath(fileUrl)
+        const html = await readFile(browserDocumentPath, 'utf8')
         const action = html.match(/action="([^"]+)"/u)?.[1]
         const handoff = html.match(/name="handoff" value="([^"]+)"/u)?.[1]
         expect(action).toBe(`http://127.0.0.1:${String(endpoint.port)}/_harness/handoff`)
@@ -117,6 +171,7 @@ describe('Runtime Web client real entry', () => {
       },
     })
     await transport.open(navigation)
+    await rm(dirname(browserDocumentPath), { recursive: true, force: true })
     expect(exchangedBody).toBe(`handoff=${encodeURIComponent(navigation.handoff.id)}`)
     const replay = await fetch(`${navigation.origin}/_harness/handoff`, {
       method: 'POST',
@@ -160,6 +215,78 @@ describe('Runtime Web client real entry', () => {
     terminal = undefined
     await client.close()
     client = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+    runtime = undefined
+  }, 120_000)
+
+  it('releases the Web lease without cancelling active terminal work', async () => {
+    runtime = await startRuntimeWithHangingReplay()
+    await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    client = await connector.connect({ start: false })
+    terminal = await client.openTerminal({ workspace: runtime.cwd })
+    await terminal.submit({ kind: 'task', text: 'remain active across Web lease stop' })
+    let before = await client.observeActiveWork()
+    for (let attempt = 0; attempt < 100 && before.ownUiWork.length === 0; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      before = await client.observeActiveWork()
+    }
+    expect(before.ownUiWork).toHaveLength(1)
+
+    const acquired = await runProduct(runtime, 'harness', ['web', '--daemon', '--no-open'])
+    expect(acquired).toEqual({ code: 0, stderr: '', stdout: 'Web lease: web present\n' })
+    const stopped = await runProduct(runtime, 'dsh', ['web', '--stop'])
+    expect(stopped).toEqual({ code: 0, stderr: '', stdout: 'Web lease: web absent\n' })
+    expect(await client.observeActiveWork()).toEqual(before)
+    expect(await terminal.cancel()).toEqual({ kind: 'cancelled' })
+    expect(await client.observeActiveWork()).toEqual({ ownUiWork: [] })
+
+    await terminal.close()
+    terminal = undefined
+    await client.close()
+    client = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+    runtime = undefined
+  }, 120_000)
+
+  it.runIf(resolveExampleMode() === 'lib')('keeps the bundled browser bootstrap readable after OS dispatch', async () => {
+    runtime = await startRuntimeProcess({ mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true })
+    await waitForEndpoint(runtime)
+    let dispatchedUrl = ''
+    vi.doMock('node:child_process', async () => {
+      const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+      return {
+        ...actual,
+        execFile: (...args: unknown[]) => {
+          const commandArgs = args[1] as string[]
+          const options = args[2] as { readonly env?: NodeJS.ProcessEnv }
+          dispatchedUrl = process.platform === 'win32'
+            ? options.env?.HARNESS_BROWSER_BOOTSTRAP_URL ?? ''
+            : commandArgs[0] ?? ''
+          const callback = args.at(-1)
+          if (typeof callback !== 'function') throw new Error('built browser dispatch did not supply an execFile callback')
+          const complete = callback as ExecFileCallback
+          complete(null, '', '')
+        },
+      }
+    })
+    let documentPath = ''
+    try {
+      const runCli = await loadBuiltRunCli()
+      const connector = createRuntimeConnector({
+        input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+      })
+      expect(await runCli('harness', ['web'], { connector, io: terminalIO(runtime.cwd) })).toBe(0)
+      expect(dispatchedUrl).toMatch(/^file:/u)
+      documentPath = fileURLToPath(dispatchedUrl)
+      await expect(readFile(documentPath, 'utf8')).resolves.toContain('name="handoff"')
+    } finally {
+      vi.doUnmock('node:child_process')
+      vi.resetModules()
+      if (documentPath !== '') await rm(dirname(documentPath), { recursive: true, force: true })
+    }
     expect((await releaseRuntime(runtime)).exitCode).toBe(0)
     runtime = undefined
   }, 120_000)

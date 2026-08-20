@@ -115,18 +115,12 @@ export function createBrowserHandoffTransport(
         cleanup ??= remove(documentPath)
         return cleanup
       }
-      let settleExpiry: (() => void) | undefined
-      let rejectExpiry: ((error: unknown) => void) | undefined
-      const expiry = new Promise<void>((resolve, reject) => {
-        settleExpiry = resolve
-        rejectExpiry = reject
-      })
       const timer = setTimer(() => {
-        void clean().then(settleExpiry, rejectExpiry)
+        void clean()
       }, Math.max(0, navigation.handoff.expiresAt - now()))
       timer.unref()
       try {
-        await Promise.race([dispatch(pathToFileURL(documentPath).href), expiry])
+        await dispatch(pathToFileURL(documentPath).href)
       } catch (error) {
         clearTimer(timer)
         try {
@@ -136,8 +130,6 @@ export function createBrowserHandoffTransport(
         }
         throw error
       }
-      clearTimer(timer)
-      await clean()
     },
   }
 }

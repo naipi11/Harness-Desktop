@@ -28,6 +28,7 @@ function readVersion(): string {
  * @param invocation - the parsed product command.
  * @param io - terminal resources owned by this process.
  * @param connector - token-encapsulating shared Runtime connector.
+ * @param opener - launcher-owned browser handoff transport.
  * @returns the exact public CLI exit code.
  */
 export function dispatchInvocation(
