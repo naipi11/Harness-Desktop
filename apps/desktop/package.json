@@ -8,7 +8,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
+    "prepackage": "pnpm --dir ../.. run verify:icons",
     "package": "electron-builder --config electron-builder.config.mjs --publish never",
+    "prepackage:dir": "pnpm --dir ../.. run verify:icons",
     "package:dir": "electron-builder --dir --config electron-builder.config.mjs --publish never",
     "test": "vitest run --root ../.. apps/desktop/tests",
     "test:e2e": "playwright test"

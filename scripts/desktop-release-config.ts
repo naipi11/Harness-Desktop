@@ -8,12 +8,15 @@ import { productMetadata } from '../packages/boot/app-boot/src/product-metadata.
 const root = resolve(import.meta.dirname, '..')
 const executableName = 'harness-desktop'
 const outputDirectory = 'release'
-const packagedFiles = ['out/**', 'package.json'] as const
+const packagedFiles = ['out/**', 'package.json', 'resources/icons/**'] as const
 const winTargets = ['nsis'] as const
+const winIcon = 'apps/desktop/resources/icons/win/harness-desktop.ico'
 const macTarget = 'dmg'
 const macArch = 'universal'
+const macIcon = 'apps/desktop/resources/icons/mac/harness-desktop.icns'
 const macCategory = 'public.app-category.developer-tools'
 const linuxTargets = ['AppImage', 'deb'] as const
+const linuxIcon = 'apps/desktop/resources/icons/linux/harness-desktop-512.png'
 const linuxCategory = 'Development'
 const artifactRunners = ['windows-2025', 'macos-15', 'ubuntu-24.04'] as const
 const desktopArtifactsForbiddenMarkers = ['NODE_AUTH_TOKEN', 'release:publish', 'gh release'] as const
@@ -29,12 +32,13 @@ export interface DesktopBuilderConfig {
   readonly files: readonly string[]
   readonly asar: boolean
   readonly publish: unknown
-  readonly win: { readonly target: readonly string[] }
+  readonly win: { readonly target: readonly string[]; readonly icon?: string }
   readonly mac: {
     readonly target: readonly { readonly target: string; readonly arch?: readonly string[] }[]
+    readonly icon?: string
     readonly category: string
   }
-  readonly linux: { readonly target: readonly string[]; readonly category: string }
+  readonly linux: { readonly target: readonly string[]; readonly icon?: string; readonly category: string }
 }
 
 /** Contents owned by the desktop release configuration gate. */
@@ -84,7 +88,7 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
       violations.push(`builderConfig.files: expected ${JSON.stringify(file)}`)
     }
   }
-  if (config.asar !== true) {
+  if (!config.asar) {
     violations.push('builderConfig.asar: expected true')
   }
   if (config.publish !== null) {
@@ -93,11 +97,17 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   if (!config.win.target.includes(winTargets[0])) {
     violations.push(`builderConfig.win.target: expected ${JSON.stringify(winTargets[0])}`)
   }
+  if (config.win.icon !== desktopBuilderIconPath(winIcon)) {
+    violations.push(`builderConfig.win.icon: expected ${winIcon}`)
+  }
   const macTargetOk = config.mac.target.some(
-    target => target.target === macTarget && target.arch?.includes(macArch) === true,
+    target => target.target === macTarget && (target.arch?.includes(macArch) ?? false),
   )
   if (!macTargetOk) {
     violations.push(`builderConfig.mac.target: expected ${JSON.stringify(macTarget)} for arch ${JSON.stringify(macArch)}`)
+  }
+  if (config.mac.icon !== desktopBuilderIconPath(macIcon)) {
+    violations.push(`builderConfig.mac.icon: expected ${macIcon}`)
   }
   if (config.mac.category !== macCategory) {
     violations.push(`builderConfig.mac.category: expected ${JSON.stringify(macCategory)}`)
@@ -106,6 +116,9 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
     if (!config.linux.target.includes(target)) {
       violations.push(`builderConfig.linux.target: expected ${JSON.stringify(target)}`)
     }
+  }
+  if (config.linux.icon !== desktopBuilderIconPath(linuxIcon)) {
+    violations.push(`builderConfig.linux.icon: expected ${linuxIcon}`)
   }
   if (config.linux.category !== linuxCategory) {
     violations.push(`builderConfig.linux.category: expected ${JSON.stringify(linuxCategory)}`)
@@ -151,6 +164,10 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   return violations
 }
 
+function desktopBuilderIconPath(repositoryPath: string): string {
+  return repositoryPath.replace(/^apps\/desktop\//, '')
+}
+
 function parseDesktopScripts(manifestText: string): Record<string, string> | undefined {
   try {
     const parsed = JSON.parse(manifestText) as { scripts?: Record<string, string> }
@@ -162,11 +179,11 @@ function parseDesktopScripts(manifestText: string): Record<string, string> | und
 
 /** Read the repository-owned files the desktop release gate audits. */
 export async function readDesktopReleaseFiles(): Promise<DesktopReleaseFiles> {
-  const builderModule = await import(
+  const builderModule: unknown = await import(
     pathToFileURL(resolve(root, 'apps/desktop/electron-builder.config.mjs')).href,
   )
   return {
-    builderConfig: builderModule.default as DesktopBuilderConfig,
+    builderConfig: (builderModule as { readonly default: DesktopBuilderConfig }).default,
     desktopManifest: readFileSync(resolve(root, 'apps/desktop/package.json'), 'utf8'),
     desktopArtifactsWorkflow: readFileSync(resolve(root, '.github/workflows/desktop-artifacts.yml'), 'utf8'),
     releaseWorkflow: readFileSync(resolve(root, '.github/workflows/release.yml'), 'utf8'),

@@ -38,4 +38,7 @@ it('builds renderer bootstrap HTML without a copied product name', async () => {
   const html = await readFile(fileURLToPath(new URL('../out/renderer/index.html', import.meta.url)), 'utf8')
   expect(html).toContain('<title>Desktop</title>')
   expect(html).not.toContain('Harness Desktop')
+  expect(html).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg" />')
+  expect(await readFile(fileURLToPath(new URL('../out/renderer/favicon.svg', import.meta.url)), 'utf8'))
+    .toContain('Generated from assets/brand/harness-icon.svg; do not edit.')
 })

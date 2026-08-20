@@ -13,15 +13,20 @@ function conformingBuilderConfig(): DesktopBuilderConfig {
     productName: productMetadata.productName,
     executableName: 'harness-desktop',
     directories: { output: 'release' },
-    files: ['out/**', 'package.json'],
+    files: ['out/**', 'package.json', 'resources/icons/**'],
     asar: true,
     publish: null,
-    win: { target: ['nsis'] },
+    win: { target: ['nsis'], icon: 'resources/icons/win/harness-desktop.ico' },
     mac: {
       target: [{ target: 'dmg', arch: ['universal'] }],
+      icon: 'resources/icons/mac/harness-desktop.icns',
       category: 'public.app-category.developer-tools',
     },
-    linux: { target: ['AppImage', 'deb'], category: 'Development' },
+    linux: {
+      target: ['AppImage', 'deb'],
+      icon: 'resources/icons/linux/harness-desktop-512.png',
+      category: 'Development',
+    },
   }
 }
 
@@ -73,13 +78,17 @@ describe('desktop release config gate', () => {
       'builderConfig.directories.output: expected "release"',
       'builderConfig.files: expected "out/**"',
       'builderConfig.files: expected "package.json"',
+      'builderConfig.files: expected "resources/icons/**"',
       'builderConfig.asar: expected true',
       'builderConfig.publish: expected null',
       'builderConfig.win.target: expected "nsis"',
+      'builderConfig.win.icon: expected apps/desktop/resources/icons/win/harness-desktop.ico',
       'builderConfig.mac.target: expected "dmg" for arch "universal"',
+      'builderConfig.mac.icon: expected apps/desktop/resources/icons/mac/harness-desktop.icns',
       'builderConfig.mac.category: expected "public.app-category.developer-tools"',
       'builderConfig.linux.target: expected "AppImage"',
       'builderConfig.linux.target: expected "deb"',
+      'builderConfig.linux.icon: expected apps/desktop/resources/icons/linux/harness-desktop-512.png',
       'builderConfig.linux.category: expected "Development"',
       'desktopManifest: script "package" must pass --publish never',
       'desktopManifest: script "package" must load the electron-builder config explicitly',
@@ -96,6 +105,21 @@ describe('desktop release config gate', () => {
       'releaseWorkflow: forbidden publish marker release:publish',
       'releaseWorkflow: forbidden publish marker inputs.publish',
     ])
+  })
+
+  it('reports an icon outside the generated desktop asset directory', () => {
+    const builderConfig = conformingBuilderConfig()
+    const violations = collectDesktopReleaseViolations({
+      ...conformingFiles(),
+      builderConfig: {
+        ...builderConfig,
+        win: { ...builderConfig.win, icon: 'assets/deepseek.ico' },
+      },
+    })
+
+    expect(violations).toContain(
+      'builderConfig.win.icon: expected apps/desktop/resources/icons/win/harness-desktop.ico',
+    )
   })
 
   it('accepts the repository-owned builder, manifest, and workflows', async () => {

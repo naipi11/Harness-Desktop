@@ -37,6 +37,7 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
+    publicDir: '../../../web/public',
     plugins: [react()],
   },
 })
