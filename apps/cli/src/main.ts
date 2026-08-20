@@ -21,7 +21,7 @@ function readVersion(): string {
  * @param invocation - the parsed product command.
  * @returns after accepting the invocation.
  */
-async function dispatchInvocation(invocation: ProductInvocation): Promise<void> {
+function dispatchInvocation(invocation: ProductInvocation): void {
   switch (invocation.mode) {
     case 'interactive':
     case 'run':
@@ -40,12 +40,12 @@ async function dispatchInvocation(invocation: ProductInvocation): Promise<void> 
  * @param argv - arguments after the entrypoint.
  * @returns after the selected product command finishes.
  */
-export async function runCli(
+export function runCli(
   commandName: CliCommandName,
   argv: readonly string[] = process.argv.slice(2),
-): Promise<void> {
+): void {
   try {
-    await dispatchInvocation(parseProductArgs(argv, commandName, readVersion()))
+    dispatchInvocation(parseProductArgs(argv, commandName, readVersion()))
   } catch (error) {
     if (error instanceof ProductArgumentError) {
       process.stderr.write(`${commandName}: ${error.message}\n${error.correction}\n`)
