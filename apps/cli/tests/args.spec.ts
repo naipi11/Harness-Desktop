@@ -71,6 +71,20 @@ describe('parseProductArgs', () => {
     })
   })
 
+  it.each([
+    ['--status', '--open', 'status'],
+    ['--open', '--status', 'status'],
+    ['--stop', '--open', 'stop'],
+    ['--open', '--stop', 'stop'],
+  ])('keeps web %s %s browser-free', (firstFlag, secondFlag, operation) => {
+    expect(parse(['web', firstFlag, secondFlag])).toEqual({
+      mode: 'web',
+      open: false,
+      lease: 'none',
+      operation,
+    })
+  })
+
   it('accepts no-open without treating it as a positional task', () => {
     expect(parse(['web', '--no-open'])).toEqual({
       mode: 'web',

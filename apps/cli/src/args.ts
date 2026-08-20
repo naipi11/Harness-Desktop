@@ -114,6 +114,7 @@ function parseWebArgs(argv: readonly string[], commandName: CliCommandName): Web
   if (operation !== 'open' && lease !== 'none') {
     throw new ProductArgumentError(`${operationFlag} cannot be combined with a background lease`, productSyntax(commandName))
   }
+  if (operation !== 'open') open = false
   return { mode: 'web', open, lease, operation }
 }
 
