@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import properLockfile from 'proper-lockfile'
 import type { HarnessHome } from './data-root.ts'
 import {
   currentProcessIdentity,
@@ -16,6 +17,18 @@ const execFileAsync = promisify(execFile)
 
 /** Runtime ownership record beneath `HARNESS_HOME`. */
 export const RUNTIME_LOCK_FILENAME = 'runtime.lock'
+
+/** Short-lived cross-process guard for ownership acquisition and stale recovery. */
+export const RUNTIME_RECOVERY_GUARD_FILENAME = 'runtime.lock.recovery'
+
+/**
+ * Recovery guard timing is one fixed cross-process protocol: a holder refreshes
+ * well before staleness, while contenders cover ordinary Windows probe/ACL time.
+ */
+const RECOVERY_GUARD_STALE_MS = 5_000
+const RECOVERY_GUARD_UPDATE_MS = 1_000
+const RECOVERY_GUARD_RETRIES = 500
+const RECOVERY_GUARD_RETRY_MS = 10
 
 /** Evidence that a path is restricted by its platform policy. */
 export type PrivatePathEvidence =
@@ -97,10 +110,24 @@ export async function acquireRuntimeLockWithDependencies(
   const policy = dependencies.privatePathPolicy ?? runtimePrivatePathPolicy
   const lockPath = join(home, RUNTIME_LOCK_FILENAME)
   const content = serializeIdentity(identity)
-  let recoveredStaleOwner = false
 
   await mkdir(home, { recursive: true, mode: 0o700 })
   await policy.protectDirectory(home)
+
+  return withRecoveryGuard(home, async () => {
+    return acquirePrimaryRuntimeLock(lockPath, identity, content, probe, policy)
+  })
+}
+
+/** Inspect, recover, and acquire the primary record while the recovery guard is held. */
+async function acquirePrimaryRuntimeLock(
+  lockPath: string,
+  identity: ProcessIdentity,
+  content: string,
+  probe: ProcessIdentityProbe,
+  policy: PrivatePathPolicy,
+): Promise<RuntimeLockResult> {
+  let recoveredStaleOwner = false
 
   for (;;) {
     let created = false
@@ -150,6 +177,35 @@ export async function acquireRuntimeLockWithDependencies(
     await rm(stalePath, { force: true })
     recoveredStaleOwner = true
   }
+}
+
+/** Serialize every ownership transition with a crash-aware cross-process guard. */
+async function withRecoveryGuard<T>(home: HarnessHome, operation: () => Promise<T>): Promise<T> {
+  const release = await properLockfile(home, {
+    lockfilePath: join(home, RUNTIME_RECOVERY_GUARD_FILENAME),
+    realpath: false,
+    retries: {
+      retries: RECOVERY_GUARD_RETRIES,
+      factor: 1,
+      minTimeout: RECOVERY_GUARD_RETRY_MS,
+      maxTimeout: RECOVERY_GUARD_RETRY_MS,
+    },
+    stale: RECOVERY_GUARD_STALE_MS,
+    update: RECOVERY_GUARD_UPDATE_MS,
+  })
+  let result: T
+  try {
+    result = await operation()
+  } catch (error) {
+    try {
+      await release()
+    } catch (releaseError) {
+      throw new AggregateError([error, releaseError], 'host-local-runtime: ownership transition and guard release both failed')
+    }
+    throw error
+  }
+  await release()
+  return result
 }
 
 /** Create an idempotent release that cannot delete a replacement owner's record. */

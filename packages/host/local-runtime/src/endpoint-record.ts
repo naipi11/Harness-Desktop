@@ -1,7 +1,7 @@
 /** Private Runtime endpoint persistence and token-free status projection. */
 
 import { randomBytes } from 'node:crypto'
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { link, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import type { HarnessHome } from './data-root.ts'
@@ -98,7 +98,44 @@ export async function removePrivateEndpointRecord(home: HarnessHome, runtimeId: 
     throw error
   }
   if (record.runtimeId !== runtimeId) throw new Error('host-local-runtime: endpoint ownership changed before removal')
-  await rm(path)
+  const retiredPath = `${path}.${randomBytes(8).toString('hex')}.retiring`
+  try {
+    await rename(path, retiredPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+
+  let retiredRecord: PrivateEndpointRecord
+  try {
+    await runtimePrivatePathPolicy.verifyFile(retiredPath)
+    retiredRecord = parsePrivateEndpointRecord(await readFile(retiredPath, 'utf8'))
+  } catch (error) {
+    await restoreRetiredEndpoint(retiredPath, path, error)
+    throw error
+  }
+  if (retiredRecord.runtimeId !== runtimeId) {
+    const ownershipError = new Error('host-local-runtime: endpoint ownership changed before removal')
+    await restoreRetiredEndpoint(retiredPath, path, ownershipError)
+    throw ownershipError
+  }
+  await rm(retiredPath)
+}
+
+/** Restore a claimed replacement unless a still newer endpoint already exists. */
+async function restoreRetiredEndpoint(retiredPath: string, path: string, cause: unknown): Promise<void> {
+  try {
+    await link(retiredPath, path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw new AggregateError([cause, error], 'host-local-runtime: endpoint retirement and replacement restoration both failed')
+    }
+  }
+  try {
+    await rm(retiredPath)
+  } catch (error) {
+    throw new AggregateError([cause, error], 'host-local-runtime: endpoint replacement restored but tombstone cleanup failed')
+  }
 }
 
 /**

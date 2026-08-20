@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import fs from 'node:fs'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +13,7 @@ import {
   RUNTIME_ENDPOINT_FILENAME,
   readPrivateEndpointRecord,
   redactRuntimeStatus,
+  removePrivateEndpointRecord,
   writePrivateEndpointRecord,
   type PrivateEndpointRecord,
 } from '../src/endpoint-record.ts'
@@ -78,6 +81,69 @@ describe('private Runtime endpoint record', () => {
       expect((await stat(join(home, RUNTIME_ENDPOINT_FILENAME))).mode & 0o777).toBe(0o600)
       expect(evidence).toMatchObject({ platform: process.platform, mode: 0o600 })
     }
+  })
+
+  it('preserves a replacement published after retirement reads the old record', async () => {
+    const home = await temporaryHome()
+    const path = join(home, RUNTIME_ENDPOINT_FILENAME)
+    const oldRecord = endpoint('old-private-token', 3000)
+    const replacement = {
+      ...endpoint('replacement-private-token', 4000),
+      runtimeId: 'runtime-2' as PrivateEndpointRecord['runtimeId'],
+    }
+    await writePrivateEndpointRecord(home, oldRecord)
+    const mutablePromises = fs.promises as typeof fs.promises & {
+      rename: typeof fs.promises.rename
+      rm: typeof fs.promises.rm
+    }
+    const originalRename = mutablePromises.rename.bind(mutablePromises)
+    const originalRm = mutablePromises.rm.bind(mutablePromises)
+    let retirementReached!: () => void
+    let continueRetirement!: () => void
+    const reached = new Promise<void>((resolve) => { retirementReached = resolve })
+    const allowed = new Promise<void>((resolve) => { continueRetirement = resolve })
+    let paused = false
+    const pause = async () => {
+      if (paused) return
+      paused = true
+      retirementReached()
+      await allowed
+    }
+    mutablePromises.rename = async (source, target) => {
+      if (String(source) === path) await pause()
+      await originalRename(source, target)
+    }
+    mutablePromises.rm = async (target, options) => {
+      if (String(target) === path) await pause()
+      await originalRm(target, options)
+    }
+    syncBuiltinESMExports()
+
+    try {
+      const retirement = removePrivateEndpointRecord(home, oldRecord.runtimeId)
+      await reached
+      await writePrivateEndpointRecord(home, replacement)
+      continueRetirement()
+      await expect(retirement).rejects.toThrow('endpoint ownership changed before removal')
+      expect(await readPrivateEndpointRecord(home)).toEqual(replacement)
+      expect((await readdir(home)).filter(name => name.endsWith('.retiring'))).toEqual([])
+    } finally {
+      continueRetirement()
+      mutablePromises.rename = originalRename
+      mutablePromises.rm = originalRm
+      syncBuiltinESMExports()
+    }
+  })
+
+  it('removes its own endpoint without leaving a retirement tombstone', async () => {
+    const home = await temporaryHome()
+    const record = endpoint('retiring-private-token')
+    await writePrivateEndpointRecord(home, record)
+
+    await removePrivateEndpointRecord(home, record.runtimeId)
+
+    await expect(readFile(join(home, RUNTIME_ENDPOINT_FILENAME), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(home)).filter(name => name.endsWith('.retiring'))).toEqual([])
   })
 
   it('rejects a broader-access endpoint before disclosing its token', async () => {

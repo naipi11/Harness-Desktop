@@ -35,6 +35,9 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "dependencies": {
+    "proper-lockfile": "4.1.2"
+  },
   "peerDependencies": {
     "@harness-desktop/dsh-atomic-write": "workspace:^",
     "@harness-desktop/cordis": "workspace:^",

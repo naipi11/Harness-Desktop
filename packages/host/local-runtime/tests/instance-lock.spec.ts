@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { HarnessHome } from '../src/data-root.ts'
@@ -14,6 +15,7 @@ import {
 import type { ProcessIdentityProbe } from '../src/process-identity.ts'
 
 const fixture = fileURLToPath(new URL('./fixtures/runtime-owner.ts', import.meta.url))
+const contenderFixture = fileURLToPath(new URL('./fixtures/runtime-contender.ts', import.meta.url))
 const cleanups: Array<() => Promise<void>> = []
 
 afterEach(async () => {
@@ -47,6 +49,75 @@ async function startOwner(home: HarnessHome): Promise<ChildProcessWithoutNullStr
     child.once('exit', (code) => { reject(new Error(`owner exited before readiness (${code}): ${stderr}`)) })
   })
   return child
+}
+
+interface RecoveryContender {
+  readonly child: ChildProcessWithoutNullStreams
+  send(command: 'RELEASE' | 'RENAME'): void
+  waitFor(prefix: string, timeoutMs?: number): Promise<string>
+}
+
+function startRecoveryContender(home: HarnessHome, label: string): RecoveryContender {
+  const child = spawn(process.execPath, ['--import', 'tsx/esm', contenderFixture], {
+    env: {
+      ...process.env,
+      HARNESS_HOME: home,
+      DSH_HOME: undefined,
+      HARNESS_RUNTIME_CONTENDER_LABEL: label,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  let stderr = ''
+  const lines: string[] = []
+  const waiters = new Set<() => void>()
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk: string) => { stderr += chunk })
+  const output = createInterface({ input: child.stdout })
+  output.on('line', (line) => {
+    lines.push(line)
+    for (const wake of waiters) wake()
+  })
+  cleanups.push(async () => {
+    output.close()
+    if (child.exitCode === null) {
+      child.kill()
+      await new Promise<void>((resolve) => { child.once('exit', () => { resolve() }) })
+    }
+  })
+  return {
+    child,
+    send(command) { child.stdin.write(`${command}\n`) },
+    async waitFor(prefix, timeoutMs = 5_000) {
+      const existing = lines.find(line => line.startsWith(prefix))
+      if (existing !== undefined) return existing
+      return new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          waiters.delete(wake)
+          reject(new Error(`${label} did not emit ${prefix}; stderr: ${stderr}`))
+        }, timeoutMs)
+        const wake = () => {
+          const line = lines.find(candidate => candidate.startsWith(prefix))
+          if (line === undefined) return
+          clearTimeout(timeout)
+          waiters.delete(wake)
+          resolve(line)
+        }
+        waiters.add(wake)
+        child.once('exit', (code) => {
+          clearTimeout(timeout)
+          waiters.delete(wake)
+          reject(new Error(`${label} exited ${code} before ${prefix}; stderr: ${stderr}`))
+        })
+      })
+    },
+  }
+}
+
+async function settlesWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  return Promise.race([
+    promise,
+    new Promise<undefined>((resolve) => { setTimeout(resolve, timeoutMs) }),
+  ])
 }
 
 const acceptingPolicy: PrivatePathPolicy = {
@@ -106,6 +177,30 @@ describe('Runtime instance ownership', () => {
     if (result.kind === 'acquired') await result.lock.release()
   })
 
+  it('serializes two processes recovering the same stale owner', async () => {
+    const home = await temporaryHome()
+    await writeFile(join(home, RUNTIME_LOCK_FILENAME), JSON.stringify({ pid: 4242, startedAt: 'stale' }) + '\n', { mode: 0o600 })
+    const contenders = [startRecoveryContender(home, 'a'), startRecoveryContender(home, 'b')]
+    const ready = contenders.map(contender => contender.waitFor('RENAME_READY'))
+    const firstReady = await Promise.race(ready.map((promise, index) => promise.then(() => index)))
+    const otherIndex = firstReady === 0 ? 1 : 0
+    const secondReady = await settlesWithin(ready[otherIndex] as Promise<string>, 500)
+
+    if (secondReady !== undefined) {
+      contenders[firstReady]?.send('RENAME')
+      await contenders[firstReady]?.waitFor('RESULT')
+      contenders[otherIndex]?.send('RENAME')
+    } else {
+      contenders[firstReady]?.send('RENAME')
+    }
+
+    const results = await Promise.all(contenders.map(contender => contender.waitFor('RESULT')))
+    expect(results.map(line => line.split(' ').at(-1)).sort()).toEqual(['acquired', 'owned-by-live-runtime'])
+    for (const [index, result] of results.entries()) {
+      if (result.endsWith(' acquired')) contenders[index]?.send('RELEASE')
+    }
+  })
+
   it('preserves an owner lock when the process probe cannot prove it dead', async () => {
     const home = await temporaryHome()
     const lockPath = join(home, RUNTIME_LOCK_FILENAME)
@@ -136,5 +231,11 @@ describe('Runtime instance ownership', () => {
     })).rejects.toThrow('private policy rejected lock')
 
     await expect(readFile(join(home, RUNTIME_LOCK_FILENAME), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    const retry = await acquireRuntimeLock(home, {
+      identity: { pid: 99, startedAt: 'current-start' },
+      privatePathPolicy: acceptingPolicy,
+    })
+    expect(retry).toMatchObject({ kind: 'acquired' })
+    if (retry.kind === 'acquired') await retry.lock.release()
   })
 })
