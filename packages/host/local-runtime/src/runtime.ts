@@ -2,6 +2,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
+import { sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
@@ -17,6 +18,10 @@ import {
 } from './endpoint-record.ts'
 import { acquireRuntimeLock, type RuntimeLock } from './instance-lock.ts'
 import { IdleLifecycle } from './idle-lifecycle.ts'
+
+const APP_BOOT_MODULE = '@harness-desktop/dsh-app-boot'
+const CLIENT_CONNECTION_MODULE = '@harness-desktop/dsh-client-connection'
+const CMDLINE_MODULE = '@harness-desktop/dsh-cmdline'
 
 /** Opaque attached-client identity, supplied by the future Runtime connection layer. */
 export type RuntimeClientId = Branded<'RuntimeClientId'>
@@ -116,7 +121,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       accessToken: randomBytes(32).toString('base64url'),
     }
     if (config.mountPrivateControl === true) {
-      const connectionModule = await import(pathToFileURL(createRequire(import.meta.url).resolve('@harness-desktop/dsh-client-connection')).href) as {
+      const connectionModule = await import(CLIENT_CONNECTION_MODULE) as {
         apply: (
           context: Context,
           config: { trustedHosts: readonly string[] },
@@ -171,7 +176,7 @@ async function flushCanonicalSessions(ctx: Context): Promise<void> {
 /** Boot the shipped base and Web patch layers over the package-owned empty root. */
 async function bootCanonicalComposition(harnessHome: HarnessHomeProvider): Promise<Context> {
   const require = createRequire(import.meta.url)
-  const appBoot = await import(pathToFileURL(require.resolve('@harness-desktop/dsh-app-boot')).href) as {
+  const appBoot = await import(APP_BOOT_MODULE) as {
     boot: (
       binName: string,
       configPath: string,
@@ -180,37 +185,48 @@ async function bootCanonicalComposition(harnessHome: HarnessHomeProvider): Promi
       bareModuleBaseUrl: undefined,
       provider: HarnessHomeProvider,
     ) => Promise<Context>
+    installSourceLoaderResolution: (ctx: Context, resolveModule: (specifier: string) => string) => void
     loadOverlayPatches: (binName: string, path: string) => unknown[]
   }
-  const cmdline = await import(pathToFileURL(require.resolve('@harness-desktop/dsh-cmdline')).href) as {
+  const cmdline = await import(CMDLINE_MODULE) as {
     provideCmdline: (ctx: Context, host: { args: readonly string[]; exit: (code: number) => void }) => void
   }
   const baseRequire = createRequire(require.resolve('@harness-desktop/dsh-base/package.json'))
   const webRequire = createRequire(require.resolve('@harness-desktop/dsh-web-app/package.json'))
+  const sourceProcess = fileURLToPath(import.meta.url).endsWith(`${sep}src${sep}runtime.ts`)
+  const basePatches = appBoot.loadOverlayPatches(
+    'harness-runtime', require.resolve('@harness-desktop/dsh-base/cordis.patch.yml'),
+  )
+  const webPatches = appBoot.loadOverlayPatches(
+    'harness-runtime', require.resolve('@harness-desktop/dsh-web-app/cordis.patch.yml'),
+  )
   const patches = [
-    ...resolvePatchModules(
-      appBoot.loadOverlayPatches('harness-runtime', require.resolve('@harness-desktop/dsh-base/cordis.patch.yml')),
-      baseRequire,
-    ),
-    ...resolvePatchModules(
-      appBoot.loadOverlayPatches('harness-runtime', require.resolve('@harness-desktop/dsh-web-app/cordis.patch.yml')),
-      webRequire,
-    ),
+    ...sourceProcess
+      ? basePatches
+      : resolvePatchModules(basePatches, specifier => pathToFileURL(baseRequire.resolve(specifier)).href),
+    ...sourceProcess
+      ? webPatches
+      : resolvePatchModules(webPatches, specifier => pathToFileURL(webRequire.resolve(specifier)).href),
   ]
   return appBoot.boot('harness-runtime', fileURLToPath(new URL('../runtime.cordis.yml', import.meta.url)), patches, (ctx) => {
+    if (sourceProcess) appBoot.installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))
     cmdline.provideCmdline(ctx, { args: [], exit: () => {} })
   }, undefined, harnessHome)
 }
 
 /** Resolve shipped bundle entry modules from the bundle that declares each dependency. */
-function resolvePatchModules(patches: readonly unknown[], require: NodeRequire): unknown[] {
+function resolvePatchModules(patches: readonly unknown[], resolveModule: (specifier: string) => string): unknown[] {
   return structuredClone(patches).map((patch) => {
     if (typeof patch !== 'object' || patch === null || !('insert' in patch) || !Array.isArray(patch.insert)) return patch
+    const insert = patch.insert as unknown[]
     return {
       ...patch,
-      insert: patch.insert.map((entry) => {
-        if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string' || entry.name.startsWith('cordis:')) return entry
-        return { ...entry, name: pathToFileURL(require.resolve(entry.name)).href }
+      insert: insert.map((entry) => {
+        if (typeof entry !== 'object' || entry === null) return entry
+        const record = entry as Record<string, unknown>
+        const name = record.name
+        if (typeof name !== 'string' || name.startsWith('cordis:')) return entry
+        return { ...record, name: resolveModule(name) }
       }),
     }
   })

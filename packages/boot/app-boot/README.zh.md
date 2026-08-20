@@ -16,6 +16,7 @@
 | `loadOptionalPatches(binName, file)` | 解析一份可选的 patch 列表文件（即 profile 的 `cordis.patch.yml`）：其顶层是一个 YAML 数组，内容为 include 的 `PatchOptions`（按 id 定位的配置覆盖、`insert` 列表，允许 `!!js`）；文件不存在时返回 `undefined`，文件不可读、不可解析或内容不是数组时抛出异常 |
 | `loadOverlayPatches(binName, file)` | 解析必需的顶层 YAML 数组，其中包含与上文相同的 include `PatchOptions` 条目；文件缺失也会抛出异常，因为该文件是调用方指名的 |
 | `mountRootInclude(ctx, absoluteConfigPath, patches?, bareModuleBaseUrl?)` | 注册静态导入的 `cordis:include` 与 `cordis:group` builtin，挂载 include，并保留用户 patch 层 HMR（热模块替换）使用的确切根配置项；可选模块基准会把裸包名锚定到已安装宿主，而相对名称仍以配置目录为基准 |
+| `installSourceLoaderResolution(ctx, resolveModule)` | 在挂载配置行前，将源码进程的所有裸 Loader import（包括动态创建的 entry）交给启动器当前的 tsconfig resolver；构建后的启动器不调用此函数 |
 | `watchUserPatches(ctx, options)` | 向现有 Cordis HMR 服务注册指名的 patch 文件；每次新增、变更或移除都会通过调用方的 `compose` 闭包（应用自有层围绕当前用户层）以事务方式重新组合完整 patch 列表，并返回异步 disposer |
 | `resolveProfileDir` / `initProfile` / `loadProfile` / `readProfileManifest` / `writeProfileManifest` / `resolveBundleDir` / `composeEntries` / `healProfilesModuleFallback` / `PROFILE_TEMPLATES` / `DEFAULT_PROFILE_BUNDLES` / `PROFILES_DIR` / `PROFILE_PATCH_FILENAME` | Profile 机制（见 [Profile](#profiles)） |
 | `boot(binName, absoluteConfigPath, patches?, prepare?, bareModuleBaseUrl?, harnessHomeProvider?)` | 创建根上下文，向 Loader `!!js` 配置表达式暴露同一个传入（或由入口解析）的 `harnessHome` provider 及其 `harnessHomePath(...segments)` helper，并安装 Loader，在配置树条目挂载前执行可选的宿主准备操作（`prepare` 可以使用 Loader，也可以提供由启动器拥有的上下文插槽），再挂载并等待 include 树结算，断言所有条目均已加载并激活，最后返回根上下文——失败时 dispose（资源释放）部分构造的上下文，并以带标签的错误 reject；可选模块基准与 `mountRootInclude` 的解析语义相同 |

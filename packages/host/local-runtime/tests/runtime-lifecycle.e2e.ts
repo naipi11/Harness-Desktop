@@ -52,19 +52,29 @@ describe('Runtime lifecycle accounting', () => {
   it('continues endpoint, lock, and Cordis cleanup after a durable flush failure', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-flush-failure-'))
     const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
+    let cordisDisposed = false
+    let flushObservedPublishedOwner = false
     runtime = await startRuntime({
       harnessHome,
       idleTimeoutMs: 60_000,
-      async flush() { throw new Error('flush failed') },
+      async flush() {
+        await access(join(root!, 'runtime-endpoint.json'))
+        await access(join(root!, 'runtime.lock'))
+        flushObservedPublishedOwner = true
+        throw new Error('flush failed')
+      },
       async boot() {
         const ctx = new Context()
         await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        ctx.effect(() => () => { cordisDisposed = true }, 'runtime lifecycle disposal probe')
         return ctx
       },
     })
 
     await expect(runtime.dispose()).rejects.toThrow('flush failed')
     runtime = undefined
+    expect(flushObservedPublishedOwner).toBe(true)
+    expect(cordisDisposed).toBe(true)
     await expect(access(join(root, 'runtime-endpoint.json'))).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
   })

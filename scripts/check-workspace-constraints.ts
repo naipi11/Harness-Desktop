@@ -140,6 +140,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@harness-desktop/dsh-client-ui-theme': ['lib/styles'],
   // The product metadata subpath and its JSON payload ship beside the lib.
   '@harness-desktop/dsh-app-boot': ['lib/product-metadata.js', 'product.json'],
+  // The private Runtime uses code-split internal entries plus its root config.
+  '@harness-desktop/dsh-host-local-runtime': ['lib/*.js', 'runtime.cordis.yml'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.
   '@harness-desktop/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],

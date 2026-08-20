@@ -14,6 +14,8 @@ Runtime-local routes accept native control only at the exact `127.0.0.1` authori
 
 The Runtime owner acquires the lock before it boots the shipped base and Web composition, including API, static Dashboard, session, settings, workspace, storage, and credential-reference providers. It requires the composition to expose a healthy `127.0.0.1` WebServer on an OS-assigned port, mounts private authenticated control before publishing the endpoint, and shares one injected `HarnessHomeProvider` with every writer. It counts actual client attachments, agent work, and explicit background leases, and begins configured idle shutdown only when all three are absent. Ordered shutdown flushes composed durable services, removes the endpoint, releases the lock, and disposes the Cordis root. `startRuntime()` and its handle are orchestration internals; the connection and control API is deferred to the Runtime client layer.
 
+The declared `lib/bin.js` and direct `src/bin.ts` development entry both boot the complete shipped composition. Source entry execution requires `pnpm run build:lib` first because Typert contributions and browser bundles are build-generated artifacts; clean source-only integration fixtures must declare any backend-only overlay explicitly rather than changing the product composition.
+
 ## Model Experience
 
 ### Runtime ownership and endpoint records

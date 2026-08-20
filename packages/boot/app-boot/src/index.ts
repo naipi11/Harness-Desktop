@@ -531,6 +531,46 @@ export async function mountRootInclude(
 }
 
 /**
+ * Route a source process's Loader imports through its active tsconfig
+ * resolver, including entries created dynamically after the root include.
+ * Built processes retain ordinary package-export resolution and do not call
+ * this helper.
+ * @param ctx - boot context after Loader installation and before config entries mount.
+ * @param resolveModule - source-mode ESM resolver supplied by the launcher.
+ */
+export function installSourceLoaderResolution(
+  ctx: Context,
+  resolveModule: (specifier: string) => string,
+): void {
+  interface LoaderInternal {
+    import(specifier: string, parentUrl: string, attributes: ImportAttributes): Promise<unknown>
+  }
+  interface LoaderService {
+    internal?: LoaderInternal
+  }
+  const loader = ctx.get('loader') as LoaderService | undefined
+  const internal = loader?.internal
+  if (loader === undefined || internal === undefined) {
+    throw new Error('app-boot: source composition requires the Node Loader resolver')
+  }
+  const handler: ProxyHandler<LoaderInternal> = {
+    get(target, property): unknown {
+      if (property === 'import') {
+        return (specifier: string, parentUrl: string, attributes: ImportAttributes) => {
+          const resolved = specifier.startsWith('.') || specifier.startsWith('file:') || specifier.startsWith('node:')
+            ? specifier
+            : resolveModule(specifier)
+          return target.import(resolved, parentUrl, attributes)
+        }
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  }
+  loader.internal = new Proxy(internal, handler)
+}
+
+/**
  * The slice of `process` {@link installFailLoud} needs — injectable so tests
  * exercise the handler without registering on (or exiting) the real process.
  */

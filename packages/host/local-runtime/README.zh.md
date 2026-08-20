@@ -14,6 +14,8 @@ Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoi
 
 Runtime owner 会在启动已发货的 base 与 Web 组合前取得锁，其中包括 API、静态 Dashboard、session、settings、workspace、storage 和 credential-reference provider。它要求该组合公开一个健康的 `127.0.0.1` WebServer 和操作系统分配的端口，在发布私有 endpoint 前挂载私有已认证控制，并向每个 writer 共享同一个注入的 `HarnessHomeProvider`。它计数实际客户端附加、agent work 与显式 background lease，并且只在三者均不存在时开始配置的空闲关闭。关闭按顺序刷新组合中的持久化服务、移除 endpoint、释放锁，再 dispose Cordis 根。`startRuntime()` 及其 handle 是编排内部实现；连接与控制 API 留给 Runtime client 层。
 
+声明的 `lib/bin.js` 与直接运行的开发入口 `src/bin.ts` 都会启动完整的已发货组合。运行源码入口前必须先执行 `pnpm run build:lib`，因为 Typert contribution 与浏览器 bundle 是构建生成的产物；只使用源码的干净集成 fixture 必须显式声明仅后端 overlay，不得改变产品组合。
+
 ## 模型体验
 
 ### Runtime owner 与 endpoint 记录

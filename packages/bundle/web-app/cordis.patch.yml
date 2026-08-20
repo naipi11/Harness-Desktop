@@ -109,9 +109,9 @@
 
     # ── layer 2: transport/service ──────────────────────────────────────────────
 
-    # Plain route-registration carrier; host and port come from the app's
-    # webStartup provider, with these deployment fallbacks. The dist is served by
-    # the web-runtime row below through the fallback seat.
+    # Plain route-registration carrier. The local Runtime owns one loopback
+    # listener and lets the operating system assign its port. The dist is served
+    # by the web-runtime row below through the fallback seat.
     - id: webserver
       name: '@harness-desktop/dsh-host-webserver'
       config:
