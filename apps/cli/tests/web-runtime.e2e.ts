@@ -29,6 +29,8 @@ const harnessSource = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
 const harnessBuilt = fileURLToPath(new URL('../lib/bin.js', import.meta.url))
 const dshSource = fileURLToPath(new URL('../src/dsh-bin.ts', import.meta.url))
 const dshBuilt = fileURLToPath(new URL('../lib/dsh-bin.js', import.meta.url))
+const browserBuilt = fileURLToPath(new URL('../lib/browser.js', import.meta.url))
+const browserParentExit = fileURLToPath(new URL('./fixtures/browser-parent-exit.mjs', import.meta.url))
 const repoTsconfig = join(repoRoot, 'tsconfig.json')
 let runtime: RuntimeProcess | undefined
 let client: RuntimeClient | undefined
@@ -289,6 +291,36 @@ describe('Runtime Web client real entry', () => {
     }
     expect((await releaseRuntime(runtime)).exitCode).toBe(0)
     runtime = undefined
+  }, 120_000)
+
+  it.runIf(resolveExampleMode() === 'lib')('keeps the built bootstrap until expiry after its parent exits', async () => {
+    const expiresAt = Date.now() + 6_000
+    const parent = await execa(process.execPath, [browserParentExit, pathToFileURL(browserBuilt).href, String(expiresAt)], {
+      cwd: repoRoot,
+      reject: false,
+      timeout: 30_000,
+      windowsHide: true,
+    })
+    expect(parent.exitCode, parent.stderr).toBe(0)
+    expect(parent.stderr).toBe('')
+    expect(parent.stdout).not.toContain('0123456789abcdefghijklmnopqrstuvwxyzABCDEFG')
+    const documentPath = fileURLToPath(parent.stdout)
+    try {
+      await expect(access(documentPath)).resolves.toBeUndefined()
+      const deadline = expiresAt + 5_000
+      while (Date.now() < deadline) {
+        try {
+          await access(documentPath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') break
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      await expect(access(documentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await rm(dirname(documentPath), { recursive: true, force: true })
+    }
   }, 120_000)
 
   it('does not create a Runtime endpoint or home for status discovery', async () => {

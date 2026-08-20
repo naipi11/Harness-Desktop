@@ -291,7 +291,47 @@ describe('browser handoff transport', () => {
     expect(failedRemove).toHaveBeenCalledOnce()
   })
 
-  it('owns successful-dispatch cleanup through normal process exit', async () => {
+  it('transfers successful-dispatch cleanup on normal process exit', async () => {
+    let beforeExit: (() => void) | undefined
+    let expire: (() => void) | undefined
+    let documentPath = ''
+    const remove = vi.fn(async (path: string) => {
+      await rm(dirname(path), { recursive: true, force: true })
+    })
+    const ownUntil = vi.fn(async () => {})
+    const detach = vi.fn()
+    const fakeTimer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>
+    const options = {
+      parent: tmpdir(),
+      now: () => 0,
+      dispatch: vi.fn(async (url: string) => { documentPath = fileURLToPath(url) }),
+      remove,
+      setTimer: vi.fn((callback: () => void) => {
+        expire = callback
+        return fakeTimer
+      }),
+      clearTimer: vi.fn(),
+      lifecycle: {
+        addBeforeExitListener(listener: () => void) { beforeExit = listener },
+        removeBeforeExitListener: detach,
+      },
+      durableOwner: { ownUntil },
+    }
+    const transport = createBrowserHandoffTransport(options)
+
+    await transport.open(navigation)
+    expect(beforeExit).toBeTypeOf('function')
+    beforeExit?.()
+    await vi.waitFor(() => { expect(detach).toHaveBeenCalledWith(beforeExit) })
+    expire?.()
+
+    expect(ownUntil).toHaveBeenCalledWith(documentPath, navigation.handoff.expiresAt)
+    expect(remove).not.toHaveBeenCalled()
+    expect(options.clearTimer).toHaveBeenCalledWith(fakeTimer)
+    await rm(dirname(documentPath), { recursive: true, force: true })
+  })
+
+  it('keeps the parent alive to expiry when durable transfer fails', async () => {
     let beforeExit: (() => void) | undefined
     let expire: (() => void) | undefined
     let markRemoved: (() => void) | undefined
@@ -300,9 +340,12 @@ describe('browser handoff transport', () => {
       await rm(dirname(path), { recursive: true, force: true })
       markRemoved?.()
     })
-    const detach = vi.fn()
-    const fakeTimer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>
-    const options = {
+    const ref = vi.fn()
+    const fakeTimer = {
+      ref,
+      unref: vi.fn(),
+    } as unknown as ReturnType<typeof setTimeout>
+    const transport = createBrowserHandoffTransport({
       parent: tmpdir(),
       now: () => 0,
       dispatch: vi.fn(async () => {}),
@@ -314,20 +357,21 @@ describe('browser handoff transport', () => {
       clearTimer: vi.fn(),
       lifecycle: {
         addBeforeExitListener(listener: () => void) { beforeExit = listener },
-        removeBeforeExitListener: detach,
+        removeBeforeExitListener: vi.fn(),
       },
-    }
-    const transport = createBrowserHandoffTransport(options)
+      durableOwner: {
+        ownUntil: vi.fn(async () => { throw new Error('helper unavailable') }),
+      },
+    })
 
     await transport.open(navigation)
-    expect(beforeExit).toBeTypeOf('function')
     beforeExit?.()
+    await vi.waitFor(() => { expect(ref).toHaveBeenCalledOnce() })
+    expect(remove).not.toHaveBeenCalled()
+
     expire?.()
     await removed
-
     expect(remove).toHaveBeenCalledOnce()
-    expect(detach).toHaveBeenCalledWith(beforeExit)
-    expect(options.clearTimer).toHaveBeenCalledWith(fakeTimer)
   })
 
   it('expires and cleans a document whose dispatch never settles', async () => {

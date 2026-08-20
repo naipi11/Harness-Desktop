@@ -2,49 +2,47 @@
 
 English | [中文](README.zh.md)
 
-`harness` is the Harness Desktop launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. `dsh` remains a compatible command name. [`src/args.ts`](src/args.ts) owns the command grammar, [`src/main.ts`](src/main.ts) dispatches both names, and each entry loads only its selected command name. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+`harness` is the Harness Desktop product client. `dsh` is a compatible command name with the same grammar and data. [`src/args.ts`](src/args.ts) owns the public command grammar, and [`src/main.ts`](src/main.ts) dispatches both names to the shared local Runtime.
 
-## Entry modes
+## Quick start
+
+```sh
+harness
+harness "fix the tests"
+harness run "fix the tests" --json
+harness web
+harness web --background --no-open
+harness web --status
+harness web --stop
+harness desktop
+```
+
+## Product commands
 
 | Command | Purpose |
 |---|---|
-| `harness --profile <name>` | Boot the named profile under `$HARNESS_HOME/profiles/<name>`. |
-| `harness --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
-| `harness web` | Attach to the shared Runtime and open its Dashboard; optionally retain the named Web lease. |
-| `harness plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
-| `dsh <args...>` | Compatibility alias with the same profile and data behavior. |
+| `harness [task]` | Open an interactive terminal, optionally with one initial task. |
+| `harness run <task> [--json]` | Run exactly one task; `--json` emits JSONL protocol records. |
+| `harness web [options]` | Open, retain, inspect, or release the shared Runtime Dashboard. |
+| `harness desktop` | Select Desktop mode; no arguments are accepted. |
+| `dsh <args...>` | Use the same product grammar through the compatible command name. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `harness plugin`.
+The former public profile, plugin-management, headless-profile, patch, and config-dump commands are not part of this product grammar. `--profile` is rejected explicitly. Use `run` for a one-shot task and `web` for the Dashboard.
 
-`harness web` starts or attaches to the shared local Runtime and opens the Dashboard through a one-use body-only browser handoff; `--no-open` performs the Runtime operation without dispatching a browser. `--daemon` and `--background` are equivalent requests for the Runtime-owned named Web lease, not detached Web-child launches: the CLI prints the lease state and exits, with no per-command child PID or private child log to manage. `--status` inspects an existing Runtime without starting one, and `--stop` releases only that Web lease while preserving the Runtime and active work. The [CLI behavior reference](reference/README.md) owns the operational details.
+## Shared Runtime and Web
 
-## App arguments
+Interactive, run, and Web modes attach to one local Runtime selected through `HARNESS_HOME`; the invoking directory is the terminal workspace. Closing a CLI attachment does not terminate unrelated clients or active work.
 
-The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). Launcher flags therefore come first, and the first token the launcher does not recognize starts the app's arguments:
+`harness web` starts or attaches to the Runtime and opens the Dashboard by default. `--no-open` suppresses browser dispatch. `--daemon` and `--background` are equivalent requests for the Runtime-owned named `web` lease, not detached per-command Web-child launches. `--status` inspects an existing Runtime without starting one. `--stop` idempotently releases only the named Web lease and preserves the Runtime, other clients, and active work.
 
-```sh
-harness --profile web --port 8080       # --port belongs to the web app
-harness --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
-harness --profile headless "run the tests"
-harness --profile web --help            # the web app's flags, not the launcher's
-harness --help                          # the launcher's own help
-```
-
-## Profiles
-
-A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml` (the user's own patch layer).
-
-The tree composes over an empty root:
-- each bundle's patch in `dsh.profile.bundles` order
-- then the profile's `cordis.patch.yml`, then the home-level `$HARNESS_HOME/cordis.patch.yml`
-- then `--patch` overlays
-
-Bundles named in `dsh.profile.bundles` resolve from the Harness Desktop installation first (`@harness-desktop/dsh-base`, `@harness-desktop/dsh-web-app`, `@harness-desktop/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
-
-Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
-
-The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.
+Browser opening uses an owner-only temporary HTML document whose POST body contains a one-time handoff; the dispatched local file URL contains neither that handoff nor the Runtime access token. The Runtime client API does not report exchange settlement to the CLI, so a live parent removes the document on dispatch failure or handoff expiry. If the CLI exits first, it transfers the path and existing expiry—not credentials—to a detached plain-Node cleanup helper. The [CLI behavior reference](reference/README.md) owns the complete command and lifecycle details.
 
 ## Development
 
-Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm harness <args...>` to run the TypeScript entry and forward every argument; `pnpm dsh <args...>` remains compatible. The [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+Source execution preserves the `node --import tsx/esm` launcher used by `pnpm harness`; built execution uses `apps/cli/lib/bin.js`. Build package, Web, and Desktop artifacts before testing the installed path:
+
+```sh
+pnpm run build
+pnpm harness web --status
+node apps/cli/lib/bin.js web --status
+```

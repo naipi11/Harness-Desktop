@@ -1,10 +1,10 @@
 /** Owner-only local-file transport for one Runtime Dashboard handoff. */
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { chmod, lstat, mkdtemp, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import type {
   BrowserHandoffTransport,
@@ -25,12 +25,18 @@ export interface BrowserBootstrapAccess {
   verifyFile(path: string): Promise<void>
 }
 
-/** Process lifecycle owner for a dispatched bootstrap awaiting expiry. */
+/** Process lifecycle signal for a dispatched bootstrap awaiting expiry. */
 export interface BrowserBootstrapLifecycle {
-  /** Register cleanup for a natural Node process exit. */
+  /** Register ownership transfer for a natural Node process exit. */
   addBeforeExitListener(listener: () => void): void
   /** Detach a cleanup listener after another settlement path wins. */
   removeBeforeExitListener(listener: () => void): void
+}
+
+/** Durable process owner for a bootstrap whose launcher is exiting. */
+export interface BrowserBootstrapDurableOwner {
+  /** Retain and remove one private document at its existing expiry. */
+  ownUntil(documentPath: string, expiresAt: number): Promise<void>
 }
 
 /** Injectable operating-system boundaries for the production browser transport. */
@@ -49,8 +55,10 @@ export interface BrowserHandoffTransportOptions {
   readonly clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
   /** Remove only the owned document and its now-empty directory. */
   readonly remove?: (documentPath: string) => Promise<void>
-  /** Own successful-dispatch cleanup until expiry or natural process exit. */
+  /** Signal natural process exit before handoff expiry. */
   readonly lifecycle?: BrowserBootstrapLifecycle
+  /** Accept cleanup ownership when the launcher exits before expiry. */
+  readonly durableOwner?: BrowserBootstrapDurableOwner
 }
 
 /** Production owner-only access policy for transient browser bootstrap paths. */
@@ -90,10 +98,30 @@ const browserBootstrapLifecycle: BrowserBootstrapLifecycle = {
   removeBeforeExitListener(listener) { process.off('beforeExit', listener) },
 }
 
+const browserBootstrapDurableOwner: BrowserBootstrapDurableOwner = {
+  ownUntil(documentPath, expiresAt) {
+    const helper = fileURLToPath(new URL('../browser-cleanup.mjs', import.meta.url))
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [helper, documentPath, String(expiresAt)], {
+        detached: true,
+        env: {},
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+      child.once('error', reject)
+      child.once('spawn', () => {
+        child.unref()
+        resolve()
+      })
+    })
+  },
+}
+
 /**
  * Create the launcher-owned local-file browser transport.
  * The Runtime API exposes no handoff-exchange settlement to this client, so
- * successful dispatch remains owned until handoff expiry or natural process exit.
+ * successful dispatch remains owned until handoff expiry. Natural process exit
+ * transfers that deadline to a detached cleanup helper without forwarding credentials.
  * @param options - injectable private-path, dispatch, clock, and cleanup boundaries.
  * @returns a transport that never puts a handoff in its dispatched URL.
  */
@@ -108,6 +136,7 @@ export function createBrowserHandoffTransport(
   const clearTimer = options.clearTimer ?? clearTimeout
   const remove = options.remove ?? removeOwnedBootstrap
   const lifecycle = options.lifecycle ?? browserBootstrapLifecycle
+  const durableOwner = options.durableOwner ?? browserBootstrapDurableOwner
   return {
     async open(navigation) {
       validateNavigation(navigation, now())
@@ -129,8 +158,10 @@ export function createBrowserHandoffTransport(
       }
 
       let cleanup: Promise<void> | undefined
+      let transfer: Promise<void> | undefined
+      let transferred = false
       let listenerAttached = false
-      const beforeExit = (): void => { observeCleanup() }
+      const beforeExit = (): void => { transferOwnership() }
       const detach = (): void => {
         clearTimer(timer)
         if (!listenerAttached) return
@@ -138,6 +169,7 @@ export function createBrowserHandoffTransport(
         lifecycle.removeBeforeExitListener(beforeExit)
       }
       const clean = (): Promise<void> => {
+        if (transferred) return Promise.resolve()
         if (cleanup === undefined) {
           detach()
           cleanup = remove(documentPath)
@@ -146,8 +178,22 @@ export function createBrowserHandoffTransport(
       }
       function observeCleanup(): void {
         void clean().catch(() => {
-          // Timer and process-exit cleanup have no caller to receive a removal failure.
+          // Expiry cleanup has no caller to receive a removal failure.
         })
+      }
+      function transferOwnership(): void {
+        if (transferred || cleanup !== undefined || transfer !== undefined) return
+        transfer = durableOwner.ownUntil(documentPath, navigation.handoff.expiresAt).then(
+          () => {
+            if (cleanup !== undefined) return
+            transferred = true
+            detach()
+          },
+          () => {
+            // A failed helper launch keeps this process alive until its existing expiry cleanup.
+            timer.ref()
+          },
+        )
       }
       const timer = setTimer(observeCleanup, Math.max(0, navigation.handoff.expiresAt - now()))
       timer.unref()

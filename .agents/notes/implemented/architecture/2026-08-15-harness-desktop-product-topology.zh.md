@@ -20,7 +20,9 @@ Desktop、Web 和终端展示计划需要一个本地数据所有者，同时不
 
 公开 `RuntimeClient`、`TerminalConnection` 与 `DashboardAttachment` API 在同一进程上提供独立附加项。逐会话写入准入、按所有者划分作用域的取消、活动工作计数、迁移事务和稳定的 `web` 后台租约都会在其精确操作期间保留运行时。有序关闭会在端点移除、锁释放与 Cordis dispose（资源释放）前结算控制工作和持久化 flush。
 
-基础通过声明的构建版二进制与直接源码入口启动相同的完整基础与 Web 组合。终端、Web 与 Desktop 展示工作作为独立产品层消费该公开 API；基础验收不会把这些展示客户端或跨客户端产品验收描述为已发货。
+CLI Web 模式通过该公开 API 连接，使用仅正文 handoff 打开 Dashboard，并使用稳定的 `web` lease，而不是逐命令 Web 子进程。Runtime API 不向启动器暴露交换完成信号，因此启动器会在调度期间及 handoff 过期前保留仅当前用户可访问的 bootstrap。CLI 自然退出时，只把文档路径和现有过期时间移交给通过纯 Node 启动的分离辅助进程；该进程不继承 loader 参数、环境、handoff 或端点 token，并在该过期时间删除文档。
+
+基础通过声明的构建版二进制与直接源码入口启动相同的完整基础与 Web 组合。终端、Web 与 Desktop 展示工作作为独立产品层消费该公开 API；仅有基础验收不会把这些展示客户端或跨客户端产品验收描述为已发货。
 
 完整的当前运行时约定位于[包 README](../../../../packages/host/local-runtime/README.md)。更广泛的产品与发布约束仍位于 [Harness Desktop 产品架构设计](../../../../docs/superpowers/specs/2026-08-15-harness-desktop-design.md)，[统一本地运行时设计](../../../../docs/superpowers/specs/2026-08-18-harness-unified-local-runtime-design.md)则把该决策映射到当前基础。
 
@@ -39,5 +41,5 @@ Desktop、Web 和终端展示计划需要一个本地数据所有者，同时不
 - 一个 `HARNESS_HOME`、一个进程身份锁与一个注入的 home 提供方定义持久化所有权单元。客户端无法绕过运行时而不违反产品拓扑。
 - 回环端点与仅正文 handoff 增加了私有文件、origin、cookie、清理和响应验证义务，但浏览器代码绝不接收原生权限。
 - 附加项与租约让客户端退出独立于活动工作，而空闲关闭需要显式计数与有序完全停稳。
-- [包拥有的证据层级](../../../../packages/host/local-runtime/README.md#source-and-built-entry-points)分别固定构建版完整产品组合及公开连接器与控制、声明的源码 bin 在所需生成产物下的 Loader／模块／端点生命周期，以及通过显式后端 fixture（测试前置数据）进行的源码连接器与控制。CLI、Web、Desktop、打包和跨客户端展示验收仍属于下游工作。
+- [包拥有的证据层级](../../../../packages/host/local-runtime/README.md#source-and-built-entry-points)分别固定构建版完整产品组合及公开连接器与控制、声明的源码 bin 在所需生成产物下的 Loader／模块／端点生命周期，以及通过显式后端 fixture（测试前置数据）进行的源码连接器与控制。Web UI、Desktop、打包和跨客户端展示验收仍属于下游工作。
 - 用户 skill（技能）准入在 API 目录准入与 pre-step 定义加载之间仍有跨包区间。基础记录该 follow-up，而不宣称具有普遍 fail-closed 保证。

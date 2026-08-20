@@ -2,49 +2,47 @@
 
 [English](README.md) | 中文
 
-`harness` 是 Harness Desktop 中用于启动 profile 的主命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。`dsh` 保留为兼容命令名。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/main.ts`](src/main.ts) 分派两个命令名，每个入口只加载选中的命令名。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
+`harness` 是 Harness Desktop 的产品客户端。`dsh` 是兼容命令名，使用相同的语法与数据。[`src/args.ts`](src/args.ts) 持有公开命令语法，[`src/main.ts`](src/main.ts) 将两个命令名分派到共享的本地 Runtime。
 
-## 入口模式
+## 快速开始
+
+```sh
+harness
+harness "fix the tests"
+harness run "fix the tests" --json
+harness web
+harness web --background --no-open
+harness web --status
+harness web --stop
+harness desktop
+```
+
+## 产品命令
 
 | 命令 | 用途 |
 |---|---|
-| `harness --profile <name>` | 启动位于 `$HARNESS_HOME/profiles/<name>` 的指定 profile。 |
-| `harness --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
-| `harness web` | 连接共享 Runtime 并打开其 Dashboard；也可保留具名 Web lease。 |
-| `harness plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
-| `dsh <args...>` | 兼容别名，保持相同的 profile 和数据行为。 |
+| `harness [task]` | 打开交互式终端，并可提供一个初始任务。 |
+| `harness run <task> [--json]` | 运行且仅运行一个任务；`--json` 输出 JSONL 协议记录。 |
+| `harness web [options]` | 打开、保留、检查或释放共享 Runtime 的 Dashboard。 |
+| `harness desktop` | 选择 Desktop 模式；不接受参数。 |
+| `dsh <args...>` | 通过兼容命令名使用相同的产品语法。 |
 
-运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `harness plugin` 创建。
+原公开 profile、插件管理、headless profile、patch 和配置 dump 命令不属于该产品语法。`--profile` 会被显式拒绝。一次性任务使用 `run`，Dashboard 使用 `web`。
 
-`harness web` 会启动或连接共享的本地 Runtime，并通过一次性、仅位于请求正文中的浏览器 handoff 打开 Dashboard；`--no-open` 会执行 Runtime 操作，但不调起浏览器。`--daemon` 与 `--background` 是请求由 Runtime 持有的具名 Web lease 的等价写法，而不是启动分离的 Web 子进程：CLI 输出 lease 状态后退出，没有需要管理的逐命令子进程 PID 或私有子进程日志。`--status` 在不启动 Runtime 的情况下检查已有 Runtime，`--stop` 仅释放该 Web lease，并保留 Runtime 与活动工作。操作细节见 [CLI（命令行界面）行为参考](reference/README.md)。
+## 共享 Runtime 与 Web
 
-## 应用参数
+交互、run 和 Web 模式会连接通过 `HARNESS_HOME` 选定的同一个本地 Runtime；运行命令时所在的目录是终端 workspace。关闭 CLI 连接不会终止无关客户端或活动工作。
 
-启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.md)）。因此，启动器的 flag 必须写在最前面；启动器无法识别的第一个 token 标志着应用参数的开始：
+`harness web` 会启动或连接 Runtime，并默认打开 Dashboard。`--no-open` 禁止调起浏览器。`--daemon` 与 `--background` 是请求由 Runtime 持有的具名 `web` lease 的等价写法，而不是启动分离的逐命令 Web 子进程。`--status` 在不启动 Runtime 的情况下检查已有 Runtime。`--stop` 会幂等地仅释放具名 Web lease，并保留 Runtime、其他客户端与活动工作。
 
-```sh
-harness --profile web --port 8080       # --port belongs to the web app
-harness --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
-harness --profile headless "run the tests"
-harness --profile web --help            # the web app's flags, not the launcher's
-harness --help                          # the launcher's own help
-```
-
-## Profile
-
-profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile` 和其中按顺序排列的 `bundles` 列表；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。
-
-配置树以空根为起点，依次叠加以下配置层：
-- `dsh.profile.bundles` 中各组合包的 patch
-- profile 自身的 `cordis.patch.yml`，然后是 home 级的 `$HARNESS_HOME/cordis.patch.yml`
-- `--patch` 指定的覆盖层
-
-`dsh.profile.bundles` 中列出的组合包先从 Harness Desktop 安装目录解析（`@harness-desktop/dsh-base`、`@harness-desktop/dsh-web-app`、`@harness-desktop/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
-
-使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
-
-层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI（命令行界面）行为参考](reference/README.md)为准。
+打开浏览器时会使用仅当前用户可访问的临时 HTML 文档，其 POST 正文包含一次性 handoff；调度的本地文件 URL 既不包含该 handoff，也不包含 Runtime access token。Runtime 客户端 API 不会向 CLI 报告交换完成状态，因此父进程仍在运行时，会在调度失败或 handoff 过期时删除文档。如果 CLI 先退出，它会把路径和现有过期时间（而非凭据）移交给使用纯 Node 启动的分离清理辅助进程。完整命令与生命周期细节见 [CLI（命令行界面）行为参考](reference/README.md)。
 
 ## 开发
 
-生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm harness <args...>` 运行 TypeScript 入口并转发所有参数；`pnpm dsh <args...>` 保持兼容。模块解析约定以[源码执行参考](reference/README.md#source-execution)为准。
+源码执行保留 `pnpm harness` 使用的 `node --import tsx/esm` 启动器；构建后执行使用 `apps/cli/lib/bin.js`。测试安装路径前，请先构建包、Web 与 Desktop 产物：
+
+```sh
+pnpm run build
+pnpm harness web --status
+node apps/cli/lib/bin.js web --status
+```

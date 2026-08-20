@@ -1,6 +1,6 @@
 {
   "name": "@harness-desktop/cli",
-  "description": "Harness Desktop CLI: profile boot, plugin management, and the browser UI alias",
+  "description": "Harness Desktop CLI: terminal, one-shot, Web, and Desktop product modes",
   "version": "1.0.0",
   "publishConfig": {
     "access": "public"
@@ -17,6 +17,7 @@
   },
   "files": [
     "lib/*.js",
+    "browser-cleanup.mjs",
     "config"
   ],
   "license": "MIT",
