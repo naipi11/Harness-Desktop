@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown'
 
-/** Node-only data-root resolver and its package invariant companion. */
+/** Node-only local Runtime foundation and its package invariant companion. */
 export default defineConfig([
   {
     entry: ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/legacy-import.js'],

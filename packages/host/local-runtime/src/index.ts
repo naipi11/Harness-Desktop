@@ -1,4 +1,4 @@
-/** Public data-root API for the Harness Desktop local Runtime. */
+/** Public data-root, process identity, ownership, and redacted status API. */
 
 export {
   createLocalRuntimePlugin,
@@ -10,3 +10,13 @@ export {
   type HarnessHomeProvider,
   type HarnessHomeResolution,
 } from './data-root.ts'
+
+export {
+  acquireRuntimeLock,
+  type RuntimeLock,
+  type RuntimeLockResult,
+} from './instance-lock.ts'
+
+export type { ProcessIdentity } from './process-identity.ts'
+
+export type { RedactedRuntimeStatus, RuntimeId } from './endpoint-record.ts'

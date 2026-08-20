@@ -1,6 +1,6 @@
 {
   "name": "@harness-desktop/dsh-host-local-runtime",
-  "description": "Harness Desktop local Runtime data-root resolver",
+  "description": "Harness Desktop local Runtime ownership and private endpoint foundation",
   "version": "1.0.0",
   "publishConfig": {
     "access": "public"
@@ -26,7 +26,6 @@
       "types": "./lib/types/legacy-import.d.ts",
       "default": "./lib/legacy-import.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
