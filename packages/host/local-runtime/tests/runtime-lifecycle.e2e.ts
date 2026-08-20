@@ -79,6 +79,41 @@ describe('Runtime lifecycle accounting', () => {
     await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('continues owner retirement after control cleanup fails and permits a replacement Runtime', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-control-cleanup-failure-'))
+    const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
+    let cordisDisposed = false
+    runtime = await startRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      async boot() {
+        const ctx = new Context()
+        await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        ctx.effect(() => () => { cordisDisposed = true }, 'control cleanup disposal probe')
+        return ctx
+      },
+    })
+    runtime.bindControlCleanup(async () => { throw new Error('injected control cleanup failure') })
+
+    await expect(runtime.dispose()).rejects.toThrow('injected control cleanup failure')
+    runtime = undefined
+    expect(cordisDisposed).toBe(true)
+    await expect(access(join(root, 'runtime-endpoint.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
+
+    runtime = await startRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      async boot() {
+        const ctx = new Context()
+        await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        return ctx
+      },
+    })
+    await runtime.dispose()
+    runtime = undefined
+  }, 15_000)
+
   it('settles every canonical session flush before retiring the Runtime owner', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-flush-settlement-'))
     const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })

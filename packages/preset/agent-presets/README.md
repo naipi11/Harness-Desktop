@@ -85,6 +85,7 @@ Every read failure degrades to no metadata — absent, malformed, wrongly typed,
 
 | Field | Default | Meaning |
 |---|---|---|
+| `harnessHome` | required when `includeUserRoot` is `true` | One already-resolved `PresetHomeProvider`; the roster joins `.agent-presets` through its `path()` method and never resolves process environment policy |
 | `default` | required | Preset id mounted when a caller names none |
 | `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`) |
 | `includeUserRoot` | `true` | Append `<harnessHome>/.agent-presets` as a `user` root, after every configured root |

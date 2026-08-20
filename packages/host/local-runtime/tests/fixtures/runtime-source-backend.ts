@@ -7,6 +7,7 @@ import type { Context } from '@harness-desktop/cordis'
 import type { PatchOptions } from '@harness-desktop/cordis-plugin-include'
 import { boot, installSourceLoaderResolution, loadOverlayPatches } from '@harness-desktop/dsh-app-boot'
 import { provideCmdline } from '@harness-desktop/dsh-cmdline'
+import type {} from '@harness-desktop/dsh-commands'
 import { createLocalRuntimePlugin } from '../../src/data-root.ts'
 import { startRuntime } from '../../src/runtime.ts'
 
@@ -71,10 +72,18 @@ const runtime = await startRuntime({
         }],
       })
     }
-    return boot('runtime-source-backend', runtimeConfig, patches, (ctx) => {
+    const context = await boot('runtime-source-backend', runtimeConfig, patches, (ctx) => {
       installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))
       provideCmdline(ctx, { args: [], exit: () => {} })
     }, undefined, provider)
+    if (process.env.DSH_RUNTIME_TEST_COMMAND === '1') {
+      context.commands.register({
+        name: 'runtime_no_turn',
+        description: 'Deterministic Runtime command fixture',
+        handler: () => ({ kind: 'success', text: 'REAL_COMMAND_OUTPUT' }),
+      })
+    }
+    return context
   },
 })
 process.stderr.write(`harness-runtime: ready ${JSON.stringify(runtime.status())}\n`)

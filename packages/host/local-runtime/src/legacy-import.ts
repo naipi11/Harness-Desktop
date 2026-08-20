@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, cp } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readdir, rename, rm, cp } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
 import type { Branded } from '@harness-desktop/dsh-brand'
@@ -27,6 +27,8 @@ export const LEGACY_IMPORT_ROOTS = ['sessions', 'settings.yaml', 'projects'] as 
 
 /** Runtime-owned migration state filename beneath the target home. */
 export const LEGACY_MIGRATION_FILENAME = 'legacy-migration.json'
+/** Maximum encoded bytes accepted from the Runtime-owned migration state file. */
+export const MAX_LEGACY_MIGRATION_STATE_BYTES = 65_536
 
 /** Filesystem operations the importer uses; tests may inject a partial real spread. */
 export interface LegacyImportFs {
@@ -160,7 +162,7 @@ export async function detectLegacyImport(resolution: HarnessHomeResolution): Pro
   if (resolution.legacyDshHome === undefined) return { kind: 'not-needed' }
   let text: string
   try {
-    text = await readFile(join(resolution.path, LEGACY_MIGRATION_FILENAME), 'utf8')
+    text = await readBoundedMigrationState(join(resolution.path, LEGACY_MIGRATION_FILENAME))
   } catch (error) {
     if (!isENOENT(error)) throw error
     return { kind: 'decision-required', sourceLabel: 'DSH_HOME', retryable: false }
@@ -235,7 +237,7 @@ async function presentSupportedRoots(home: HarnessHome): Promise<string[]> {
 async function readMigrationState(home: HarnessHome): Promise<LegacyMigrationState> {
   let text: string
   try {
-    text = await readFile(join(home, LEGACY_MIGRATION_FILENAME), 'utf8')
+    text = await readBoundedMigrationState(join(home, LEGACY_MIGRATION_FILENAME))
   } catch (error) {
     if (!isENOENT(error)) throw error
     return { kind: 'decision-required', sourceLabel: 'DSH_HOME', retryable: false }
@@ -286,6 +288,30 @@ function parseMigrationState(text: string): LegacyMigrationState {
       return { kind: 'decision-required', sourceLabel: 'DSH_HOME', retryable: false }
     default:
       throw new Error('host-local-runtime: legacy-migration.json contains an unrecognized state')
+  }
+}
+
+/** Read at most the complete migration-state byte budget before UTF-8/JSON parsing. */
+async function readBoundedMigrationState(path: string): Promise<string> {
+  const handle = await open(path, 'r')
+  try {
+    const buffer = Buffer.allocUnsafe(MAX_LEGACY_MIGRATION_STATE_BYTES + 1)
+    let bytesRead = 0
+    while (bytesRead < buffer.length) {
+      const read = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead)
+      if (read.bytesRead === 0) break
+      bytesRead += read.bytesRead
+    }
+    if (bytesRead > MAX_LEGACY_MIGRATION_STATE_BYTES) {
+      throw new Error('host-local-runtime: legacy-migration.json exceeds its byte limit')
+    }
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead))
+    } catch {
+      throw new Error('host-local-runtime: legacy-migration.json must contain valid UTF-8')
+    }
+  } finally {
+    await handle.close()
   }
 }
 

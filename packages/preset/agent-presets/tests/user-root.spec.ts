@@ -18,8 +18,7 @@ import { Context } from '@harness-desktop/cordis'
 import Loader from '@harness-desktop/cordis-plugin-loader'
 import Include from '@harness-desktop/cordis-plugin-include'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import AgentPresets, { COMPOSITION_FILE, type Config } from '@harness-desktop/dsh-agent-presets'
-import { createLocalRuntimePlugin, type HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
+import AgentPresets, { COMPOSITION_FILE, type Config, type PresetHomeProvider } from '@harness-desktop/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const SYSTEM_ROOT = join(FIXTURES, 'system')
@@ -28,14 +27,14 @@ const USER_ROOT_SEGMENT = '.agent-presets'
 const VALID = '- id: tool-alpha\n  name: ../../plugins/contribute.js\n  config:\n    tool: alpha\n'
 
 let home: string
-let harnessHomeProvider: HarnessHomeProvider
+let harnessHomeProvider: PresetHomeProvider
 const contexts: Context[] = []
 const temporaryDirectories: string[] = []
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'dsh-preset-home-'))
   temporaryDirectories.push(home)
-  harnessHomeProvider = createLocalRuntimePlugin({ env: { HARNESS_HOME: home } })
+  harnessHomeProvider = Object.freeze({ home, path: (...segments: readonly string[]) => join(home, ...segments) })
 })
 
 afterEach(async () => {

@@ -85,6 +85,7 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
+| `harnessHome` | `includeUserRoot` 为 `true` 时必填 | 一个已完成解析的 `PresetHomeProvider`；roster 通过其 `path()` 方法拼接 `.agent-presets`，绝不自行解析进程环境策略 |
 | `default` | 必填 | 调用方未指定时挂载的 preset id |
 | `roots` | `[]` | 按优先级排列的扫描目录；每项提供 `path`（开头的 `~` 会展开）与 `trust`（默认为 `user`） |
 | `includeUserRoot` | `true` | 在全部已配置根目录之后，追加 `<harnessHome>/.agent-presets` 作为 `user` 根目录 |

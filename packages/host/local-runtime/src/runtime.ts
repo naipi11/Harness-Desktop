@@ -6,11 +6,11 @@ import { sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
+import type { ApiProxy } from '@harness-desktop/dsh-host-apiproxy'
 import type { HarnessHomeProvider } from './harness-home-provider.ts'
 import {
   createRuntimeControlService,
   type RuntimeControlService,
-  type RuntimeControlServiceOptions,
 } from './control-service.ts'
 import { mountPrivateRuntimeControl } from './runtime-control.ts'
 import {
@@ -105,6 +105,8 @@ export interface RuntimeHandle {
   acquireBackgroundLease(owner: RuntimeClientId): Promise<BackgroundLease>
   /** @param lease - explicit background lease to release. */
   releaseBackgroundLease(lease: BackgroundLease): Promise<void>
+  /** @param cleanup - the one control-service quiescence operation run before endpoint retirement. */
+  bindControlCleanup(cleanup: () => Promise<void>): void
   /**
    * Flush, retire the endpoint, release ownership, and dispose the Cordis root once.
    * Requires zero attached clients, active work leases, and background leases;
@@ -151,7 +153,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
         ) => void
       }
       const sessions = ctx.get('sessions') as RuntimeControlService['sessions']
-      const api = ctx.get('apiProxy') as unknown as RuntimeControlServiceOptions['api']
+      const api: ApiProxy | undefined = ctx.get('apiProxy')
       const agents = ctx.get('agents')
       const commands = ctx.get('commands')
       const permissionPresets = ctx.get('permissionPresets')
@@ -168,6 +170,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
           legacyDshHome: config.legacyDshHome,
         },
       })
+      handle.bindControlCleanup(() => controlService.close())
       const logger = ctx.logger
       ctx.on('session/event', (session, event) => {
         void controlService.handleSessionEvent(session, event).catch(() => {
@@ -176,6 +179,9 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       })
       ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
         controlService.handleAgentInboxClaimed(agent, message, turn)
+      })
+      ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+        controlService.handleAgentInboxInserted(agent, message)
       })
       ctx.on(
         'approval/request',
@@ -324,6 +330,7 @@ function createRuntimeHandle(
   const backgrounds = new Set<BackgroundLeaseId>()
   let state: RedactedRuntimeStatus['state'] = 'running'
   let disposal: Promise<void> | undefined
+  let controlCleanup: (() => Promise<void>) | undefined
   const lifecycle = new IdleLifecycle({
     timeoutMs: config.idleTimeoutMs,
     schedule: config.scheduleIdle ?? ((callback, timeoutMs) => setTimeout(() => { void callback() }, timeoutMs)),
@@ -343,6 +350,7 @@ function createRuntimeHandle(
     state = 'stopping'
     lifecycle.cancel()
     disposal = runCleanup([
+      async () => controlCleanup?.(),
       async () => config.flush?.(ctx),
       async () => removePrivateEndpointRecord(config.harnessHome.home, record.runtimeId),
       async () => lock.release(),
@@ -387,6 +395,11 @@ function createRuntimeHandle(
       backgrounds.delete(lease.id)
       reconcile()
       return Promise.resolve()
+    },
+    bindControlCleanup(cleanup) {
+      ensureRunning(state)
+      if (controlCleanup !== undefined) throw new Error('host-local-runtime: control cleanup is already bound')
+      controlCleanup = cleanup
     },
     dispose,
   }

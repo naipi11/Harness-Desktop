@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Agent, AgentRegistry } from '@harness-desktop/dsh-agent'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import type CommandRuntime from '@harness-desktop/dsh-commands'
+import type { ApiProxy, RpcId } from '@harness-desktop/dsh-host-apiproxy'
 import type PermissionPresetService from '@harness-desktop/dsh-permission-presets'
 import type { UserMessage } from '@harness-desktop/dsh-llm'
 import type { Session, SessionEvent, SessionStore } from '@harness-desktop/dsh-session'
@@ -13,6 +14,11 @@ import {
   type LegacyMigrationState as StoredLegacyMigrationState,
 } from './legacy-import.ts'
 import { RuntimeSessionBusyError, type BackgroundLease, type RuntimeHandle, type RuntimeWorkLease } from './runtime.ts'
+import {
+  MAX_TERMINAL_EVENT_PAGE_BYTES,
+  MAX_TERMINAL_EVENT_PAGE_ITEMS,
+  MAX_TERMINAL_EVENT_TEXT_BYTES,
+} from './runtime-client.ts'
 import type {
   ActiveWorkId,
   ActiveWorkStatus,
@@ -49,7 +55,8 @@ interface WorkRecord {
   readonly terminalId: RuntimeClientId
   readonly runtimeLease: RuntimeWorkLease
   readonly agent: Agent
-  readonly rpcId: RuntimeRpcId
+  readonly rpcId: RpcId
+  messageId?: UserMessage['id']
   turn?: number
   settlement?: Promise<void>
 }
@@ -67,33 +74,7 @@ interface PendingApproval {
   readonly resolve: (outcome: 'allowed-once' | 'rejected' | 'cancelled') => void
 }
 
-type RuntimeRpcId = Branded<'rpc-id'>
-type RuntimeRpcResult<T> =
-  | { readonly rpcId: RuntimeRpcId; readonly result: { readonly ok: true; readonly value: T } }
-  | { readonly rpcId: RuntimeRpcId; readonly result: { readonly ok: false; readonly error: unknown } }
-
-interface RuntimeSessionsApi {
-  create(request: {
-    readonly rpcId: RuntimeRpcId
-    readonly payload: { readonly cwd: string; readonly sessionId: SessionId }
-  }): Promise<RuntimeRpcResult<{ readonly sessionId: SessionId }>>
-  prompt(request: {
-    readonly rpcId: RuntimeRpcId
-    readonly payload: {
-      readonly sessionId: SessionId
-      readonly mode: 'queue'
-      readonly content: readonly [{ readonly type: 'text'; readonly text: string }]
-    }
-  }): Promise<RuntimeRpcResult<{ readonly accepted: true }>>
-  models(request: {
-    readonly rpcId: RuntimeRpcId
-    readonly payload: { readonly sessionId: SessionId }
-  }): Promise<RuntimeRpcResult<{ readonly current: { readonly provider: string; readonly model: string } }>>
-  selectModel(request: {
-    readonly rpcId: RuntimeRpcId
-    readonly payload: { readonly sessionId: SessionId; readonly provider: string; readonly model: string }
-  }): Promise<RuntimeRpcResult<{ readonly selected: { readonly provider: string; readonly model: string } }>>
-}
+type RuntimeSessionsApi = Pick<ApiProxy['sessions'], 'create' | 'prompt' | 'models' | 'selectModel'>
 
 /** Dependencies for one Runtime lifetime's control state. */
 export interface RuntimeControlServiceOptions {
@@ -123,6 +104,11 @@ export interface RuntimeControlService {
   cancelTerminal(owner: RuntimeClientId, terminalId: RuntimeClientId): Promise<{ readonly kind: 'cancelled' | 'idle' }>
   runTerminalControl(owner: RuntimeClientId, terminalId: RuntimeClientId, command: TerminalControlCommand): Promise<void>
   readTerminalEvents(owner: RuntimeClientId, terminalId: RuntimeClientId, cursor: number): Promise<TerminalEventPage>
+  /**
+   * @param agent - Agent receiving the message.
+   * @param message - inserted message used to correlate an unclaimed operation.
+   */
+  handleAgentInboxInserted(agent: Agent, message: UserMessage): void
   handleAgentInboxClaimed(agent: Agent, message: UserMessage, turn: number): void
   handleSessionEvent(session: Session, event: SessionEvent): Promise<void>
   handleApprovalRequest(request: RuntimeApprovalRequest, next: () => Promise<RuntimeApprovalOutcome>): Promise<RuntimeApprovalOutcome>
@@ -179,8 +165,26 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     migrationQueue = result.then(() => undefined, () => undefined)
     return result
   }
+  const retainRuntime = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const retainer = `control-${randomUUID()}` as RuntimeClientId
+    await options.runtime.attachClient(retainer)
+    const outcome = await operation().then(
+      value => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    )
+    const release = await options.runtime.releaseClient(retainer).then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    )
+    if (!outcome.ok && !release.ok) {
+      throw new AggregateError([outcome.error, release.error], 'host-local-runtime: control transaction and retainer release failed')
+    }
+    if (!outcome.ok) throw outcome.error
+    if (!release.ok) throw release.error
+    return outcome.value
+  }
   const migration = (operation: DashboardControlRequest['operation']): Promise<LegacyMigrationState> =>
-    serializeMigration(async () => {
+    serializeMigration(() => retainRuntime(async () => {
       const current = await detectMigration(options.resolution)
       if (operation === 'get-legacy-migration' || current.kind === 'imported') return publicMigration(current)
       if (operation === 'decline-legacy-migration') {
@@ -190,7 +194,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         return publicMigration(current)
       }
       return publicMigration(await recordMigration({ decision: 'accepted', resolution: options.resolution }))
-    })
+    }))
   const requireTerminal = (owner: RuntimeClientId, terminalId: RuntimeClientId): TerminalRecord => {
     const attachment = children.get(terminalId)
     const terminal = terminals.get(terminalId)
@@ -227,7 +231,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       throw error
     }
     const id = randomUUID() as ActiveWorkId
-    const rpcId = randomUUID() as RuntimeRpcId
+    const rpcId = randomUUID() as RpcId
     const record: WorkRecord = { id, owner, terminalId, runtimeLease, agent: terminal.agent, rpcId }
     work.set(id, record)
     terminal.workId = id
@@ -237,6 +241,11 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         payload: { sessionId: terminal.agent.id, mode: 'queue', content: [{ type: 'text', text }] },
       })
       if (!response.result.ok) throw new Error('host-local-runtime: Agent rejected the terminal task')
+      if (response.result.value.command !== undefined) {
+        const commandText = response.result.value.command.text
+        if (commandText !== undefined) terminal.events.push({ kind: 'output', text: commandText })
+        await finishWork(record)
+      }
       return { kind: 'accepted' }
     } catch (error) {
       await finishWork(record)
@@ -307,7 +316,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     async stopOwnUiWork(owner) {
       const owned = [...work.values()].filter(record => record.owner === owner)
       if (owned.length === 0) return { kind: 'none-active' }
-      for (const record of owned) record.agent.cancel({ kind: 'user' })
+      for (const record of owned) {
+        cancelOperation(record)
+      }
       const settled = await Promise.allSettled(owned.map(record => settleAtIdle(record)))
       if (settled.some(result => result.status === 'rejected')) return { kind: 'failed', diagnostic: operationDiagnostic() }
       return { kind: 'stopped', work: owned.map(record => record.id) }
@@ -317,7 +328,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       if (children.has(terminalId) || clients.has(terminalId)) throw new Error('host-local-runtime: attachment id is already live')
       const requestedSessionId = request.sessionId ?? `session-${randomUUID()}` as SessionId
       const response = await requireApi(options).sessions.create({
-        rpcId: randomUUID() as RuntimeRpcId,
+        rpcId: randomUUID() as RpcId,
         payload: { cwd: request.workspace, sessionId: requestedSessionId },
       })
       if (!response.result.ok) throw new Error('host-local-runtime: terminal session could not be created or resumed')
@@ -360,58 +371,85 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       if (terminal.workId === undefined) return { kind: 'idle' }
       const record = work.get(terminal.workId)
       if (record === undefined || record.owner !== owner) return { kind: 'idle' }
-      record.agent.cancel({ kind: 'user' })
+      cancelOperation(record)
       await settleAtIdle(record)
       return { kind: 'cancelled' }
     },
-    async runTerminalControl(owner, terminalId, command) {
-      const terminal = requireTerminal(owner, terminalId)
-      if (command.command === 'exit') return
-      if (command.command === 'resume') {
-        if (terminal.workId !== undefined) throw new Error('host-local-runtime: terminal session is busy')
-        const cwd = terminal.agent.session.header.cwd
-        if (cwd === undefined) throw new Error('host-local-runtime: terminal session has no workspace')
-        const sessionId = command.sessionId ?? terminal.agent.id
-        const response = await requireApi(options).sessions.create({
-          rpcId: randomUUID() as RuntimeRpcId, payload: { cwd, sessionId },
-        })
-        if (!response.result.ok) throw new Error('host-local-runtime: terminal session could not be resumed')
-        const agent = requireAgents(options).get(response.result.value.sessionId)
-        if (agent === undefined) throw new Error('host-local-runtime: resumed session has no live Agent')
-        terminal.agent = agent
-        terminal.events.push({ kind: 'session-opened', sessionId: agent.id })
-        return
-      }
-      if (command.command === 'model') {
-        const api = requireApi(options)
-        const models = await api.sessions.models({ rpcId: randomUUID() as RuntimeRpcId, payload: { sessionId: terminal.agent.id } })
-        if (!models.result.ok) throw new Error('host-local-runtime: model selection is unavailable')
-        const model = command.model ?? models.result.value.current.model
-        if (command.model !== undefined) {
-          const selected = await api.sessions.selectModel({
-            rpcId: randomUUID() as RuntimeRpcId,
-            payload: { sessionId: terminal.agent.id, provider: models.result.value.current.provider, model },
+    runTerminalControl(owner, terminalId, command) {
+      return retainRuntime(async () => {
+        const terminal = requireTerminal(owner, terminalId)
+        if (command.command === 'exit') return
+        if (command.command === 'resume') {
+          if (terminal.workId !== undefined) throw new Error('host-local-runtime: terminal session is busy')
+          const cwd = terminal.agent.session.header.cwd
+          if (cwd === undefined) throw new Error('host-local-runtime: terminal session has no workspace')
+          const sessionId = command.sessionId ?? terminal.agent.id
+          const response = await requireApi(options).sessions.create({
+            rpcId: randomUUID() as RpcId, payload: { cwd, sessionId },
           })
-          if (!selected.result.ok) throw new Error('host-local-runtime: model selection failed')
+          if (!response.result.ok) throw new Error('host-local-runtime: terminal session could not be resumed')
+          const agent = requireAgents(options).get(response.result.value.sessionId)
+          if (agent === undefined) throw new Error('host-local-runtime: resumed session has no live Agent')
+          terminal.agent = agent
+          terminal.events.push({ kind: 'session-opened', sessionId: agent.id })
+          return
         }
-        terminal.events.push({ kind: 'model-changed', model })
-        return
-      }
-      if (command.command === 'permissions') {
-        if (command.permission === undefined) throw new Error('host-local-runtime: a permission preset is required')
-        if (options.permissionPresets === undefined) throw new Error('host-local-runtime: permission presets are unavailable')
-        options.permissionPresets.set(terminal.agent.session, command.permission)
-        return
-      }
-      const line = controlCommandLine(command)
-      if (line === undefined || options.commands === undefined) throw new Error('host-local-runtime: terminal control is unavailable')
-      const execution = await options.commands.execute(terminal.agent, line, new AbortController().signal)
-      if (execution === undefined || execution.result.kind === 'error') throw new Error('host-local-runtime: terminal control was rejected')
+        if (command.command === 'model') {
+          const api = requireApi(options)
+          const models = await api.sessions.models({ rpcId: randomUUID() as RpcId, payload: { sessionId: terminal.agent.id } })
+          if (!models.result.ok) throw new Error('host-local-runtime: model selection is unavailable')
+          const model = command.model ?? models.result.value.current.model
+          if (command.model !== undefined) {
+            const selected = await api.sessions.selectModel({
+              rpcId: randomUUID() as RpcId,
+              payload: { sessionId: terminal.agent.id, provider: models.result.value.current.provider, model },
+            })
+            if (!selected.result.ok) throw new Error('host-local-runtime: model selection failed')
+          }
+          terminal.events.push({ kind: 'model-changed', model })
+          return
+        }
+        if (command.command === 'permissions') {
+          if (command.permission === undefined) throw new Error('host-local-runtime: a permission preset is required')
+          if (options.permissionPresets === undefined) throw new Error('host-local-runtime: permission presets are unavailable')
+          options.permissionPresets.set(terminal.agent.session, command.permission)
+          return
+        }
+        const line = controlCommandLine(command)
+        const commands = commandRuntime(options, terminal.agent)
+        if (line === undefined || commands === undefined) throw new Error('host-local-runtime: terminal control is unavailable')
+        const execution = await commands.execute(terminal.agent, line, new AbortController().signal)
+        if (execution === undefined || execution.result.kind === 'error') throw new Error('host-local-runtime: terminal control was rejected')
+      })
     },
     readTerminalEvents(owner, terminalId, cursor) {
       const terminal = requireTerminal(owner, terminalId)
       if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > terminal.events.length) throw new Error('host-local-runtime: terminal event cursor is invalid')
-      return Promise.resolve({ events: terminal.events.slice(cursor), nextCursor: terminal.events.length })
+      const events: TerminalProtocolEvent[] = []
+      let bytes = 2
+      for (let index = cursor; index < terminal.events.length && events.length < MAX_TERMINAL_EVENT_PAGE_ITEMS; index += 1) {
+        const event = terminal.events[index]
+        if (event === undefined) break
+        const eventBytes = Buffer.byteLength(JSON.stringify(event))
+        if (terminalEventTextBytes(event) > MAX_TERMINAL_EVENT_TEXT_BYTES || eventBytes + 2 > MAX_TERMINAL_EVENT_PAGE_BYTES) {
+          throw new Error('host-local-runtime: terminal event exceeds the protocol byte limit')
+        }
+        const separator = events.length === 0 ? 0 : 1
+        if (bytes + separator + eventBytes > MAX_TERMINAL_EVENT_PAGE_BYTES) break
+        bytes += separator + eventBytes
+        events.push(event)
+      }
+      return Promise.resolve({ events, nextCursor: cursor + events.length })
+    },
+    handleAgentInboxInserted(agent, message) {
+      const rpcId = messageRpcId(message)
+      if (rpcId === undefined) return
+      for (const record of work.values()) {
+        if (record.agent === agent && record.rpcId === rpcId && record.messageId === undefined) {
+          record.messageId = message.id
+          return
+        }
+      }
     },
     handleAgentInboxClaimed(agent, message, turn) {
       const rpcId = messageRpcId(message)
@@ -452,7 +490,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       for (const pending of approvals.values()) pending.resolve('cancelled')
       approvals.clear()
       const records = [...work.values()]
-      for (const record of records) record.agent.cancel({ kind: 'user' })
+      for (const record of records) {
+        cancelOperation(record)
+      }
       const operations: Promise<unknown>[] = records.map(record => settleAtIdle(record))
       if (webLease !== undefined) operations.push(options.runtime.releaseBackgroundLease(webLease))
       for (const childId of children.keys()) operations.push(options.runtime.releaseClient(childId))
@@ -474,6 +514,19 @@ function requireApi(options: RuntimeControlServiceOptions): { readonly sessions:
   return options.api
 }
 
+function commandRuntime(
+  options: RuntimeControlServiceOptions,
+  agent: Agent,
+): Pick<CommandRuntime, 'execute'> | undefined {
+  const scoped = agent.ctx.get('commands') as Pick<CommandRuntime, 'execute'> | undefined
+  if (scoped !== undefined) return scoped
+  try {
+    return agent.ctx.commands
+  } catch {
+    return options.commands
+  }
+}
+
 function requireAgents(options: RuntimeControlServiceOptions): Pick<AgentRegistry, 'get'> {
   if (options.agents === undefined) throw new Error('host-local-runtime: composed Agent registry is unavailable')
   return options.agents
@@ -483,9 +536,14 @@ function requireBaseClient(clients: ReadonlySet<RuntimeClientId>, clientId: Runt
   if (!clients.has(clientId)) throw new Error('host-local-runtime: client attachment is unavailable')
 }
 
-function messageRpcId(message: UserMessage): RuntimeRpcId | undefined {
+function cancelOperation(record: WorkRecord): void {
+  if (record.turn === undefined && record.messageId !== undefined && record.agent.inbox.remove(record.messageId)) return
+  record.agent.cancel({ kind: 'user' }, { keepInbox: true })
+}
+
+function messageRpcId(message: UserMessage): RpcId | undefined {
   const source = message.source as { kind?: unknown; rpcId?: unknown }
-  return source.kind === 'user' && typeof source.rpcId === 'string' ? source.rpcId as RuntimeRpcId : undefined
+  return source.kind === 'user' && typeof source.rpcId === 'string' ? source.rpcId as RpcId : undefined
 }
 
 function publishSessionEvent(terminal: TerminalRecord, session: Session, event: SessionEvent): void {
@@ -498,6 +556,18 @@ function publishSessionEvent(terminal: TerminalRecord, session: Session, event: 
     terminal.events.push({ kind: 'permission-changed', permission: event.data.preset })
   } else if (event.type === 'request/header') {
     terminal.events.push({ kind: 'model-changed', model: event.data.header.config.model })
+  }
+}
+
+function terminalEventTextBytes(event: TerminalProtocolEvent): number {
+  switch (event.kind) {
+    case 'output': return Buffer.byteLength(event.text)
+    case 'tool-activity': return Buffer.byteLength(event.title)
+    case 'approval-requested': return Buffer.byteLength(event.prompt)
+    case 'model-changed': return Buffer.byteLength(event.model)
+    case 'permission-changed': return Buffer.byteLength(event.permission)
+    case 'session-opened':
+    case 'diagnostic': return 0
   }
 }
 

@@ -236,6 +236,13 @@ function messagesHaveImage(messages: readonly { content: readonly ContentBlock[]
   return messages.some(message => contentHasImage(message.content))
 }
 
+/** Return the exact single-text-block slash command submitted by an interactive client. */
+function commandCandidate(content: readonly PromptContentPart[]): string | undefined {
+  const [first, ...rest] = content
+  if (first === undefined || rest.length > 0 || first.type !== 'text' || !first.text.startsWith('/')) return undefined
+  return first.text
+}
+
 /** Resolve the first reference matching one opaque id. */
 function referencedImage(events: readonly SessionEvent[], attachmentId: string): ImageAttachmentRef | undefined {
   for (const event of events) {
@@ -2473,6 +2480,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
+        const commandLine = commandCandidate(content)
+        if (commandLine !== undefined) {
+          const commands = ctx.get('commands')
+          if (commands !== undefined) {
+            try {
+              const execution = await commands.execute(agent, commandLine, new AbortController().signal)
+              if (execution?.result.kind === 'error') {
+                return err(request, { code: 'command-error', message: execution.result.text, details: {} })
+              }
+              if (execution !== undefined) {
+                return ok(request, {
+                  accepted: true as const,
+                  command: {
+                    kind: 'success' as const,
+                    ...execution.result.text === undefined ? {} : { text: execution.result.text },
+                  },
+                })
+              }
+            } catch (error: unknown) {
+              return err(request, {
+                code: 'command-error',
+                message: error instanceof Error ? error.message : 'command execution failed',
+                details: {},
+              })
+            }
+          }
+        }
         // Request identity and optional browser zone ride the exact durable user message.
         const source: MessageSource = {
           kind: 'user',

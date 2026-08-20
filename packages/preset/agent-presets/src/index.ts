@@ -28,7 +28,6 @@ import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type 
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@harness-desktop/dsh-agent'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@harness-desktop/dsh-settings'
-import type { HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
@@ -64,7 +63,7 @@ export {
 } from './authoring.ts'
 export { resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetMountError, UnknownPresetError } from './preset.ts'
-export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
+export type { AgentPreset, Config, PresetHomeProvider, PresetRoot, PresetTrust } from './preset.ts'
 
 declare module '@harness-desktop/cordis' {
   interface Context {
@@ -84,7 +83,7 @@ export class AgentPresets extends Service {
 
   /** Runtime schema for the preset roster. */
   static Config = z.object({
-    harnessHome: z.object({ home: z.string(), path: z.any() }) as z<HarnessHomeProvider>,
+    harnessHome: z.object({ home: z.string(), path: z.any() }),
     default: z.string().required(),
     roots: z.array(z.object({
       path: z.string().required(),

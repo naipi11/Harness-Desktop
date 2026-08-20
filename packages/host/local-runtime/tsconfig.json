@@ -36,6 +36,12 @@
       "path": "../../interaction/commands"
     },
     {
+      "path": "../apiproxy"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../../interaction/permission-presets"
     }
   ]

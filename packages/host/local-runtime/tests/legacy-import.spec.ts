@@ -35,6 +35,29 @@ describe('durable legacy migration record validation', () => {
     expect(String(error)).toContain('legacy-migration.json')
     expect(String(error)).not.toMatch(/private-token|C:\\Users|secret-token|not-a-runtime/)
   })
+
+  it('accepts tiny and exact-limit state files, then rejects oversize and multibyte files before JSON parsing', async () => {
+    const limit = 65_536
+    const target = await tempDir('harness-legacy-bounded-target-')
+    const legacy = await tempDir('harness-legacy-bounded-source-')
+    const stateFile = join(target, LEGACY_MIGRATION_FILENAME)
+    await writeFile(stateFile, '{"kind":"declined"}\n')
+    await expect(detectLegacyImport(resolution(target, legacy))).resolves.toEqual({ kind: 'declined' })
+
+    const prefix = '{"kind":"declined"}'
+    const exact = prefix + ' '.repeat(limit - Buffer.byteLength(prefix) - 1) + '\n'
+    expect(Buffer.byteLength(exact)).toBe(limit)
+    await writeFile(stateFile, exact)
+    await expect(detectLegacyImport(resolution(target, legacy))).resolves.toEqual({ kind: 'declined' })
+
+    await writeFile(stateFile, exact + ' ')
+    await expect(detectLegacyImport(resolution(target, legacy))).rejects.toThrow('exceeds')
+    const multibyte = prefix + '界'.repeat(Math.ceil(limit / 3))
+    expect(multibyte.length).toBeLessThan(limit)
+    expect(Buffer.byteLength(multibyte)).toBeGreaterThan(limit)
+    await writeFile(stateFile, multibyte)
+    await expect(detectLegacyImport(resolution(target, legacy))).rejects.toThrow('exceeds')
+  })
 })
 
 /** One non-secret legacy data root; .credentials.yaml is never a candidate. */

@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import SessionStore from '@harness-desktop/dsh-session'
 import AgentRegistry from '@harness-desktop/dsh-agent'
+import CommandRuntime from '@harness-desktop/dsh-commands'
 import { TypertLookupFailure } from '@harness-desktop/dsh-typert-protocol'
 import TypertRegistry from '@harness-desktop/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@harness-desktop/dsh-llm'
@@ -727,6 +728,38 @@ describe('degenerate composition (no persistence, no factory)', () => {
 })
 
 describe('sessions.prompt synchronous rejection', () => {
+  it('returns a real command result without a turn and admits an unmatched slash prompt normally', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-command-result'))
+    const followup = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.commands.register({
+      name: 'no-turn', description: 'Return a deterministic no-turn result.',
+      handler: () => ({ kind: 'success', text: 'command output' }),
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const command = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/no-turn' }],
+    }))
+    expect(command.result).toEqual({ ok: true, value: { accepted: true, command: { kind: 'success', text: 'command output' } } })
+    expect(session.events.map(event => event.type)).toEqual(['command/run', 'command/done'])
+    expect(followup).not.toHaveBeenCalled()
+
+    const unmatched = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/user-skill' }],
+    }))
+    expect(unmatched.result.ok).toBe(true)
+    expect(followup).toHaveBeenCalledOnce()
+  })
+
   it('maps a synchronous send throw (disposed/invalid input) to agent-busy with the reason attached', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

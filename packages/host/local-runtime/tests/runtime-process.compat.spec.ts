@@ -179,3 +179,45 @@ describe('public attachment close retry', () => {
     expect((await releaseRuntime(runtime)).exitCode).toBe(0)
   }, 90_000)
 })
+
+describe('real no-turn command operation', () => {
+  it('emits the ApiProxy command result and releases the exact work lease without a turn', async () => {
+    const previous = process.env.DSH_RUNTIME_TEST_COMMAND
+    process.env.DSH_RUNTIME_TEST_COMMAND = '1'
+    try {
+      runtime = await startRuntimeProcess({ mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_RUNTIME_TEST_COMMAND
+      else process.env.DSH_RUNTIME_TEST_COMMAND = previous
+    }
+    const endpoint = await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    client = await connector.connect({ start: false })
+    const terminal = await client.openTerminal({ workspace: runtime.cwd })
+    const events = terminal.events()[Symbol.asyncIterator]()
+    const opened = await nextEvent(events, 'session-opened')
+    if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+
+    await terminal.submit({ kind: 'task', text: '/runtime_no_turn' })
+    expect(await client.observeActiveWork()).toEqual({ ownUiWork: [] })
+    expect(await nextEvent(events, 'output', 'command output'))
+      .toEqual({ kind: 'output', text: 'REAL_COMMAND_OUTPUT' })
+    expect(await client.observeActiveWork()).toEqual({ ownUiWork: [] })
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const history = await runtimeRpc<{ events: Array<{ event: { type: string } }> }>(
+      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+    )
+    const types = history.events.map(entry => entry.event.type)
+    expect(types).toContain('command/run')
+    expect(types).toContain('command/done')
+    expect(types).not.toContain('turn/start')
+    expect(types).not.toContain('turn/end')
+
+    await terminal.close()
+    await client.close()
+    client = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+  }, 90_000)
+})

@@ -48,10 +48,18 @@ export interface PresetRoot {
   trust: PresetTrust
 }
 
+/** Resolved writable-home provider required only when the user preset root is enabled. */
+export interface PresetHomeProvider {
+  /** Absolute writable Harness home selected by the application. */
+  readonly home: string
+  /** @param segments - child segments beneath the selected home. @returns the joined absolute child path. */
+  path(...segments: readonly string[]): string
+}
+
 /** Plugin config: which preset is the default, and where presets live. */
 export interface Config {
   /** The one resolved writable root supplied by the application entrypoint. */
-  harnessHome?: import('@harness-desktop/dsh-host-local-runtime').HarnessHomeProvider
+  harnessHome?: PresetHomeProvider
   /** Preset id mounted when a caller names none. Missing at mount time fails loud. */
   default: string
   /** Scanned roots in precedence order; an earlier root wins a duplicate id. */

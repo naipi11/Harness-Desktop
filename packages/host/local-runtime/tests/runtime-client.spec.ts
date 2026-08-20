@@ -18,7 +18,7 @@ import {
   type RuntimeClient,
 } from '../src/runtime-client.ts'
 import { createLocalRuntimePlugin } from '../src/data-root.ts'
-import { writePrivateEndpointRecord } from '../src/endpoint-record.ts'
+import { readPrivateEndpointRecord, writePrivateEndpointRecord } from '../src/endpoint-record.ts'
 import { currentProcessIdentity } from '../src/process-identity.ts'
 import { startRuntime, type RuntimeHandle } from '../src/runtime.ts'
 
@@ -247,6 +247,46 @@ describe('public Runtime connector', () => {
     }
     try {
       await expect(client.openTerminal({ workspace: root })).rejects.toBeInstanceOf(RuntimeProtocolError)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('rejects the exact endpoint token and selected Harness home in otherwise valid terminal output', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-exact-private-wire-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const endpoint = await readPrivateEndpointRecord(home as Branded<'HarnessHome'>)
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+    const originalFetch = globalThis.fetch
+    let privateValue = endpoint.accessToken
+    globalThis.fetch = async (input, init) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { operation?: string } : undefined
+      if (body?.operation === 'open-terminal') {
+        return new Response(JSON.stringify({
+          ok: true, value: { kind: 'opened', sessionId: 'private-output-session' },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (body?.operation === 'read-terminal-events') {
+        return new Response(JSON.stringify({
+          ok: true,
+          value: { events: [{ kind: 'output', text: privateValue }], nextCursor: 1 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return originalFetch(input, init)
+    }
+    try {
+      const tokenTerminal = await client.openTerminal({ workspace: root })
+      await expect(tokenTerminal.events()[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(RuntimeProtocolError)
+      privateValue = home
+      const homeTerminal = await client.openTerminal({ workspace: root })
+      await expect(homeTerminal.events()[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(RuntimeProtocolError)
+      privateValue = 'C:\\unrelated-workspace\\ordinary-output.txt'
+      const ordinaryTerminal = await client.openTerminal({ workspace: root })
+      await expect(ordinaryTerminal.events()[Symbol.asyncIterator]().next()).resolves.toMatchObject({
+        value: { kind: 'output', text: privateValue },
+      })
     } finally {
       globalThis.fetch = originalFetch
     }

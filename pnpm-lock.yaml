@@ -5012,12 +5012,18 @@ importers:
       '@harness-desktop/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@harness-desktop/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../apiproxy
       '@harness-desktop/dsh-host-directory-picker-native':
         specifier: workspace:^
         version: link:../directory-picker-native
       '@harness-desktop/dsh-host-webserver':
         specifier: workspace:^
         version: link:../webserver
+      '@harness-desktop/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
       '@harness-desktop/dsh-permission-presets':
         specifier: workspace:^
         version: link:../../interaction/permission-presets
@@ -5726,9 +5732,6 @@ importers:
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
-      '@harness-desktop/dsh-host-local-runtime':
-        specifier: workspace:^
-        version: link:../../host/local-runtime
       '@harness-desktop/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

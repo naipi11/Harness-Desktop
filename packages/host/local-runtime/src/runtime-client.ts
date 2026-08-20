@@ -13,6 +13,15 @@ const HANDOFF_CONTROL_PATH = '/_harness/control/browser-handoff'
 const START_TIMEOUT_MS = 30_000
 const protocolRecoveryCodes = new WeakMap<RuntimeProtocolError, 'runtime-version-mismatch' | 'runtime-start-failed'>()
 
+/** Maximum encoded bytes accepted from one authenticated Runtime control response. */
+export const MAX_RUNTIME_CONTROL_RESPONSE_BYTES = 1_048_576
+/** Maximum events returned in one terminal poll page. */
+export const MAX_TERMINAL_EVENT_PAGE_ITEMS = 256
+/** Maximum encoded bytes across one terminal poll page's events. */
+export const MAX_TERMINAL_EVENT_PAGE_BYTES = 262_144
+/** Maximum encoded bytes in one terminal event's human-readable string. */
+export const MAX_TERMINAL_EVENT_TEXT_BYTES = 65_536
+
 /** Opaque identity of one Runtime lifetime. */
 export type { RuntimeId } from './endpoint-record.ts'
 /** Opaque identity of one attached native client or child attachment. */
@@ -81,15 +90,27 @@ export interface TerminalConnection {
    * @param input - task or approval submitted through the Runtime.
    * @returns settlement after the real Agent/API or approval owner accepts it;
    *   Agent completion remains observable through events and active-work state.
+   *   A successful slash command has no turn: its safe text is emitted and its
+   *   exact work reservation is released before this promise settles.
    * @throws {@link RuntimeBusyError} when an exact session operation is active,
    *   or a redacted Runtime error for wrong-owner, unavailable, or rejected input.
    */
   submit(input: TerminalInput): Promise<void>
-  /** @param command - terminal control command. @returns settlement after dispatch. */
+  /**
+   * Run one owner-checked control through its existing model, permission,
+   * session, or command owner. `exit` releases only this terminal. The Runtime
+   * stays retained until the operation settles.
+   * @param command - terminal control command.
+   * @returns settlement after the state change, command, resume, or release.
+   * @throws a redacted Runtime error when the attachment is foreign, busy, the
+   *   requested owner is unavailable, or the owner rejects the operation.
+   */
   runControl(command: TerminalControlCommand): Promise<void>
   /**
-   * Cancel only this terminal's exact Agent operation and wait for whole-Agent
-   * idle before its work lease is released.
+   * Cancel only this terminal's exact admitted operation. An unclaimed message
+   * is removed by id; a claimed operation is signalled with inbox preservation,
+   * then its correlated turn and Agent idle are awaited. Foreign queued and
+   * steering messages remain.
    * @returns whether an active operation was cancelled.
    */
   cancel(): Promise<{ readonly kind: 'cancelled' | 'idle' }>
@@ -245,10 +266,11 @@ export interface RuntimeClient {
   status(): Promise<RuntimeStatus>
   /** @returns the now-absent named Web lease without stopping work or clients. */
   releaseBackgroundLease(): Promise<RuntimeLeaseStatus>
-  /** @returns the shared durable legacy-import state. */
+  /** @returns the shared byte-bounded durable legacy-import state. */
   getLegacyMigration(): Promise<LegacyMigrationState>
   /**
-   * Copy supported non-secret legacy roots once and durably record the result.
+   * Copy supported non-secret legacy roots once in the Runtime-owned migration
+   * transaction and durably record the result before releasing its retainer.
    * Concurrent accepts replay a committed success; collisions/failures retain
    * both roots and return redacted retry guidance.
    */
@@ -259,7 +281,11 @@ export interface RuntimeClient {
   retryLegacyMigration(): Promise<LegacyMigrationState>
   /** @returns active work owned by this UI client only. */
   observeActiveWork(): Promise<ActiveWorkStatus>
-  /** @returns settlement after cancelling this UI client's exact Agents and waiting for their idle states only. */
+  /**
+   * @returns settlement after cancelling this UI client's exact admitted
+   *   operations, preserving unrelated inbox entries, and waiting for their
+   *   correlated turns and Agent idle states.
+   */
   stopOwnUiWork(): Promise<OwnUiWorkStopResult>
   /**
    * Release only this client attachment. Closed commits after release succeeds;
@@ -385,7 +411,7 @@ export function createRuntimeConnector(options: RuntimeConnectorOptions = {}): R
       const endpoint = await discoverEndpoint(resolution.path)
       if (endpoint !== undefined) {
         try {
-          return await attachRuntimeClient(new RuntimeWire(endpoint), clientId)
+          return await attachRuntimeClient(new RuntimeWire(endpoint, resolution.path), clientId)
         } catch (error) {
           if (!connectOptions.start) throw error
         }
@@ -426,7 +452,7 @@ export async function probeRuntimeStatus(options: Pick<RuntimeConnectorOptions, 
   }
   if (endpoint === undefined) return { kind: 'not-running' }
   try {
-    return await new RuntimeWire(endpoint).control(randomUUID() as RuntimeClientId, { operation: 'status' })
+    return await new RuntimeWire(endpoint, resolution.path).control(randomUUID() as RuntimeClientId, { operation: 'status' })
   } catch (error) {
     return { kind: 'unavailable', diagnostic: normalizeRecoveryDiagnostic(error) }
   }
@@ -596,7 +622,10 @@ type InternalControlRequest =
 class RuntimeWire {
   private readonly origin: string
 
-  constructor(private readonly endpoint: PrivateEndpointRecord) {
+  constructor(
+    private readonly endpoint: PrivateEndpointRecord,
+    private readonly harnessHome: string,
+  ) {
     this.origin = `http://127.0.0.1:${String(endpoint.port)}`
   }
 
@@ -618,7 +647,8 @@ class RuntimeWire {
       throw new RuntimeUnavailableError()
     }
     if (!response.ok) throw new RuntimeUnavailableError()
-    const value = await readResponseJson(response)
+    const value = await readBoundedRuntimeResponseJson(response)
+    assertNoPrivateValues(value, this.endpoint.accessToken, this.harnessHome)
     if (!isRecord(value) || !hasExactKeys(value, ['id', 'expiresAt'])
       || !isOpaqueId(value.id, 32) || !isSafeTimestamp(value.expiresAt)) throw new RuntimeProtocolError()
     return {
@@ -648,7 +678,9 @@ class RuntimeWire {
       throw new RuntimeUnavailableError()
     }
     if (!response.ok) throw new RuntimeUnavailableError()
-    const envelope = parseWireEnvelope(await readResponseJson(response))
+    const raw = await readBoundedRuntimeResponseJson(response)
+    assertNoPrivateValues(raw, this.endpoint.accessToken, this.harnessHome)
+    const envelope = parseWireEnvelope(raw)
     if (envelope.ok) return parseSuccess(envelope.value)
     const result = parseRuntimeControlResult(envelope.result)
     if (result.kind === 'session-busy') throw new RuntimeBusyError(result.sessionId)
@@ -810,9 +842,16 @@ function parseDiagnostic(value: unknown): RedactedRuntimeDiagnostic {
   return value as unknown as RedactedRuntimeDiagnostic
 }
 
-function parseTerminalEventPage(value: unknown): { readonly events: readonly TerminalProtocolEvent[]; readonly nextCursor: number } {
+/**
+ * Parse one byte- and item-bounded terminal event page from the wire.
+ * @param value - untrusted decoded JSON value.
+ * @returns the exact public event page.
+ */
+export function parseTerminalEventPage(value: unknown): { readonly events: readonly TerminalProtocolEvent[]; readonly nextCursor: number } {
   if (!isRecord(value) || !hasExactKeys(value, ['events', 'nextCursor']) || !Array.isArray(value.events)
-    || !Number.isSafeInteger(value.nextCursor) || (value.nextCursor as number) < value.events.length) throw new RuntimeProtocolError()
+    || value.events.length > MAX_TERMINAL_EVENT_PAGE_ITEMS
+    || !Number.isSafeInteger(value.nextCursor) || (value.nextCursor as number) < value.events.length
+    || encodedBytes(value.events) > MAX_TERMINAL_EVENT_PAGE_BYTES) throw new RuntimeProtocolError()
   return { events: value.events.map(parseTerminalEvent), nextCursor: value.nextCursor as number }
 }
 
@@ -823,22 +862,22 @@ function parseTerminalEvent(value: unknown): TerminalProtocolEvent {
       if (!hasExactKeys(value, ['kind', 'sessionId']) || !isSessionId(value.sessionId)) throw new RuntimeProtocolError()
       return { kind: value.kind, sessionId: value.sessionId as SessionId }
     case 'output':
-      if (!hasExactKeys(value, ['kind', 'text']) || typeof value.text !== 'string') throw new RuntimeProtocolError()
+      if (!hasExactKeys(value, ['kind', 'text']) || !isBoundedText(value.text)) throw new RuntimeProtocolError()
       return { kind: value.kind, text: value.text }
     case 'tool-activity':
-      if (!hasExactKeys(value, ['kind', 'title']) || typeof value.title !== 'string') throw new RuntimeProtocolError()
+      if (!hasExactKeys(value, ['kind', 'title']) || !isBoundedText(value.title)) throw new RuntimeProtocolError()
       return { kind: value.kind, title: value.title }
     case 'approval-requested':
       if (!hasExactKeys(value, ['kind', 'approvalId', 'prompt']) || !isUuid(value.approvalId)
-        || typeof value.prompt !== 'string') throw new RuntimeProtocolError()
+        || !isBoundedText(value.prompt)) throw new RuntimeProtocolError()
       return { kind: value.kind, approvalId: value.approvalId as ApprovalId, prompt: value.prompt }
     case 'model-changed':
-      if (!hasExactKeys(value, ['kind', 'model']) || typeof value.model !== 'string' || value.model.length === 0) {
+      if (!hasExactKeys(value, ['kind', 'model']) || !isBoundedText(value.model) || value.model.length === 0) {
         throw new RuntimeProtocolError()
       }
       return { kind: value.kind, model: value.model }
     case 'permission-changed':
-      if (!hasExactKeys(value, ['kind', 'permission']) || typeof value.permission !== 'string'
+      if (!hasExactKeys(value, ['kind', 'permission']) || !isBoundedText(value.permission)
         || value.permission.length === 0) throw new RuntimeProtocolError()
       return { kind: value.kind, permission: value.permission }
     case 'diagnostic':
@@ -848,11 +887,33 @@ function parseTerminalEvent(value: unknown): TerminalProtocolEvent {
   }
 }
 
-async function readResponseJson(response: Response): Promise<unknown> {
+/**
+ * Read one response through a byte-bounded stream before UTF-8 and JSON decoding.
+ * @param response - authenticated Runtime response whose body remains untrusted.
+ * @returns the decoded JSON value within the protocol byte budget.
+ */
+export async function readBoundedRuntimeResponseJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader()
+  if (reader === undefined) throw new RuntimeProtocolError()
+  const bytes = new Uint8Array(MAX_RUNTIME_CONTROL_RESPONSE_BYTES)
+  let total = 0
   try {
-    return await response.json() as unknown
+    for (;;) {
+      const result = await reader.read()
+      if (result.done) break
+      total += result.value.byteLength
+      if (total > MAX_RUNTIME_CONTROL_RESPONSE_BYTES) {
+        await reader.cancel()
+        throw new RuntimeProtocolError()
+      }
+      bytes.set(result.value, total - result.value.byteLength)
+    }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, total))
+    return JSON.parse(text) as unknown
   } catch {
     throw new RuntimeProtocolError()
+  } finally {
+    reader.releaseLock()
   }
 }
 
@@ -869,7 +930,7 @@ function isOpaqueId(value: unknown, minimum: number): value is string {
 }
 
 function isSessionId(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256
+  return typeof value === 'string' && value.length > 0 && encodedBytes(value) <= 256
     && !value.includes('/') && !value.includes('\\')
     && !hasControlOrSpace(value)
     && !/(?:access.?token|credential|secret)/i.test(value)
@@ -892,7 +953,7 @@ function isSafeTimestamp(value: unknown): value is number {
 }
 
 function isLoopbackOrigin(value: unknown): value is string {
-  if (typeof value !== 'string') return false
+  if (typeof value !== 'string' || encodedBytes(value) > 256) return false
   try {
     const origin = new URL(value)
     return origin.protocol === 'http:' && origin.hostname === '127.0.0.1'
@@ -909,8 +970,33 @@ function isRootList(value: unknown): value is string[] {
 }
 
 function isSafeDiagnosticText(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 1024
+  return typeof value === 'string' && value.length > 0 && encodedBytes(value) <= 1024
     && !/(?:access.?token|bearer|credential|secret|runtime-endpoint|[a-z]:\\|\/(?:Users|home|tmp)\/)/i.test(value)
+}
+
+function isBoundedText(value: unknown): value is string {
+  return typeof value === 'string' && encodedBytes(value) <= MAX_TERMINAL_EVENT_TEXT_BYTES
+}
+
+function encodedBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value)
+  return Buffer.byteLength(JSON.stringify(value))
+}
+
+function assertNoPrivateValues(value: unknown, token: string, home: string): void {
+  const pending: unknown[] = [value]
+  while (pending.length > 0) {
+    const candidate = pending.pop()
+    if (typeof candidate === 'string') {
+      if ((token.length > 0 && candidate.includes(token)) || (home.length > 0 && candidate.includes(home))) {
+        throw new RuntimeProtocolError()
+      }
+    } else if (Array.isArray(candidate)) {
+      for (const item of candidate) pending.push(item)
+    } else if (isRecord(candidate)) {
+      for (const item of Object.values(candidate)) pending.push(item)
+    }
+  }
 }
 
 async function discoverEndpoint(home: Branded<'HarnessHome'>): Promise<PrivateEndpointRecord | undefined> {
@@ -931,7 +1017,7 @@ async function waitForHealthyWire(
   for (;;) {
     const endpoint = await discoverEndpoint(home)
     if (endpoint !== undefined) {
-      const wire = new RuntimeWire(endpoint)
+      const wire = new RuntimeWire(endpoint, home)
       try {
         await wire.control<RuntimeStatus>(clientId, { operation: 'status' })
         return wire

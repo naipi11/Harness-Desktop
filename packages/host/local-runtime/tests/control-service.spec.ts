@@ -38,6 +38,10 @@ function client(id: string): Branded<'RuntimeClientId'> {
 async function start(
   legacyDshHome?: string,
   overrides: Partial<RuntimeControlServiceOptions> = {},
+  lifecycle: {
+    readonly scheduleIdle?: (callback: () => Promise<void>) => ReturnType<typeof setTimeout>
+    readonly cancelIdle?: (handle: ReturnType<typeof setTimeout>) => void
+  } = {},
 ): Promise<{ sessions: SessionStore; home: string; agents: Map<string, Agent> }> {
   root ??= await mkdtemp(join(tmpdir(), 'harness-runtime-control-service-'))
   const home = join(root, 'home')
@@ -46,6 +50,7 @@ async function start(
   runtime = await startRuntime({
     harnessHome: provider,
     idleTimeoutMs: 60_000,
+    ...lifecycle,
     async boot() {
       const ctx = new Context()
       await ctx.plugin(SessionStore).await()
@@ -58,8 +63,11 @@ async function start(
   const fakeApi: NonNullable<RuntimeControlServiceOptions['api']> = {
     sessions: {
       async create(request) {
-        let session = sessions.get(request.payload.sessionId)
-        if (session === undefined) session = sessions.create(request.payload.sessionId, { meta: { cwd: request.payload.cwd } })
+        const sessionId = request.payload.sessionId
+        const cwd = request.payload.cwd
+        if (sessionId === undefined || cwd === undefined) throw new Error('test Runtime requires an explicit session and cwd')
+        let session = sessions.get(sessionId)
+        if (session === undefined) session = sessions.create(sessionId, { meta: { cwd } })
         if (!fakeAgents.has(session.id)) {
           fakeAgents.set(session.id, {
             id: session.id,
@@ -85,7 +93,10 @@ async function start(
       async models(request) {
         return {
           rpcId: request.rpcId,
-          result: { ok: true as const, value: { current: { provider: 'test', model: 'test' } } },
+          result: {
+            ok: true as const,
+            value: { current: { provider: 'test', model: 'test' }, routable: true, groups: [], failures: [] },
+          },
         }
       },
       async selectModel(request) {
@@ -247,6 +258,37 @@ describe('Runtime control service', () => {
     expect(delegated).toBe(0)
   })
 
+  it('cancels with no-clear semantics and preserves unrelated queued and steering work', async () => {
+    const { agents } = await start()
+    const owner = client('cancel-owner')
+    const terminal = client('cancel-terminal')
+    const sessionId = makeSessionId('cancel-session')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, {
+      workspace: root!, sessionId, initialTask: 'exact active operation',
+    })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected live cancel Agent')
+    const foreignTurn = { id: 'foreign-turn' }
+    const foreignStep = { id: 'foreign-step' }
+    const inbox = agent.inbox as unknown as { nextTurn: unknown[]; nextStep: unknown[] }
+    inbox.nextTurn = [foreignTurn]
+    inbox.nextStep = [foreignStep]
+    let keepInbox: boolean | undefined
+    ;(agent as unknown as { cancel: (_cause: unknown, options?: { keepInbox?: boolean }) => void }).cancel = (_cause, options) => {
+      keepInbox = options?.keepInbox
+      if (keepInbox !== true) {
+        inbox.nextTurn.length = 0
+        inbox.nextStep.length = 0
+      }
+    }
+
+    expect(await control!.cancelTerminal(owner, terminal)).toEqual({ kind: 'cancelled' })
+    expect(keepInbox).toBe(true)
+    expect(inbox.nextTurn).toEqual([foreignTurn])
+    expect(inbox.nextStep).toEqual([foreignStep])
+  })
+
   it('ignores a stale prior turn completion after a replacement operation is admitted', async () => {
     const firstIdle = Promise.withResolvers<undefined>()
     const secondIdle = Promise.withResolvers<undefined>()
@@ -257,7 +299,9 @@ describe('Runtime control service', () => {
     const api: NonNullable<RuntimeControlServiceOptions['api']> = {
       sessions: {
         async create(request) {
-          return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId: request.payload.sessionId } } }
+          const sessionId = request.payload.sessionId
+          if (sessionId === undefined) throw new Error('test Runtime requires an explicit session')
+          return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId } } }
         },
         async prompt(request) {
           capturedRpcId = request.rpcId
@@ -266,7 +310,10 @@ describe('Runtime control service', () => {
         async models(request) {
           return {
             rpcId: request.rpcId,
-            result: { ok: true as const, value: { current: { provider: 'test', model: 'test' } } },
+            result: {
+              ok: true as const,
+              value: { current: { provider: 'test', model: 'test' }, routable: true, groups: [], failures: [] },
+            },
           }
         },
         async selectModel(request) {
@@ -399,6 +446,41 @@ describe('Runtime control service', () => {
       .toEqual({ kind: 'imported', copied: ['projects'] })
     expect(await readFile(join(home, 'projects', 'one.json'), 'utf8')).toBe('{"source":true}\n')
     expect(await readFile(join(legacy, 'projects', 'one.json'), 'utf8')).toBe('{"source":true}\n')
+  })
+
+  it('retains Runtime ownership while a Dashboard migration transaction is pending', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-pending-migration-'))
+    const legacy = join(root, 'legacy')
+    await mkdir(legacy)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const idleCallbacks = new Set<() => Promise<void>>()
+    const { home } = await start(legacy, {
+      async recordMigration() {
+        entered.resolve(undefined)
+        await release.promise
+        return { kind: 'imported', copied: [] }
+      },
+    }, {
+      scheduleIdle(callback) {
+        idleCallbacks.add(callback)
+        return callback as unknown as ReturnType<typeof setTimeout>
+      },
+      cancelIdle(handle) {
+        idleCallbacks.delete(handle as unknown as () => Promise<void>)
+      },
+    })
+
+    const pending = control!.handleDashboard({ operation: 'accept-legacy-migration' })
+    await entered.promise
+    try {
+      expect(idleCallbacks.size).toBe(0)
+      await expect(readFile(join(home, 'runtime-endpoint.json'), 'utf8')).resolves.toContain('runtimeId')
+    } finally {
+      release.resolve(undefined)
+    }
+    await expect(pending).resolves.toEqual({ kind: 'imported', copied: [] })
+    expect(idleCallbacks.size).toBe(1)
   })
 
   it('projects a durable import failure and retries only after the retained state is corrected', async () => {
