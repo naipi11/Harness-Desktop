@@ -1,12 +1,8 @@
-/**
- * Shared command dispatch for the primary Harness CLI and its `dsh` alias.
- * @module @harness-desktop/cli/main
- */
+/** Shared command dispatch for the primary Harness CLI and its `dsh` alias. */
 
 import { readFileSync } from 'node:fs'
-import { loadLayeredEnv } from '@harness-desktop/dsh-app-boot'
 import type { ProductCommandName } from '@harness-desktop/dsh-app-boot/product-metadata'
-import { parseDshArgs, type DshInvocation } from './args.ts'
+import { parseProductArgs, ProductArgumentError, type ProductInvocation } from './args.ts'
 
 /** Command names accepted by the shared CLI implementation. */
 export type CliCommandName = ProductCommandName
@@ -19,46 +15,22 @@ function readVersion(): string {
   return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
 }
 
-/** Dispatch one parsed invocation while retaining the compatibility data namespace. */
-async function dispatchInvocation(commandName: CliCommandName, invocation: DshInvocation): Promise<void> {
+/**
+ * Reserve product invocation dispatch for the Runtime clients supplied by later
+ * tasks in this plan.
+ * @param invocation - the parsed product command.
+ * @returns after accepting the invocation.
+ */
+async function dispatchInvocation(invocation: ProductInvocation): Promise<void> {
   switch (invocation.mode) {
-    case 'profile': {
-      const web = invocation.profile === 'web'
-        ? (await import('./web-daemon.ts')).resolveWebDaemonInvocation(invocation.args)
-        : undefined
-      if (web?.detached) {
-        const { launchWebDaemon } = await import('./web-daemon.ts')
-        const launched = await launchWebDaemon({
-          runtimeArgs: process.execArgv,
-          entry: process.argv[1] ?? '',
-          patches: invocation.patches,
-          args: web.args,
-        })
-        process.stdout.write(`${commandName} web: started detached process ${String(launched.pid)}; log: ${launched.logPath}\n`)
-        break
-      }
-      const { runProfile } = await import('./profile-boot.ts')
-      await runProfile({
-        environment: loadLayeredEnv('dsh'),
-        profile: invocation.profile,
-        patchFiles: invocation.patches,
-        args: web?.args ?? invocation.args,
-      })
-      break
-    }
-    case 'plugin': {
-      const { runPlugin } = await import('./plugin.ts')
-      process.exit(runPlugin(commandName, invocation.profile, invocation.args))
-      break
-    }
-    case 'dump-config': {
-      const { runDumpConfig } = await import('./dump-config.ts')
-      runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
-      break
-    }
+    case 'interactive':
+    case 'run':
+    case 'web':
+    case 'desktop':
+      return
     default:
       invocation satisfies never
-      throw new Error(`${commandName}: unhandled invocation mode ${JSON.stringify(invocation)}`)
+      throw new Error(`unhandled invocation mode ${JSON.stringify(invocation)}`)
   }
 }
 
@@ -66,12 +38,20 @@ async function dispatchInvocation(commandName: CliCommandName, invocation: DshIn
  * Parse and dispatch one primary or compatible CLI invocation.
  * @param commandName - the entry name shown in launcher-owned output.
  * @param argv - arguments after the entrypoint.
- * @returns after the selected profile, plugin command, or config dump finishes.
+ * @returns after the selected product command finishes.
  */
 export async function runCli(
   commandName: CliCommandName,
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
-  const invocation = parseDshArgs(argv, readVersion(), commandName)
-  await dispatchInvocation(commandName, invocation)
+  try {
+    await dispatchInvocation(parseProductArgs(argv, commandName, readVersion()))
+  } catch (error) {
+    if (error instanceof ProductArgumentError) {
+      process.stderr.write(`${commandName}: ${error.message}\n${error.correction}\n`)
+      process.exitCode = 1
+      return
+    }
+    throw error
+  }
 }

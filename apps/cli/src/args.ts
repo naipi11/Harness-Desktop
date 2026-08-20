@@ -1,199 +1,180 @@
-/**
- * Commander adapter for the `dsh` command line.
- *
- * The launcher parses only what it owns — which profile to boot, which extra
- * patch overlays to apply, and the config dumps — and hands **everything after
- * its own flags** to the booted tree verbatim, where injected app plugins parse
- * their own flag families and print their own `--help` (see
- * `@harness-desktop/dsh-cmdline`). Launcher flags therefore come first: the first
- * token this parser does not recognize starts the inner arguments, so
- * `dsh --profile tui --resume abc` boots the tui profile with `--resume abc`,
- * and `dsh --profile web -h` prints the web app's help, not this one's.
- *
- * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
- * plugin dependencies by forwarding to pnpm.
- * @module @harness-desktop/cli/args
- */
+/** Product command parsing for the `harness` command and its `dsh` alias. */
 
-import { Command, CommanderError } from 'commander'
+import { Command } from 'commander'
 import type { CliCommandName } from './main.ts'
 
-/** Boot a named profile and hand it the invocation's inner arguments. */
-interface ProfileInvocation {
-  mode: 'profile'
-  profile: string
-  /** Extra patch-list overlays applied after the profile's own layer, in argv order. */
-  patches: string[]
-  /** Everything after the launcher's own flags, verbatim, for injected app plugins. */
-  args: string[]
+/** Start an interactive terminal session, optionally seeded with one task. */
+export interface InteractiveInvocation {
+  mode: 'interactive'
+  initialTask: string | undefined
 }
 
-/** Print a composed profile tree and exit without booting. */
-interface DumpConfigInvocation {
-  mode: 'dump-config'
-  profile: string
-  /** Omit the profile's user layer and --patch overlays; print bundle layers only. */
-  defaultOnly: boolean
-  patches: string[]
+/** Run one task without the interactive terminal. */
+export interface RunInvocation {
+  mode: 'run'
+  task: string
+  json: boolean
 }
 
-/** Manage a profile's plugins: forward `args` to pnpm inside the profile directory. */
-interface PluginInvocation {
-  mode: 'plugin'
-  profile: string
-  /** Raw pnpm arguments, verbatim. */
-  args: string[]
+/** Open, inspect, or release the product Web client. */
+export interface WebInvocation {
+  mode: 'web'
+  open: boolean
+  lease: 'none' | 'background'
+  operation: 'open' | 'status' | 'stop'
 }
 
-/** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
-
-/** Launcher flags shared by the default command and the `web` alias. */
-interface BootOptions {
-  patch?: string[]
-  dumpConfig?: boolean
-  dumpDefaultConfig?: boolean
+/** Activate the installed desktop client. */
+export interface DesktopInvocation {
+  mode: 'desktop'
 }
 
-/**
- * Repeatable single-value collector: `--patch a.yml --patch b.yml`. Never
- * variadic — a variadic `--patch` would swallow the inner arguments.
- */
-const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
+/** One public Harness Desktop product command. */
+export type ProductInvocation = InteractiveInvocation | RunInvocation | WebInvocation | DesktopInvocation
 
-/** The launcher's own help text; each app prints its own. */
+/** A syntax error paired with the product command that corrects it. */
+export class ProductArgumentError extends Error {
+  /** @param message - the invalid input diagnostic. @param correction - the command syntax that fixes it. */
+  constructor(message: string, readonly correction: string) {
+    super(message)
+    this.name = 'ProductArgumentError'
+  }
+}
+
+/** Examples shared by the primary binary and its compatibility alias. */
 function helpExamples(commandName: CliCommandName): string {
   return `
 Examples:
-  ${commandName} --profile web                          boot the web profile (same as: ${commandName} web)
-  ${commandName} --profile headless "run the tests"     answer one task, print the result, and exit
-  ${commandName} --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
-  ${commandName} --profile tui --resume <session>       arguments after the launcher flags reach the app
-  ${commandName} --profile web --help                   the web app's own flags and help
-  ${commandName} plugin --profile tui add <package>     install a plugin into the tui profile
+  ${commandName}                                      start an interactive terminal
+  ${commandName} "fix the tests"                      start with an initial task
+  ${commandName} run "fix the tests" --json           run one task as JSONL
+  ${commandName} web --background                      open Web and retain its lease
+  ${commandName} web --status                          inspect an existing Runtime
+  ${commandName} desktop                               activate the installed desktop app
 `
 }
 
-/**
- * Resolve a boot or dump invocation from the launcher flags and the leftover
- * inner arguments.
- * @param program - the command whose options were parsed (the root, or the `web` alias).
- * @param profile - the profile these flags boot.
- * @param options - the launcher flags commander collected.
- * @param args - the leftover arguments, in argv order.
- * @returns the resolved invocation.
- */
-function resolveBoot(program: Command, profile: string, options: BootOptions, args: string[]): DshInvocation {
-  const patches = options.patch ?? []
-  if (patches.includes('')) program.error('error: --patch needs a path')
-  if (options.dumpConfig !== true && options.dumpDefaultConfig !== true) {
-    return { mode: 'profile', profile, patches, args }
-  }
-  if (options.dumpConfig === true && options.dumpDefaultConfig === true) {
-    program.error('error: --dump-config and --dump-default-config are mutually exclusive')
-  }
-  // The dump is boot-free: it never runs app command-line providers, so it
-  // cannot show what those flags would decide, and printing a tree that differs
-  // from the same invocation's boot would mislead.
-  if (args.length > 0) {
-    program.error(`error: config dumps take no app arguments, got ${args.map(argument => JSON.stringify(argument)).join(' ')}`)
-  }
-  const defaultOnly = options.dumpDefaultConfig === true
-  if (defaultOnly && patches.length > 0) {
-    program.error('error: --dump-default-config prints the bundle layers and takes no --patch')
-  }
-  return { mode: 'dump-config', profile, defaultOnly, patches }
+/** Product syntax shown alongside every parse error. */
+function productSyntax(commandName: CliCommandName): string {
+  return `Use \`${commandName} [task]\`, \`${commandName} run <task> [--json]\`, \`${commandName} web\`, or \`${commandName} desktop\`.`
 }
 
-/**
- * Resolve argv into one invocation, or print and exit for help, version, or an
- * error.
- * @param argv - arguments after the Node binary and script.
- * @param version - version string printed by `--version`.
- * @param commandName - command name printed in launcher-owned help and errors.
- * @returns the resolved invocation.
- */
-export function parseDshArgs(
-  argv: readonly string[],
-  version: string,
-  commandName: CliCommandName = 'harness',
-): DshInvocation {
-  let resolved: DshInvocation | undefined
-  // Annotated, not inferred: the actions below call back into `program`, and an
-  // inferred type would be circular through its own chain.
-  const program: Command = new Command()
-  program
+/** Build the Commander-owned help and version handler. */
+function createProgram(commandName: CliCommandName, version: string): Command {
+  return new Command()
     .name(commandName)
     .version(version, '-V, --version', 'output the version number')
-    .description(`${commandName}: boot a Harness Desktop profile — an ordered stack of plugin-bundle patch layers under your own overrides.`)
+    .description(`${commandName}: Harness Desktop product client.`)
     .addHelpText('after', helpExamples(commandName))
-    .exitOverride()
-    // The launcher's flags come first and end at the first token it does not
-    // know; everything from there on belongs to the booted app, including
-    // its -h. `dsh -h` with no profile still prints this help, below.
-    .helpOption(false)
-    .allowUnknownOption()
-    .passThroughOptions()
-    .enablePositionalOptions()
-    .argument('[args...]', `arguments for the booted profile's app (see: ${commandName} --profile <name> --help)`)
-    .option('--profile <name>', 'the profile under $HARNESS_HOME/profiles to boot')
-    .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
-    .option('--dump-config', 'print the composed profile tree and exit')
-    .option('--dump-default-config', 'print the profile tree without its user layer or --patch overlays and exit')
-    .action((args: string[], options: BootOptions & { profile?: string }) => {
-      // With the app owning -h, the launcher's own help is what a bare
-      // `dsh -h` (no profile to hand it to) must print.
-      if (options.profile === undefined) {
-        if (args.some(argument => argument === '-h' || argument === '--help')) program.help()
-        program.error('error: --profile <name> is required')
-      }
-      const profile = options.profile
-      if (profile === '') program.error('error: --profile needs a name')
-      resolved = resolveBoot(program, profile, options, args)
-    })
+}
 
-  /** Reject parent options supplied before a subcommand. */
-  const rejectParentOptions = (command: string): void => {
-    const parent = program.opts<BootOptions & { profile?: string }>()
-    if (parent.profile !== undefined || parent.patch !== undefined
-      || parent.dumpConfig !== undefined || parent.dumpDefaultConfig !== undefined) {
-      program.error(`error: ${command} takes none of parent --profile, --patch, --dump-config, or --dump-default-config`)
+/** Reject the removed public profile syntax wherever it appears. */
+function rejectProfile(argv: readonly string[], commandName: CliCommandName): void {
+  if (argv.some(argument => argument === '--profile' || argument.startsWith('--profile='))) {
+    throw new ProductArgumentError(
+      '--profile is no longer a public product option',
+      productSyntax(commandName),
+    )
+  }
+}
+
+/** Resolve the flags and operation under `web`. */
+function parseWebArgs(argv: readonly string[], commandName: CliCommandName): WebInvocation {
+  let open = true
+  let lease: WebInvocation['lease'] = 'none'
+  let operation: WebInvocation['operation'] = 'open'
+  let operationFlag: '--status' | '--stop' | undefined
+
+  for (const argument of argv) {
+    switch (argument) {
+      case '--open':
+        open = true
+        break
+      case '--no-open':
+        open = false
+        break
+      case '--daemon':
+      case '--background':
+        lease = 'background'
+        break
+      case '--status':
+      case '--stop':
+        if (operationFlag !== undefined) {
+          throw new ProductArgumentError('web accepts only one of --status or --stop', productSyntax(commandName))
+        }
+        operationFlag = argument
+        operation = argument === '--status' ? 'status' : 'stop'
+        open = false
+        break
+      default:
+        throw new ProductArgumentError(`web does not accept ${JSON.stringify(argument)}`, productSyntax(commandName))
     }
   }
 
-  const web = program.command('web').description('boot the web profile (alias of --profile web); the web app\'s own flags follow')
-  web
-    .helpOption(false)
-    .allowUnknownOption()
-    .passThroughOptions()
-    .enablePositionalOptions()
-    .argument('[args...]', `arguments for the web app (see: ${commandName} web --help)`)
-    .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
-    .option('--dump-config', 'print the composed web-profile tree (with the user layer and any --patch) and exit')
-    .option('--dump-default-config', 'print the web profile\'s bundle layers (no user layer) and exit')
-    .action((args: string[], options: BootOptions) => {
-      rejectParentOptions('web')
-      resolved = resolveBoot(web, 'web', options, args)
-    })
-
-  const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
-  plugin
-    .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)')
-    .allowUnknownOption()
-    .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')
-    .action((args: string[], options: { profile: string }) => {
-      rejectParentOptions('plugin')
-      if (options.profile === '') program.error('error: --profile needs a name')
-      if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
-      resolved = { mode: 'plugin', profile: options.profile, args }
-    })
-
-  try {
-    program.parse(argv, { from: 'user' })
-  } catch (error) {
-    return process.exit(error instanceof CommanderError ? error.exitCode : 1)
+  if (operation !== 'open' && lease !== 'none') {
+    throw new ProductArgumentError(`${operationFlag} cannot be combined with a background lease`, productSyntax(commandName))
   }
-  /* v8 ignore next -- an action resolves or Commander throws */
-  if (resolved === undefined) throw new Error(`${commandName}: no invocation resolved`)
-  return resolved
+  return { mode: 'web', open, lease, operation }
+}
+
+/** Resolve the flags and single task under `run`. */
+function parseRunArgs(argv: readonly string[], commandName: CliCommandName): RunInvocation {
+  let json = false
+  const tasks: string[] = []
+  for (const argument of argv) {
+    if (argument === '--json') {
+      if (json) throw new ProductArgumentError('run accepts --json at most once', productSyntax(commandName))
+      json = true
+    } else if (argument.startsWith('-')) {
+      throw new ProductArgumentError(`run does not accept ${JSON.stringify(argument)}`, productSyntax(commandName))
+    } else {
+      tasks.push(argument)
+    }
+  }
+  const task = tasks.at(0)
+  if (tasks.length !== 1 || task === undefined) {
+    throw new ProductArgumentError('run needs exactly one task', `Use \`${commandName} run <task> [--json]\`.`)
+  }
+  return { mode: 'run', task, json }
+}
+
+/**
+ * Parse one public product command.
+ * @param argv - arguments after the executable name.
+ * @param commandName - binary name used only in help and corrections.
+ * @param version - version shown by Commander for `--version`.
+ * @returns the resolved product invocation.
+ */
+export function parseProductArgs(
+  argv: readonly string[],
+  commandName: CliCommandName = 'harness',
+  version = '0.0.0',
+): ProductInvocation {
+  const program = createProgram(commandName, version)
+  rejectProfile(argv, commandName)
+  if (argv.includes('--help') || argv.includes('-h')) program.help()
+  if (argv.includes('--version') || argv.includes('-V')) program.parse(['--version'], { from: 'user' })
+
+  const [command, ...rest] = argv
+  switch (command) {
+    case undefined:
+      return { mode: 'interactive', initialTask: undefined }
+    case 'run':
+      return parseRunArgs(rest, commandName)
+    case 'web':
+      return parseWebArgs(rest, commandName)
+    case 'desktop':
+      if (rest.length > 0) {
+        throw new ProductArgumentError('desktop takes no arguments', `Use \`${commandName} desktop\`.`)
+      }
+      return { mode: 'desktop' }
+    default:
+      if (command.startsWith('-')) {
+        throw new ProductArgumentError(`unknown option ${JSON.stringify(command)}`, productSyntax(commandName))
+      }
+      if (rest.length > 0) {
+        throw new ProductArgumentError('interactive mode accepts at most one initial task', `Use \`${commandName} [task]\`.`)
+      }
+      return { mode: 'interactive', initialTask: command }
+  }
 }
