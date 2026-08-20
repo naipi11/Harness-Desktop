@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md
-2026-08-15-harness-desktop-product-topology.md: 673645ef0f191f15f3284a790581212c522a398c
-2026-08-15-harness-desktop-product-topology.zh.md: e94ecec459845f5d036f6f0b8e6401e9ac0fbe41
+2026-08-15-harness-desktop-product-topology.md: f172deb7fafaf77bd257be738626bdef0d2dc221
+2026-08-15-harness-desktop-product-topology.zh.md: 49bc38abedf4e28b1108b4fa3ee025aeec1f186d

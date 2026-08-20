@@ -20,7 +20,7 @@ Desktop、Web 和终端展示计划需要一个本地数据所有者，同时不
 
 公开 `RuntimeClient`、`TerminalConnection` 与 `DashboardAttachment` API 在同一进程上提供独立附加项。逐会话写入准入、按所有者划分作用域的取消、活动工作计数、迁移事务和稳定的 `web` 后台租约都会在其精确操作期间保留运行时。有序关闭会在端点移除、锁释放与 Cordis dispose（资源释放）前结算控制工作和持久化 flush。
 
-CLI Web 模式通过该公开 API 连接，使用仅正文 handoff 打开 Dashboard，并使用稳定的 `web` lease，而不是逐命令 Web 子进程。Runtime API 不向启动器暴露交换完成信号，因此启动器会在调度期间及 handoff 过期前保留仅当前用户可访问的 bootstrap。CLI 自然退出时，只把文档路径和现有过期时间移交给通过纯 Node 启动的分离辅助进程；该进程不继承 loader 参数、环境、handoff 或端点 token，并在该过期时间删除文档。
+CLI Web 模式通过该公开 API 连接，使用仅正文 handoff 打开 Dashboard，并使用稳定的 `web` lease，而不是逐命令 Web 子进程。Runtime API 不向启动器暴露交换完成信号，因此启动器会在调度期间及 handoff 过期前保留仅当前用户可访问的 bootstrap。CLI 自然退出时，只把文档路径和现有过期时间移交给通过纯 Node 启动的分离辅助进程；父进程只有在收到精确 IPC ready 消息、确认参数校验与已引用的过期 timer 后才会脱离。ready 前发生 error、exit、disconnect 或超时，都会保留父进程直接执行的过期清理。辅助进程不继承 loader 参数、环境、handoff 或端点 token，并在该过期时间删除文档。
 
 基础通过声明的构建版二进制与直接源码入口启动相同的完整基础与 Web 组合。终端、Web 与 Desktop 展示工作作为独立产品层消费该公开 API；仅有基础验收不会把这些展示客户端或跨客户端产品验收描述为已发货。
 

@@ -29,6 +29,10 @@ harness desktop
 
 原公开 profile、插件管理、headless profile、patch 和配置 dump 命令不属于该产品语法。`--profile` 会被显式拒绝。一次性任务使用 `run`，Dashboard 使用 `web`。
 
+## Profiles
+
+profile 记录仍是供 app-boot 与测试 fixture（测试前置数据）使用的内部 Runtime 组装格式。本标题用于保持现有文档链接有效，并不恢复公开 profile 命令。
+
 ## 共享 Runtime 与 Web
 
 交互、run 和 Web 模式会连接通过 `HARNESS_HOME` 选定的同一个本地 Runtime；运行命令时所在的目录是终端 workspace。关闭 CLI 连接不会终止无关客户端或活动工作。

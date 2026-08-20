@@ -29,6 +29,10 @@ harness desktop
 
 The former public profile, plugin-management, headless-profile, patch, and config-dump commands are not part of this product grammar. `--profile` is rejected explicitly. Use `run` for a one-shot task and `web` for the Dashboard.
 
+## Profiles
+
+Profile records remain an internal Runtime-composition format used by app-boot and test fixtures. This heading preserves existing documentation links; it does not restore a public profile command.
+
 ## Shared Runtime and Web
 
 Interactive, run, and Web modes attach to one local Runtime selected through `HARNESS_HOME`; the invoking directory is the terminal workspace. Closing a CLI attachment does not terminate unrelated clients or active work.

@@ -40,7 +40,7 @@ An open operation starts or attaches to the shared local Runtime. Browser dispat
 
 For a browser open, the Runtime mints a one-time handoff and returns a clean loopback Dashboard origin plus its expiry. The CLI writes the handoff only into the POST body of an owner-only temporary HTML document. The dispatched local file URL contains neither the handoff nor the Runtime access token.
 
-The Runtime client API exposes no handoff-exchange settlement to the CLI. While the CLI remains alive, dispatch failure removes the document immediately and handoff expiry removes it through the same memoized operation. On natural CLI exit before expiry, ownership transfers to a detached helper launched through plain Node with only the document path and expiry; it receives no inherited Node loader/eval arguments, handoff, access token, or inherited environment, and removes the document at the original expiry.
+The Runtime client API exposes no handoff-exchange settlement to the CLI. While the CLI remains alive, dispatch failure removes the document immediately and handoff expiry removes it through the same memoized operation. On natural CLI exit before expiry, ownership transfers to a detached helper launched through plain Node with only the document path and expiry. The parent detaches only after an exact IPC ready message confirms validation and a referenced expiry timer; pre-ready error, exit, disconnect, or timeout re-refs the parent timer. The helper receives no inherited Node loader/eval arguments, handoff, access token, or inherited environment, and removes the document at the original expiry.
 
 `--status` connects only to an existing Runtime and prints its Runtime identity, Dashboard origin, and named Web lease state. A missing Runtime produces a nonzero result without creating `$HARNESS_HOME`. `--stop` also requires an existing Runtime and idempotently releases only the named Web lease. It does not terminate the Runtime, close other clients, or cancel active work. `--status` and `--stop` cannot be combined with a background-lease option and never open a browser.
 
@@ -54,7 +54,7 @@ The CLI resolves the local Runtime through `HARNESS_HOME`. Interactive, run, and
 
 Product-grammar failures exit 2 with a corrective syntax line. A Web operation that cannot find or reach its required Runtime uses the Runtime-unavailable exit path; other local Web failures use the generic local-failure path. Diagnostics are normalized and never reflect a handoff, endpoint token, or raw private cause.
 
-## Source and built execution
+## Source execution
 
 The repository scripts launch source through `node --import tsx/esm` and preserve that launcher for Runtime process starts. Installed commands run the built bins under plain Node. The detached browser-cleanup helper is a standalone `.mjs` file and deliberately inherits neither source loader arguments nor eval code.
 

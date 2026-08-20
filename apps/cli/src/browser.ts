@@ -39,6 +39,14 @@ export interface BrowserBootstrapDurableOwner {
   ownUntil(documentPath: string, expiresAt: number): Promise<void>
 }
 
+/** Inputs for the detached cleanup owner and its ready handshake. */
+export interface BrowserBootstrapDurableOwnerOptions {
+  /** Plain-JavaScript helper entry; defaults to the file shipped with the CLI. */
+  readonly helper?: string
+  /** Maximum time for validated timer ownership to acknowledge over IPC. */
+  readonly readyTimeoutMs?: number
+}
+
 /** Injectable operating-system boundaries for the production browser transport. */
 export interface BrowserHandoffTransportOptions {
   /** Existing directory beneath which a fresh private directory is created. */
@@ -98,23 +106,84 @@ const browserBootstrapLifecycle: BrowserBootstrapLifecycle = {
   removeBeforeExitListener(listener) { process.off('beforeExit', listener) },
 }
 
-const browserBootstrapDurableOwner: BrowserBootstrapDurableOwner = {
-  ownUntil(documentPath, expiresAt) {
-    const helper = fileURLToPath(new URL('../browser-cleanup.mjs', import.meta.url))
-    return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [helper, documentPath, String(expiresAt)], {
-        detached: true,
-        env: {},
-        stdio: 'ignore',
-        windowsHide: true,
+const CLEANUP_READY_TIMEOUT_MS = 5_000
+
+/**
+ * Create the plain-Node durable owner used when a browser launcher exits.
+ * @param options - injectable helper path and bounded ready timeout.
+ * @returns an owner that settles only after the helper validates and arms expiry.
+ */
+export function createBrowserBootstrapDurableOwner(
+  options: BrowserBootstrapDurableOwnerOptions = {},
+): BrowserBootstrapDurableOwner {
+  const helper = options.helper ?? fileURLToPath(new URL('../browser-cleanup.mjs', import.meta.url))
+  const readyTimeoutMs = options.readyTimeoutMs ?? CLEANUP_READY_TIMEOUT_MS
+  if (!Number.isSafeInteger(readyTimeoutMs) || readyTimeoutMs <= 0) {
+    throw new Error('browser bootstrap cleanup ready timeout must be a positive integer')
+  }
+  return {
+    ownUntil(documentPath, expiresAt) {
+      return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [helper, documentPath, String(expiresAt)], {
+          detached: true,
+          env: {},
+          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+          windowsHide: true,
+        })
+        let settled = false
+        const readyTimer = setTimeout(() => {
+          rejectBeforeReady('browser bootstrap cleanup helper timed out before ready')
+        }, readyTimeoutMs)
+        const rejectBeforeReady = (message: string): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(readyTimer)
+          child.removeListener('message', onMessage)
+          child.removeListener('exit', onExit)
+          child.removeListener('disconnect', onDisconnect)
+          child.removeListener('error', onError)
+          if (child.exitCode === null && child.signalCode === null) child.kill()
+          reject(new Error(message))
+        }
+        const onMessage = (message: unknown): void => {
+          if (!isCleanupReady(message)) {
+            rejectBeforeReady('browser bootstrap cleanup helper sent an invalid ready message')
+            return
+          }
+          if (settled) return
+          settled = true
+          clearTimeout(readyTimer)
+          child.removeListener('message', onMessage)
+          child.removeListener('exit', onExit)
+          child.removeListener('disconnect', onDisconnect)
+          child.removeListener('error', onError)
+          if (child.connected) child.disconnect()
+          child.unref()
+          resolve()
+        }
+        const onExit = (): void => {
+          rejectBeforeReady('browser bootstrap cleanup helper exited before ready')
+        }
+        const onDisconnect = (): void => {
+          rejectBeforeReady('browser bootstrap cleanup helper disconnected before ready')
+        }
+        const onError = (): void => {
+          rejectBeforeReady('browser bootstrap cleanup helper failed before ready')
+        }
+        child.once('error', onError)
+        child.on('message', onMessage)
+        child.once('exit', onExit)
+        child.once('disconnect', onDisconnect)
       })
-      child.once('error', reject)
-      child.once('spawn', () => {
-        child.unref()
-        resolve()
-      })
-    })
-  },
+    },
+  }
+}
+
+const browserBootstrapDurableOwner = createBrowserBootstrapDurableOwner()
+
+function isCleanupReady(message: unknown): boolean {
+  return typeof message === 'object' && message !== null && !Array.isArray(message)
+    && Object.keys(message).length === 1 && (message as { kind?: unknown }).kind === 'ready'
 }
 
 /**

@@ -40,7 +40,7 @@ harness web --stop
 
 调起浏览器时，Runtime 会签发一次性 handoff，并返回不含凭据的回环 Dashboard origin 及其过期时间。CLI 只会把 handoff 写入仅当前用户可访问的临时 HTML 文档的 POST 正文。调度的本地文件 URL 既不包含 handoff，也不包含 Runtime access token。
 
-Runtime 客户端 API 不向 CLI 暴露 handoff 交换完成状态。CLI 仍在运行时，调度失败会立即删除文档，handoff 过期则通过同一个记忆化操作删除文档。如果 CLI 在过期前自然退出，所有权会移交给通过纯 Node 启动的分离辅助进程；该进程只接收文档路径和过期时间，不接收继承的 Node loader/eval 参数、handoff、access token 或继承环境，并在原过期时间删除文档。
+Runtime 客户端 API 不向 CLI 暴露 handoff 交换完成状态。CLI 仍在运行时，调度失败会立即删除文档，handoff 过期则通过同一个记忆化操作删除文档。如果 CLI 在过期前自然退出，所有权会移交给通过纯 Node 启动、且只接收文档路径和过期时间的分离辅助进程。父进程只有在精确 IPC ready 消息确认校验与已引用的过期 timer 后才会脱离；ready 前发生 error、exit、disconnect 或超时会重新引用父进程 timer。辅助进程不接收继承的 Node loader/eval 参数、handoff、access token 或继承环境，并在原过期时间删除文档。
 
 `--status` 只连接已有 Runtime，并输出其 Runtime 标识、Dashboard origin 与具名 Web lease 状态。Runtime 不存在时会返回非零状态，且不会创建 `$HARNESS_HOME`。`--stop` 同样要求已有 Runtime，并幂等地仅释放具名 Web lease。它不会终止 Runtime、关闭其他客户端或取消活动工作。`--status` 和 `--stop` 不能与后台 lease 选项组合，并且绝不会打开浏览器。
 
@@ -54,7 +54,7 @@ CLI 通过 `HARNESS_HOME` 解析本地 Runtime。交互、run 与 Web 调用会�
 
 产品语法失败会以 2 退出，并提供纠正语法行。无法找到或连接所需 Runtime 的 Web 操作使用 Runtime 不可用退出路径；其他本地 Web 失败使用通用本地失败路径。诊断会经过归一化，绝不回显 handoff、endpoint token 或原始私有原因。
 
-## 源码与构建后执行
+## 源码执行
 
 仓库脚本通过 `node --import tsx/esm` 启动源码，并为 Runtime 进程启动保留该启动器。安装后的命令通过纯 Node 运行构建后的 bin。分离的浏览器清理辅助进程是独立 `.mjs` 文件，并且有意不继承源码 loader 参数或 eval 代码。
 
