@@ -58,6 +58,73 @@ function normalizeProtocol(value: unknown): unknown {
 }
 
 describe('Runtime real control transcript', () => {
+  it('snapshots a recognized slash command with no Agent turn or active work', async () => {
+    const previous = process.env.DSH_RUNTIME_TEST_COMMAND
+    process.env.DSH_RUNTIME_TEST_COMMAND = '1'
+    try {
+      runtime = await startRuntimeProcess({
+        mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
+      })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_RUNTIME_TEST_COMMAND
+      else process.env.DSH_RUNTIME_TEST_COMMAND = previous
+    }
+    const endpoint = await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    firstClient = await connector.connect({ start: false })
+    terminal = await firstClient.openTerminal({ workspace: runtime.cwd })
+    const iterator = terminal.events()[Symbol.asyncIterator]()
+    const opened = await nextKind(iterator, 'session-opened')
+    if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+
+    await terminal.submit({ kind: 'task', text: '/runtime_no_turn' })
+    const output = await nextKind(iterator, 'output')
+    const active = await firstClient.observeActiveWork()
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const history = await runtimeRpc<{ events: Array<{ event: { type: string } }> }>(
+      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+    )
+    const durableTypes = history.events.map(entry => entry.event.type)
+    const transcript = normalizeProtocol({
+      events: [opened, output],
+      active,
+      commandTypes: durableTypes.filter(type => type === 'command/run' || type === 'command/done'),
+      turnTypes: durableTypes.filter(type => type === 'turn/start' || type === 'turn/end'),
+    })
+    expect(JSON.stringify(transcript)).not.toContain(endpoint.accessToken)
+    expect(JSON.stringify(transcript)).not.toContain(runtime.harnessHome)
+    expect(transcript).toMatchInlineSnapshot(`
+      {
+        "active": {
+          "ownUiWork": [],
+        },
+        "commandTypes": [
+          "command/run",
+          "command/done",
+        ],
+        "events": [
+          {
+            "kind": "session-opened",
+            "sessionId": "<session-id>",
+          },
+          {
+            "kind": "output",
+            "text": "REAL_COMMAND_OUTPUT",
+          },
+        ],
+        "turnTypes": [],
+      }
+    `)
+
+    await terminal.close()
+    terminal = undefined
+    await firstClient.close()
+    firstClient = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+  }, 120_000)
+
   it('streams a logged task, reports exact busy recovery, and cancels a real operation', async () => {
     const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
     const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE

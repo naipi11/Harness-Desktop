@@ -252,6 +252,39 @@ describe('public Runtime connector', () => {
     }
   })
 
+  it('accepts an unrelated absolute path inside a redacted diagnostic', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-unrelated-diagnostic-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { operation?: string } : undefined
+      if (body?.operation === 'status') {
+        return new Response(JSON.stringify({
+          ok: false,
+          result: {
+            kind: 'unavailable',
+            diagnostic: {
+              code: 'runtime-unavailable',
+              subject: 'Runtime',
+              message: 'Failure at C:\\unrelated-workspace\\ordinary-output.txt.',
+              correction: 'Inspect C:\\unrelated-workspace\\ordinary-output.txt and retry.',
+              diagnosticId: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return originalFetch(input, init)
+    }
+    try {
+      await expect(client.status()).rejects.toBeInstanceOf(RuntimeUnavailableError)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('rejects the exact endpoint token and selected Harness home in otherwise valid terminal output', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-exact-private-wire-'))
     const home = join(root, 'home')

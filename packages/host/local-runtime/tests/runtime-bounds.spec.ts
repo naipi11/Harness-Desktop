@@ -1,6 +1,7 @@
 /** Byte and item bounds at the Runtime's public response and terminal-page boundaries. */
 
 import { describe, expect, it } from 'vitest'
+import * as runtimeClient from '../src/runtime-client.ts'
 import {
   MAX_RUNTIME_CONTROL_RESPONSE_BYTES,
   MAX_TERMINAL_EVENT_PAGE_BYTES,
@@ -15,6 +16,14 @@ function exactJsonBytes(bytes: number): string {
   const prefix = '{"value":"'
   const suffix = '"}'
   return prefix + 'a'.repeat(bytes - Buffer.byteLength(prefix + suffix)) + suffix
+}
+
+function privateValueGuard(): (value: unknown, token: string, home: string, platform: string) => void {
+  const guard = (runtimeClient as unknown as {
+    assertNoPrivateRuntimeValues?: (value: unknown, token: string, home: string, platform: string) => void
+  }).assertNoPrivateRuntimeValues
+  expect(guard).toBeTypeOf('function')
+  return guard!
 }
 
 describe('bounded Runtime HTTP response JSON', () => {
@@ -69,5 +78,45 @@ describe('bounded terminal event pages', () => {
       events: [{ kind: 'output', text }, { kind: 'output', text }],
       nextCursor: 2,
     })).toThrow(RuntimeProtocolError)
+  })
+})
+
+describe('selected Runtime private-value redaction', () => {
+  it('normalizes Windows case and separators while respecting path-component boundaries', () => {
+    const guard = privateValueGuard()
+    const home = 'C:\\Users\\Alice\\Harness'
+    for (const rejected of [
+      'c:/users/ALICE/harness',
+      'C:/USERS/Alice/Harness/sessions/one.jsonl',
+      'failure under C:\\users\\alice/HARNESS\\projects',
+    ]) {
+      expect(() => { guard({ text: rejected }, 'private-token-value', home, 'win32') }).toThrow(RuntimeProtocolError)
+      try {
+        guard({ text: rejected }, 'private-token-value', home, 'win32')
+      } catch (error) {
+        expect(String(error)).not.toContain(home)
+        expect(String(error)).not.toContain('private-token-value')
+      }
+    }
+    expect(() => { guard({ text: 'C:\\Users\\Alice\\Harness-sibling\\file.txt' }, 'private-token-value', home, 'win32') })
+      .not.toThrow()
+    expect(() => { guard({ text: 'prefixC:\\Users\\Alice\\Harness\\ordinary' }, 'private-token-value', home, 'win32') })
+      .not.toThrow()
+  })
+
+  it('preserves POSIX case and rejects only exact or descendant component matches', () => {
+    const guard = privateValueGuard()
+    const home = '/Users/Alice/Harness'
+    expect(() => { guard({ text: home }, 'private-token-value', home, 'linux') }).toThrow(RuntimeProtocolError)
+    expect(() => { guard({ text: `${home}/sessions/one.jsonl` }, 'private-token-value', home, 'linux') })
+      .toThrow(RuntimeProtocolError)
+    expect(() => { guard({ text: '/users/alice/harness/sessions/one.jsonl' }, 'private-token-value', home, 'linux') })
+      .not.toThrow()
+    expect(() => { guard({ text: '/Users/Alice/Harness-sibling/file.txt' }, 'private-token-value', home, 'linux') })
+      .not.toThrow()
+    expect(() => { guard({ text: 'prefix/Users/Alice/Harness/ordinary' }, 'private-token-value', home, 'linux') })
+      .not.toThrow()
+    expect(() => { guard({ text: 'prefix private-token-value suffix' }, 'private-token-value', home, 'linux') })
+      .toThrow(RuntimeProtocolError)
   })
 })

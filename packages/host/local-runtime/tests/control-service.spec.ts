@@ -9,6 +9,7 @@ import { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import SessionStore, { SessionId as makeSessionId } from '@harness-desktop/dsh-session'
 import type { Agent } from '@harness-desktop/dsh-agent'
+import type { UserMessage } from '@harness-desktop/dsh-llm'
 import WebServer from '@harness-desktop/dsh-host-webserver'
 import {
   createRuntimeControlService,
@@ -69,12 +70,27 @@ async function start(
         let session = sessions.get(sessionId)
         if (session === undefined) session = sessions.create(sessionId, { meta: { cwd } })
         if (!fakeAgents.has(session.id)) {
+          const nextTurn: UserMessage[] = []
+          const nextStep: UserMessage[] = []
           fakeAgents.set(session.id, {
             id: session.id,
             session,
             status: 'running',
             options: {},
-            inbox: {} as never,
+            inbox: {
+              nextTurn,
+              nextStep,
+              remove(messageId: UserMessage['id']) {
+                for (const queue of [nextTurn, nextStep]) {
+                  const index = queue.findIndex(message => message.id === messageId)
+                  if (index !== -1) {
+                    queue.splice(index, 1)
+                    return true
+                  }
+                }
+                return false
+              },
+            } as never,
             ctx: {} as never,
             cancel() {},
             whenIdle: () => Promise.resolve(),
@@ -88,6 +104,16 @@ async function start(
         return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId: session.id } } }
       },
       async prompt(request) {
+        const agent = fakeAgents.get(request.payload.sessionId)
+        if (agent === undefined) throw new Error('test Runtime requires a live Agent')
+        const message = {
+          id: `message-${String(request.rpcId)}`,
+          role: 'user',
+          content: request.payload.content,
+          source: { kind: 'user', rpcId: request.rpcId },
+        } as UserMessage
+        ;(agent.inbox.nextTurn as UserMessage[]).push(message)
+        control?.handleAgentInboxInserted(agent, message)
         return { rpcId: request.rpcId, result: { ok: true as const, value: { accepted: true as const } } }
       },
       async models(request) {
@@ -269,6 +295,10 @@ describe('Runtime control service', () => {
     })
     const agent = agents.get(sessionId)
     if (agent === undefined) throw new Error('expected live cancel Agent')
+    const ownedMessage = agent.inbox.nextTurn[0]
+    if (ownedMessage === undefined) throw new Error('expected the owned pending message')
+    expect(agent.inbox.remove(ownedMessage.id)).toBe(true)
+    control!.handleAgentInboxClaimed(agent, ownedMessage, 1)
     const foreignTurn = { id: 'foreign-turn' }
     const foreignStep = { id: 'foreign-step' }
     const inbox = agent.inbox as unknown as { nextTurn: unknown[]; nextStep: unknown[] }
@@ -283,17 +313,151 @@ describe('Runtime control service', () => {
       }
     }
 
-    expect(await control!.cancelTerminal(owner, terminal)).toEqual({ kind: 'cancelled' })
+    const cancellation = control!.cancelTerminal(owner, terminal)
+    await control!.handleSessionEvent(agent.session, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } },
+    } as never)
+    expect(await cancellation).toEqual({ kind: 'cancelled' })
     expect(keepInbox).toBe(true)
     expect(inbox.nextTurn).toEqual([foreignTurn])
     expect(inbox.nextStep).toEqual([foreignStep])
   })
 
+  it('releases a confirmed unclaimed message without waiting for whole-Agent idle', async () => {
+    const { agents } = await start()
+    const owner = client('unclaimed-cancel-owner')
+    const terminal = client('unclaimed-cancel-terminal')
+    const sessionId = makeSessionId('unclaimed-cancel-session')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, {
+      workspace: root!, sessionId, initialTask: 'remove this pending message',
+    })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected live unclaimed Agent')
+    const wholeAgentIdle = Promise.withResolvers<undefined>()
+    let cancelCalls = 0
+    ;(agent as unknown as { whenIdle: () => Promise<void>; cancel: () => void }).whenIdle = () => wholeAgentIdle.promise
+    ;(agent as unknown as { cancel: () => void }).cancel = () => { cancelCalls += 1 }
+
+    const cancellation = control!.cancelTerminal(owner, terminal)
+    try {
+      await expect(Promise.race([
+        cancellation,
+        new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+      ])).resolves.toEqual({ kind: 'cancelled' })
+      expect(cancelCalls).toBe(0)
+      expect(agent.inbox.nextTurn).toEqual([])
+      const replacement = await runtime!.beginAgentWork(sessionId)
+      await runtime!.endAgentWork(replacement)
+    } finally {
+      wholeAgentIdle.resolve(undefined)
+      await cancellation
+    }
+  })
+
+  it('settles the exact cancelled turn while a foreign replacement remains hanging', async () => {
+    const wholeAgentIdle = Promise.withResolvers<undefined>()
+    let capturedRpcId: string | undefined
+    const liveAgent: { current: Agent | undefined } = { current: undefined }
+    const api: NonNullable<RuntimeControlServiceOptions['api']> = {
+      sessions: {
+        async create(request) {
+          const sessionId = request.payload.sessionId
+          if (sessionId === undefined) throw new Error('test Runtime requires an explicit session')
+          return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId } } }
+        },
+        async prompt(request) {
+          capturedRpcId = request.rpcId
+          return { rpcId: request.rpcId, result: { ok: true as const, value: { accepted: true as const } } }
+        },
+        async models(request) {
+          return {
+            rpcId: request.rpcId,
+            result: {
+              ok: true as const,
+              value: { current: { provider: 'test', model: 'test' }, routable: true, groups: [], failures: [] },
+            },
+          }
+        },
+        async selectModel(request) {
+          return {
+            rpcId: request.rpcId,
+            result: {
+              ok: true as const,
+              value: { selected: { provider: request.payload.provider, model: request.payload.model } },
+            },
+          }
+        },
+      },
+    }
+    const agents: NonNullable<RuntimeControlServiceOptions['agents']> = { get: () => liveAgent.current }
+    const started = await start(undefined, { api, agents })
+    const session = started.sessions.create(makeSessionId('foreign-replacement-session'), { meta: { cwd: root! } })
+    const foreignTurn = { id: 'foreign-next-turn' }
+    const foreignStep = { id: 'foreign-next-step' }
+    const inbox = {
+      nextTurn: [foreignTurn],
+      nextStep: [foreignStep],
+      remove: () => false,
+    }
+    let keepInbox: boolean | undefined
+    liveAgent.current = {
+      id: session.id,
+      session,
+      status: 'running',
+      options: {},
+      inbox: inbox as never,
+      ctx: {} as never,
+      cancel(_cause, options) { keepInbox = options?.keepInbox },
+      whenIdle: () => wholeAgentIdle.promise,
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send() {},
+      followup() {},
+      steer() {},
+      inject() {},
+    }
+    const owner = client('foreign-replacement-owner')
+    const terminal = client('foreign-replacement-terminal')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, {
+      workspace: root!, sessionId: session.id, initialTask: 'owned turn to cancel',
+    })
+    if (capturedRpcId === undefined) throw new Error('expected the owned rpc id')
+    control!.handleAgentInboxClaimed(liveAgent.current, {
+      source: { kind: 'user', rpcId: capturedRpcId },
+    } as never, 1)
+
+    const cancellation = control!.cancelTerminal(owner, terminal)
+    const exactEnd = control!.handleSessionEvent(session, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } },
+    } as never)
+    let foreignLease: Awaited<ReturnType<RuntimeHandle['beginAgentWork']>> | undefined
+    try {
+      const exactEndOutcome = await Promise.race([
+        exactEnd.then(() => 'settled' as const),
+        new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+      ])
+      expect(exactEndOutcome).toBe('settled')
+      foreignLease = await runtime!.beginAgentWork(session.id)
+      session.append('turn/start', { turn: 2 })
+      await expect(Promise.race([
+        cancellation,
+        new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+      ])).resolves.toEqual({ kind: 'cancelled' })
+      expect(keepInbox).toBe(true)
+      expect(inbox.nextTurn).toEqual([foreignTurn])
+      expect(inbox.nextStep).toEqual([foreignStep])
+      expect(session.events.at(-1)).toMatchObject({ type: 'turn/start', data: { turn: 2 } })
+      expect(() => runtime!.beginAgentWork(session.id)).toThrow('active writer')
+      expect(await control!.observeActiveWork(owner)).toEqual({ ownUiWork: [] })
+    } finally {
+      wholeAgentIdle.resolve(undefined)
+      await Promise.allSettled([exactEnd, cancellation])
+      if (foreignLease !== undefined) await runtime!.endAgentWork(foreignLease)
+    }
+  })
+
   it('ignores a stale prior turn completion after a replacement operation is admitted', async () => {
-    const firstIdle = Promise.withResolvers<undefined>()
-    const secondIdle = Promise.withResolvers<undefined>()
-    const idle = [firstIdle, secondIdle]
-    let idleIndex = 0
     let capturedRpcId: string | undefined
     const liveAgent: { current: Agent | undefined } = { current: undefined }
     const api: NonNullable<RuntimeControlServiceOptions['api']> = {
@@ -338,7 +502,7 @@ describe('Runtime control service', () => {
       inbox: {} as never,
       ctx: {} as never,
       cancel() {},
-      whenIdle: () => idle[idleIndex++]!.promise,
+      whenIdle: () => Promise.resolve(),
       runMaintenance: () => Promise.reject(new Error('not used')),
       send() {},
       followup() {},
@@ -358,7 +522,6 @@ describe('Runtime control service', () => {
     const firstEnd = control!.handleSessionEvent(session, {
       type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
     } as never)
-    firstIdle.resolve(undefined)
     await firstEnd
     expect(await control!.observeActiveWork(owner)).toEqual({ ownUiWork: [] })
 
@@ -373,7 +536,10 @@ describe('Runtime control service', () => {
       type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
     } as never)
     expect((await control!.observeActiveWork(owner)).ownUiWork).toHaveLength(1)
-    secondIdle.resolve(undefined)
+    await control!.handleSessionEvent(session, {
+      type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } },
+    } as never)
+    expect(await control!.observeActiveWork(owner)).toEqual({ ownUiWork: [] })
   })
 
   it('persists accepted, declined, collision, and corrected retry migration results without legacy paths', async () => {

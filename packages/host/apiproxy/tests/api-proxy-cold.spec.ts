@@ -728,7 +728,7 @@ describe('degenerate composition (no persistence, no factory)', () => {
 })
 
 describe('sessions.prompt synchronous rejection', () => {
-  it('returns a real command result without a turn and admits an unmatched slash prompt normally', async () => {
+  it('returns a real command result without a turn and rejects an unmatched slash command', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
@@ -756,8 +756,11 @@ describe('sessions.prompt synchronous rejection', () => {
     const unmatched = await api.sessions.prompt(request({
       sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/user-skill' }],
     }))
-    expect(unmatched.result.ok).toBe(true)
-    expect(followup).toHaveBeenCalledOnce()
+    expect(unmatched.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /user-skill', details: {} },
+    })
+    expect(followup).not.toHaveBeenCalled()
   })
 
   it('maps a synchronous send throw (disposed/invalid input) to agent-busy with the reason attached', async () => {

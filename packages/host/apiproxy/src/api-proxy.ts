@@ -2483,28 +2483,34 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const commandLine = commandCandidate(content)
         if (commandLine !== undefined) {
           const commands = ctx.get('commands')
-          if (commands !== undefined) {
-            try {
-              const execution = await commands.execute(agent, commandLine, new AbortController().signal)
-              if (execution?.result.kind === 'error') {
-                return err(request, { code: 'command-error', message: execution.result.text, details: {} })
-              }
-              if (execution !== undefined) {
-                return ok(request, {
-                  accepted: true as const,
-                  command: {
-                    kind: 'success' as const,
-                    ...execution.result.text === undefined ? {} : { text: execution.result.text },
-                  },
-                })
-              }
-            } catch (error: unknown) {
-              return err(request, {
-                code: 'command-error',
-                message: error instanceof Error ? error.message : 'command execution failed',
-                details: {},
-              })
+          if (commands === undefined) {
+            return err(request, {
+              code: 'internal', message: 'command registry is absent from this Host composition', details: {},
+            })
+          }
+          try {
+            const execution = await commands.execute(agent, commandLine, new AbortController().signal)
+            if (execution === undefined) {
+              const separator = commandLine.search(/\s/u)
+              const token = separator === -1 ? commandLine : commandLine.slice(0, separator)
+              return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
             }
+            if (execution.result.kind === 'error') {
+              return err(request, { code: 'command-error', message: execution.result.text, details: {} })
+            }
+            return ok(request, {
+              accepted: true as const,
+              command: {
+                kind: 'success' as const,
+                ...execution.result.text === undefined ? {} : { text: execution.result.text },
+              },
+            })
+          } catch (error: unknown) {
+            return err(request, {
+              code: 'command-error',
+              message: error instanceof Error ? error.message : 'command execution failed',
+              details: {},
+            })
           }
         }
         // Request identity and optional browser zone ride the exact durable user message.

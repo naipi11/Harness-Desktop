@@ -314,11 +314,10 @@ export interface SessionsApi {
 
   /**
    * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
-   * A prompt whose content is exactly one text block starting with '/' first tries the host command
-   * registry (mode-agnostic). A recognized command never reaches the model and returns ok with the
-   * command slot (including its success text when present); a usage/state error is `command-error`.
-   * An unrecognized name continues through ordinary Agent admission so pre-step consumers such as
-   * user-invoked skills retain their shared slash-input path.
+   * A prompt whose content is exactly one text block starting with '/' uses the host command registry
+   * (mode-agnostic) and never reaches the model. A recognized command returns ok with the command slot
+   * (including its success text when present); a usage/state error is `command-error`, and an
+   * unrecognized name is `unknown-command`.
    */
   /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`

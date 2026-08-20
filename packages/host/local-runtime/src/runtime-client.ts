@@ -109,8 +109,8 @@ export interface TerminalConnection {
   /**
    * Cancel only this terminal's exact admitted operation. An unclaimed message
    * is removed by id; a claimed operation is signalled with inbox preservation,
-   * then its correlated turn and Agent idle are awaited. Foreign queued and
-   * steering messages remain.
+   * then only its correlated `turn/end` and Runtime-lease cleanup are awaited.
+   * Foreign queued, steering, and replacement work remain independent.
    * @returns whether an active operation was cancelled.
    */
   cancel(): Promise<{ readonly kind: 'cancelled' | 'idle' }>
@@ -284,7 +284,7 @@ export interface RuntimeClient {
   /**
    * @returns settlement after cancelling this UI client's exact admitted
    *   operations, preserving unrelated inbox entries, and waiting for their
-   *   correlated turns and Agent idle states.
+   *   correlated `turn/end` records and Runtime-lease cleanup only.
    */
   stopOwnUiWork(): Promise<OwnUiWorkStopResult>
   /**
@@ -648,7 +648,7 @@ class RuntimeWire {
     }
     if (!response.ok) throw new RuntimeUnavailableError()
     const value = await readBoundedRuntimeResponseJson(response)
-    assertNoPrivateValues(value, this.endpoint.accessToken, this.harnessHome)
+    assertNoPrivateRuntimeValues(value, this.endpoint.accessToken, this.harnessHome)
     if (!isRecord(value) || !hasExactKeys(value, ['id', 'expiresAt'])
       || !isOpaqueId(value.id, 32) || !isSafeTimestamp(value.expiresAt)) throw new RuntimeProtocolError()
     return {
@@ -679,7 +679,7 @@ class RuntimeWire {
     }
     if (!response.ok) throw new RuntimeUnavailableError()
     const raw = await readBoundedRuntimeResponseJson(response)
-    assertNoPrivateValues(raw, this.endpoint.accessToken, this.harnessHome)
+    assertNoPrivateRuntimeValues(raw, this.endpoint.accessToken, this.harnessHome)
     const envelope = parseWireEnvelope(raw)
     if (envelope.ok) return parseSuccess(envelope.value)
     const result = parseRuntimeControlResult(envelope.result)
@@ -971,7 +971,7 @@ function isRootList(value: unknown): value is string[] {
 
 function isSafeDiagnosticText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && encodedBytes(value) <= 1024
-    && !/(?:access.?token|bearer|credential|secret|runtime-endpoint|[a-z]:\\|\/(?:Users|home|tmp)\/)/i.test(value)
+    && !/(?:access.?token|bearer|credential|secret|runtime-endpoint)/i.test(value)
 }
 
 function isBoundedText(value: unknown): value is string {
@@ -983,12 +983,25 @@ function encodedBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value))
 }
 
-function assertNoPrivateValues(value: unknown, token: string, home: string): void {
+/**
+ * Reject the exact endpoint token or selected home found in an untrusted decoded value.
+ * Windows matching folds case and separators; every platform requires a path-component boundary.
+ * @param value - decoded response value to inspect recursively.
+ * @param token - exact private endpoint token.
+ * @param home - selected absolute Harness home.
+ * @param platform - platform whose path spelling rules apply.
+ */
+export function assertNoPrivateRuntimeValues(
+  value: unknown,
+  token: string,
+  home: string,
+  platform: string = process.platform,
+): void {
   const pending: unknown[] = [value]
   while (pending.length > 0) {
     const candidate = pending.pop()
     if (typeof candidate === 'string') {
-      if ((token.length > 0 && candidate.includes(token)) || (home.length > 0 && candidate.includes(home))) {
+      if ((token.length > 0 && candidate.includes(token)) || containsSelectedHome(candidate, home, platform)) {
         throw new RuntimeProtocolError()
       }
     } else if (Array.isArray(candidate)) {
@@ -997,6 +1010,33 @@ function assertNoPrivateValues(value: unknown, token: string, home: string): voi
       for (const item of Object.values(candidate)) pending.push(item)
     }
   }
+}
+
+function containsSelectedHome(value: string, home: string, platform: string): boolean {
+  if (home.length === 0) return false
+  const windows = platform === 'win32'
+  const normalize = (input: string): string => windows ? input.replaceAll('/', '\\').toLowerCase() : input
+  const separator = windows ? '\\' : '/'
+  const normalizedHome = trimTrailingSeparators(normalize(home), separator, windows)
+  const normalizedValue = normalize(value)
+  let offset = 0
+  for (;;) {
+    const index = normalizedValue.indexOf(normalizedHome, offset)
+    if (index === -1) return false
+    const before = normalizedValue[index - 1]
+    const after = normalizedValue[index + normalizedHome.length]
+    const beginsAtBoundary = before === undefined || !/[\p{L}\p{N}_.-]/u.test(before)
+    const endsAtBoundary = after === undefined || after === separator || /[\s"'.,;:!?()[\]{}]/u.test(after)
+    if (beginsAtBoundary && endsAtBoundary) return true
+    offset = index + 1
+  }
+}
+
+function trimTrailingSeparators(value: string, separator: string, windows: boolean): string {
+  const rootLength = windows && /^[a-z]:\\/u.test(value) ? 3 : 1
+  let end = value.length
+  while (end > rootLength && value[end - 1] === separator) end -= 1
+  return value.slice(0, end)
 }
 
 async function discoverEndpoint(home: Branded<'HarnessHome'>): Promise<PrivateEndpointRecord | undefined> {

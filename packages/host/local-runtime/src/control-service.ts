@@ -56,6 +56,7 @@ interface WorkRecord {
   readonly runtimeLease: RuntimeWorkLease
   readonly agent: Agent
   readonly rpcId: RpcId
+  readonly finished: PromiseWithResolvers<void>
   messageId?: UserMessage['id']
   turn?: number
   settlement?: Promise<void>
@@ -203,17 +204,25 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     }
     return terminal
   }
-  const finishWork = async (record: WorkRecord): Promise<void> => {
-    if (work.get(record.id) !== record) return
-    await options.runtime.endAgentWork(record.runtimeLease)
-    if (work.get(record.id) !== record) return
-    work.delete(record.id)
-    const terminal = terminals.get(record.terminalId)
-    if (terminal?.workId === record.id) delete terminal.workId
-  }
-  const settleAtIdle = (record: WorkRecord): Promise<void> => {
-    record.settlement ??= record.agent.whenIdle().then(() => finishWork(record))
+  const finishWork = (record: WorkRecord): Promise<void> => {
+    if (record.settlement !== undefined) return record.settlement
+    record.settlement = (async () => {
+      if (work.get(record.id) !== record) return
+      await options.runtime.endAgentWork(record.runtimeLease)
+      if (work.get(record.id) !== record) return
+      work.delete(record.id)
+      const terminal = terminals.get(record.terminalId)
+      if (terminal?.workId === record.id) delete terminal.workId
+    })()
+    void record.settlement.then(record.finished.resolve, record.finished.reject)
     return record.settlement
+  }
+  const cancelWork = (record: WorkRecord): Promise<void> => {
+    if (record.turn === undefined && record.messageId !== undefined && record.agent.inbox.remove(record.messageId)) {
+      return finishWork(record)
+    }
+    record.agent.cancel({ kind: 'user' }, { keepInbox: true })
+    return record.finished.promise
   }
   const startTask = async (owner: RuntimeClientId, terminalId: RuntimeClientId, text: string): Promise<TerminalSubmitResult> => {
     const terminal = requireTerminal(owner, terminalId)
@@ -232,7 +241,12 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     }
     const id = randomUUID() as ActiveWorkId
     const rpcId = randomUUID() as RpcId
-    const record: WorkRecord = { id, owner, terminalId, runtimeLease, agent: terminal.agent, rpcId }
+    const finished = Promise.withResolvers<void>()
+    void finished.promise.catch(() => {
+      // finishWork's caller observes the same lease-cleanup rejection; this
+      // branch prevents an unhandled rejection when no cancellation waits.
+    })
+    const record: WorkRecord = { id, owner, terminalId, runtimeLease, agent: terminal.agent, rpcId, finished }
     work.set(id, record)
     terminal.workId = id
     try {
@@ -316,10 +330,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     async stopOwnUiWork(owner) {
       const owned = [...work.values()].filter(record => record.owner === owner)
       if (owned.length === 0) return { kind: 'none-active' }
-      for (const record of owned) {
-        cancelOperation(record)
-      }
-      const settled = await Promise.allSettled(owned.map(record => settleAtIdle(record)))
+      const settled = await Promise.allSettled(owned.map(record => cancelWork(record)))
       if (settled.some(result => result.status === 'rejected')) return { kind: 'failed', diagnostic: operationDiagnostic() }
       return { kind: 'stopped', work: owned.map(record => record.id) }
     },
@@ -371,8 +382,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       if (terminal.workId === undefined) return { kind: 'idle' }
       const record = work.get(terminal.workId)
       if (record === undefined || record.owner !== owner) return { kind: 'idle' }
-      cancelOperation(record)
-      await settleAtIdle(record)
+      await cancelWork(record)
       return { kind: 'cancelled' }
     },
     runTerminalControl(owner, terminalId, command) {
@@ -465,7 +475,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       for (const terminal of terminals.values()) publishSessionEvent(terminal, session, event)
       if (event.type !== 'turn/end') return
       const matching = [...work.values()].filter(record => record.agent.session === session && record.turn === event.data.turn)
-      await Promise.all(matching.map(record => settleAtIdle(record)))
+      await Promise.all(matching.map(record => finishWork(record)))
     },
     handleApprovalRequest(request, next) {
       const record = [...work.values()].find(candidate => candidate.agent === request.agent)
@@ -490,10 +500,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       for (const pending of approvals.values()) pending.resolve('cancelled')
       approvals.clear()
       const records = [...work.values()]
-      for (const record of records) {
-        cancelOperation(record)
-      }
-      const operations: Promise<unknown>[] = records.map(record => settleAtIdle(record))
+      const operations: Promise<unknown>[] = records.map(record => cancelWork(record))
       if (webLease !== undefined) operations.push(options.runtime.releaseBackgroundLease(webLease))
       for (const childId of children.keys()) operations.push(options.runtime.releaseClient(childId))
       for (const clientId of clients) operations.push(options.runtime.releaseClient(clientId))
@@ -534,11 +541,6 @@ function requireAgents(options: RuntimeControlServiceOptions): Pick<AgentRegistr
 
 function requireBaseClient(clients: ReadonlySet<RuntimeClientId>, clientId: RuntimeClientId): void {
   if (!clients.has(clientId)) throw new Error('host-local-runtime: client attachment is unavailable')
-}
-
-function cancelOperation(record: WorkRecord): void {
-  if (record.turn === undefined && record.messageId !== undefined && record.agent.inbox.remove(record.messageId)) return
-  record.agent.cancel({ kind: 'user' }, { keepInbox: true })
 }
 
 function messageRpcId(message: UserMessage): RpcId | undefined {
