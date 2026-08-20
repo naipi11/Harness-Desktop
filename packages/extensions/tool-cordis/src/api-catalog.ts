@@ -1487,7 +1487,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'skills',
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
-    description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
+    description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. The same layers track user-invocation consumers independently from provider discovery. The service exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
@@ -1500,6 +1500,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register a borrowed readonly runtime skill into the calling context\'s layer. Project entries outrank runtime entries, which outrank user entries, within one layer. Same-name runtime entries in one layer are first-wins; a duplicate logs a warning and receives a no-op disposer so it cannot remove the winner.',
         parameters: [{ name: 'skill', description: 'the skill definition input; omitted invocation and provider fields receive defaults.' }],
         returns: 'the exact Cordis effect disposer, preserving composite teardown order and invalidating caches.',
+      },
+      {
+        signature: 'attachUserInvocationConsumer(): () => void',
+        description: 'Attach an effect-scoped consumer that injects user-invoked skill bodies at the Agent pre-step. An unscoped registration serves every Agent; one made through an Agent composition serves only that scope and its descendants.',
+        parameters: [],
+        returns: 'the exact Cordis effect disposer that detaches this consumer.',
+      },
+      {
+        signature: 'hasUserInvocationConsumer(scope: ScopeKey): boolean',
+        description: 'Test whether an attached pre-step consumer serves one Agent scope. This checks the global layer plus that scope\'s ancestor chain; a consumer in a sibling Agent composition does not satisfy the query.',
+        parameters: [{ name: 'scope', description: 'Agent scope whose user-invocation path is being admitted.' }],
+        returns: 'whether a reachable user-invocation consumer is attached.',
       },
       {
         signature: 'async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>',

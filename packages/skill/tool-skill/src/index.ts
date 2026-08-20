@@ -69,8 +69,10 @@ export const Config: z<Config> = z.object({
 })
 
 /**
- * Register the model-facing skill loader and its visibility-matched
- * durable session catalog. The catalog is emitted only when the calling agent
+ * Register the model-facing skill loader, its visibility-matched durable
+ * session catalog, and the user-invocation pre-step consumer. The consumer
+ * advertises its effect-scoped availability through `ctx.skills` only after
+ * both listeners are live. The catalog is emitted only when the calling agent
  * resolves this plugin's exact tool registration; a restriction or scoped
  * same-name shadow therefore removes both the schema and its call guidance.
  */
@@ -250,6 +252,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         : decision.messages.map(message => message.id === existing.message.id ? catalog : message),
     }
   })
+
+  // Register only after both pre-step listeners are live. ApiProxy uses this
+  // scope-owned capability to fail closed before admitting a slash gesture;
+  // reverse teardown detaches it before either listener disappears.
+  ctx.skills.attachUserInvocationConsumer()
 }
 
 function renderCatalogMessage(entries: SkillCatalogSource['entries']): UserMessage {

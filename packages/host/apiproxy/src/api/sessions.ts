@@ -336,8 +336,9 @@ export interface SessionsApi {
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
    * `subagent.prompt`. Exactly one text block starting with `/` first uses the host command registry;
    * a recognized command returns its optional success text without a user message or turn. After a
-   * command miss, a complete Agent skill catalog admits a user-invocable leading name for
-   * `dsh-tool-skill`; incomplete discovery is `internal`, and a complete miss is `unknown-command`.
+   * command miss, admission requires both an effect-scoped `dsh-tool-skill` consumer serving the
+   * exact Agent and a user-invocable leading name in its complete skill catalog. With a consumer,
+   * incomplete discovery is `internal`; a missing consumer or complete catalog miss is `unknown-command`.
    */
   prompt(request: RpcRequest<{
     sessionId: SessionId

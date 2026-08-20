@@ -68,7 +68,7 @@ describe('Runtime real control transcript', () => {
     try {
       runtime = await startRuntimeProcess({
         mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
-        userSkillPreset: true,
+        userSkillPreset: 'consumer-mounted',
       })
     } finally {
       if (previousCommand === undefined) delete process.env.DSH_RUNTIME_TEST_COMMAND
@@ -183,6 +183,86 @@ describe('Runtime real control transcript', () => {
           },
           "ok": false,
         },
+      }
+    `)
+
+    await terminal.close()
+    terminal = undefined
+    await firstClient.close()
+    firstClient = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+  }, 120_000)
+
+  it('refuses a catalog skill when the assembled Agent omits its pre-step consumer', async () => {
+    runtime = await startRuntimeProcess({
+      mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
+      userSkillPreset: 'consumer-missing',
+    })
+    const endpoint = await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    firstClient = await connector.connect({ start: false })
+    terminal = await firstClient.openTerminal({ workspace: runtime.cwd })
+    const iterator = terminal.events()[Symbol.asyncIterator]()
+    const opened = await nextKind(iterator, 'session-opened')
+    if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const catalog = await runtimeRpc<{ skills: Array<{ name: string; description: string; modelInvocable: boolean }> }>(
+      endpoint.port, cookie, 'skill.list', { sessionId: opened.sessionId },
+    )
+    const response = await fetch(`http://127.0.0.1:${String(endpoint.port)}/api/session.prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie, origin: `http://127.0.0.1:${String(endpoint.port)}` },
+      body: JSON.stringify({
+        type: 'client-request', rpcId: 'task6-missing-skill-consumer', method: 'session.prompt',
+        payload: {
+          sessionId: opened.sessionId, mode: 'queue',
+          content: [{ type: 'text', text: '/runtime-user-skill' }],
+        },
+      }),
+    })
+    expect(response.ok).toBe(true)
+    const envelope = await response.json() as { result: unknown }
+    const history = await runtimeRpc<{ events: Array<{ event: {
+      type: string
+      data?: { source?: { kind?: string } }
+    } }> }>(
+      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+    )
+    const transcript = normalizeProtocol({
+      catalog: catalog.skills,
+      active: await firstClient.observeActiveWork(),
+      result: envelope.result,
+      skillInvocations: history.events.filter(({ event }) =>
+        event.type === 'user/message' && event.data?.source?.kind === 'skill-invocation'),
+      turnTypes: history.events.map(({ event }) => event.type)
+        .filter(type => type === 'turn/start' || type === 'turn/end'),
+    })
+    expect(JSON.stringify(transcript)).not.toContain(endpoint.accessToken)
+    expect(JSON.stringify(transcript)).not.toContain(runtime.harnessHome)
+    expect(transcript).toMatchInlineSnapshot(`
+      {
+        "active": {
+          "ownUiWork": [],
+        },
+        "catalog": [
+          {
+            "description": "Deterministic user-only Runtime skill",
+            "modelInvocable": false,
+            "name": "runtime-user-skill",
+          },
+        ],
+        "result": {
+          "error": {
+            "code": "unknown-command",
+            "details": {},
+            "message": "unknown command: /runtime-user-skill",
+          },
+          "ok": false,
+        },
+        "skillInvocations": [],
+        "turnTypes": [],
       }
     `)
 

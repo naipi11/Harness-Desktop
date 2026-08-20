@@ -157,6 +157,24 @@ async function mintAgentScope(ctx: Context, subject: string | Agent): Promise<{ 
 }
 
 describe('dsh-tool-skill', () => {
+  it('registers user-invocation support only for the Agents its scope serves', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SkillRegistry)
+    const served = await mintAgentScope(ctx, '/workspace/served')
+    const unserved = agentForCwd('/workspace/unserved')
+    const consumer = await served.scope.ctx.plugin(toolSkill)
+
+    expect(ctx.skills.hasUserInvocationConsumer(served.agent)).toBe(true)
+    expect(ctx.skills.hasUserInvocationConsumer(unserved)).toBe(false)
+
+    await consumer.dispose()
+    expect(ctx.skills.hasUserInvocationConsumer(served.agent)).toBe(false)
+    await served.scope.dispose()
+  })
+
   it('registers the skill tool schema and removes it on dispose', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)

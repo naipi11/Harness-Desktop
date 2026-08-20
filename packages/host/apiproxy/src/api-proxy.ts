@@ -1817,13 +1817,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return goals
   }
 
-  /** Classify an unregistered command-like line against the exact Agent skill catalog. */
+  /** Classify an unregistered command-like line against the exact Agent's consumer and skill catalog. */
   async function resolveSkillGesture(agent: Agent, line: string): Promise<'user-skill' | 'unknown' | 'unavailable'> {
     const name = leadingSkillName(line)
     if (name === undefined) return 'unknown'
     const presets = ctx.get('agentPresets')
     const skills = presets?.serviceFor(agent, 'skills') ?? ctx.get('skills')
     if (skills === undefined) return 'unknown'
+    if (!skills.hasUserInvocationConsumer(agent)) return 'unknown'
     try {
       const snapshot = await skills.snapshot({ cwd: agent.session.header.cwd, scope: agent })
       if (!snapshot.complete) return 'unavailable'

@@ -64,8 +64,8 @@ export interface StartRuntimeProcessOptions {
   readonly harnessHomeEnv?: string
   readonly failImport?: string
   readonly failureMessage?: string
-  /** Mount the real tool-skill consumer and deterministic user-only skill in the standard preset. */
-  readonly userSkillPreset?: boolean
+  /** Mount the deterministic user-only skill with or without its real pre-step consumer. */
+  readonly userSkillPreset?: 'consumer-mounted' | 'consumer-missing'
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -76,9 +76,12 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
   const platformHome = join(cwd, 'platform-default-home')
   const tracePath = join(cwd, 'runtime-trace.jsonl')
   await mkdir(join(harnessHome, '.agent-presets', 'standard'), { recursive: true })
-  const agentPreset = options.userSkillPreset === true
-    ? [{ name: sourceToolSkill }, { name: sourceUserSkillFixture }]
-    : []
+  const agentPreset = options.userSkillPreset === undefined
+    ? []
+    : [
+      ...options.userSkillPreset === 'consumer-mounted' ? [{ name: sourceToolSkill }] : [],
+      { name: sourceUserSkillFixture },
+    ]
   await writeFile(
     join(harnessHome, '.agent-presets', 'standard', 'agent.cordis.yml'),
     `${JSON.stringify(agentPreset, undefined, 2)}\n`,

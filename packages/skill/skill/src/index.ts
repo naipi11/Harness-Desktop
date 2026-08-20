@@ -4,15 +4,16 @@
  * This package owns the Service Definition role of the skill capability seam.
  * Concrete
  * providers such as `@harness-desktop/dsh-skill-filesystem` decide where skills come
- * from; this service only merges provider catalogs, resolves the winning skill
- * for a name, and exposes the winning summaries and definitions to consumers.
+ * from; this service merges provider catalogs, resolves the winning skill for
+ * a name, exposes summaries and definitions, and tracks whether an effect-scoped
+ * user-invocation consumer serves the Agent being admitted.
  *
  * @module @harness-desktop/dsh-skill
  */
 
 import { Context, Service } from '@harness-desktop/cordis'
 import { assertNever } from '@harness-desktop/dsh-llm'
-import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@harness-desktop/dsh-scope'
+import { AnonymousEntries, NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@harness-desktop/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@harness-desktop/dsh-scope'
 import z from '@harness-desktop/schemastery'
 import type Schema from '@harness-desktop/schemastery'
@@ -330,6 +331,8 @@ class SkillLayer implements ScopeLayer {
   readonly providers: NamedEntries<RegisteredProvider>
   /** Runtime skills registered through contexts carrying this scope. */
   readonly runtime = new Map<string, SkillDefinition>()
+  /** Pre-step consumers that can turn a direct user gesture into injected instructions. */
+  readonly userInvocationConsumers = new AnonymousEntries<symbol>()
 
   constructor(scope: ScopeKey | undefined) {
     this.providers = new NamedEntries(name => new Error(scope === undefined
@@ -339,7 +342,7 @@ class SkillLayer implements ScopeLayer {
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.providers.isEmpty() && this.runtime.size === 0
+    return this.providers.isEmpty() && this.runtime.size === 0 && this.userInvocationConsumers.isEmpty()
   }
 }
 
@@ -351,8 +354,9 @@ class SkillLayer implements ScopeLayer {
  * composition lands in that preset's layer. A read merges the global layer
  * with the viewing scope's chain — the nearest layer's entry wins a duplicate
  * name outright, and the rank order decides duplicates only within one layer.
- * It exposes sorted invocation-neutral summaries and loads full skill bodies
- * on demand.
+ * The same layers track user-invocation consumers independently from provider
+ * discovery. The service exposes sorted invocation-neutral summaries and loads
+ * full skill bodies on demand.
  */
 export class SkillRegistry extends Service {
   static Config: Schema<Config> = z.object({
@@ -458,6 +462,34 @@ export class SkillRegistry extends Service {
       },
       { label: 'skills.register()' },
     )
+  }
+
+  /**
+   * Attach an effect-scoped consumer that injects user-invoked skill bodies at
+   * the Agent pre-step. An unscoped registration serves every Agent; one made
+   * through an Agent composition serves only that scope and its descendants.
+   * @returns the exact Cordis effect disposer that detaches this consumer.
+   */
+  attachUserInvocationConsumer(): () => void {
+    const token = Symbol('user-invocation-consumer')
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.userInvocationConsumers.append(token),
+      { label: 'skills.attachUserInvocationConsumer()', notify: false },
+    )
+  }
+
+  /**
+   * Test whether an attached pre-step consumer serves one Agent scope. This
+   * checks the global layer plus that scope's ancestor chain; a consumer in a
+   * sibling Agent composition does not satisfy the query.
+   * @param scope - Agent scope whose user-invocation path is being admitted.
+   * @returns whether a reachable user-invocation consumer is attached.
+   */
+  hasUserInvocationConsumer(scope: ScopeKey): boolean {
+    if (!this.layers.global.userInvocationConsumers.isEmpty()) return true
+    return this.layers.chainLayers(scope)
+      .some(layer => !layer.userInvocationConsumers.isEmpty())
   }
 
   /**

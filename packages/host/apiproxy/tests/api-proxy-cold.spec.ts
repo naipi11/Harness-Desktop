@@ -13,6 +13,10 @@ import SessionStore from '@harness-desktop/dsh-session'
 import AgentRegistry from '@harness-desktop/dsh-agent'
 import CommandRuntime from '@harness-desktop/dsh-commands'
 import SkillRegistry from '@harness-desktop/dsh-skill'
+import SystemPrompt from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime from '@harness-desktop/dsh-tools'
+import * as ToolSkill from '@harness-desktop/dsh-tool-skill'
+import { createScope } from '@harness-desktop/dsh-scope'
 import { TypertLookupFailure } from '@harness-desktop/dsh-typert-protocol'
 import TypertRegistry from '@harness-desktop/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@harness-desktop/dsh-llm'
@@ -735,6 +739,9 @@ describe('sessions.prompt synchronous rejection', () => {
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
     await ctx.plugin(UserQuestionService)
     const session = ctx.sessions.create(sid('session-command-result'))
     const followup = vi.fn()
@@ -775,12 +782,49 @@ describe('sessions.prompt synchronous rejection', () => {
     expect(followup).toHaveBeenCalledTimes(1)
   })
 
+  it('refuses a valid catalog skill when the exact Agent has no user-invocation consumer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(UserQuestionService)
+    const foreignConsumer = createScope(ctx, {})
+    await foreignConsumer.ctx.plugin(ToolSkill)
+    const session = ctx.sessions.create(sid('session-skill-without-consumer'))
+    const followup = vi.fn()
+    ctx.agents.register({
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent)
+    ctx.skills.register({
+      name: 'catalog-only-skill', description: 'Catalog entry without a consumer.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/catalog-only-skill' }],
+    }))
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /catalog-only-skill', details: {} },
+    })
+    expect(followup).not.toHaveBeenCalled()
+    await foreignConsumer.dispose()
+  })
+
   it('does not classify an incomplete skill catalog as an unknown command', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
     await ctx.plugin(UserQuestionService)
     const session = ctx.sessions.create(sid('session-incomplete-skill-catalog'))
     const followup = vi.fn()
@@ -807,6 +851,9 @@ describe('sessions.prompt synchronous rejection', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
     await ctx.plugin(UserQuestionService)
     const session = ctx.sessions.create(sid('session-skill-without-commands'))
     const followup = vi.fn()

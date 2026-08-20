@@ -4877,12 +4877,21 @@ importers:
       '@harness-desktop/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@harness-desktop/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
       '@harness-desktop/dsh-storage':
         specifier: workspace:^
         version: link:../../storage/storage
       '@harness-desktop/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
+      '@harness-desktop/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@harness-desktop/dsh-tool-skill':
+        specifier: workspace:^
+        version: link:../../skill/tool-skill
       '@harness-desktop/dsh-typert-protocol':
         specifier: workspace:^
         version: link:../../typert/protocol

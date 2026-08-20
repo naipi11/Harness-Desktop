@@ -85,8 +85,11 @@
     "@harness-desktop/dsh-agent-presets": "workspace:^",
     "@harness-desktop/dsh-cordis-host-runner": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-scope": "workspace:^",
     "@harness-desktop/dsh-storage": "workspace:^",
     "@harness-desktop/dsh-storage-domain": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/dsh-tool-skill": "workspace:^",
     "@harness-desktop/dsh-typert-protocol": "workspace:^",
     "@harness-desktop/dsh-typert-registry": "workspace:^",
     "@harness-desktop/cordis": "workspace:^"

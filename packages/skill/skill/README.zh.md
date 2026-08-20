@@ -17,6 +17,8 @@
 - `ctx.skills.list({ cwd?, signal?, scope? })` 借用只读视图选项，然后返回当前工作区中的全部胜出摘要；这些摘要在全局层与观察 scope 链之间合并，并按名称排序。消费方在自身边界调用 `isModelInvocable(skill)` 或 `isUserInvocable(skill)`。
 - `ctx.skills.get(name, { cwd?, signal?, scope? })` 在发现和加载中使用同一组只读选项和胜出候选项；在发现或缓存命中后重新检查取消，让提供方加载与信号竞速，验证已加载定义，然后无论调用策略如何都将其返回。
 - `ctx.skills.register(skill): () => void` 将只读运行时嵌入式 skill 注册进调用方上下文所在层，省略时添加允许模型和用户调用的策略以及 `provider: "runtime"`。同层同名运行时注册使用先到先得：重复项会记录警告，并获得无操作 disposer。成功注册会返回精确的 Cordis disposer，以供有序组合拆卸。
+- `ctx.skills.attachUserInvocationConsumer(): () => void` 在调用方上下文所在层挂接一个受 effect 作用域约束的 pre-step 消费方。未限定 scope 的注册服务所有 Agent；带 scope 的注册只服务该 scope 及其后代。精确 disposer 只移除这项注册，不会使提供方目录失效。
+- `ctx.skills.hasUserInvocationConsumer(scope): boolean` 检查全局层与所给 Agent scope 的祖先链。相邻组合中挂接的消费方不能满足该查询。
 
 ### 事件
 
@@ -61,7 +63,7 @@
 
 ## 消费方边界
 
-注册表不渲染模型指引，也不注册面向模型的工具。[`@harness-desktop/dsh-tool-skill`](../tool-skill) 消费 `ctx.skills` 以提供持久会话目录和 `skill` 工具，因此提供方仍与模型接口独立。
+注册表不渲染模型指引，也不注册面向模型的工具。[`@harness-desktop/dsh-tool-skill`](../tool-skill) 消费 `ctx.skills`，以提供持久会话目录、`skill` 工具和用户调用 pre-step 监听器。该消费方只在监听器存活后挂接一项按 owner 寻址的注册；宿主 prompt 准入必须先确认精确 Agent 拥有该注册，目录命中才能进入模型。因此，提供方仍可独立组合，而不会公布一条缺少消费方的调用路径。
 
 ## 模型体验
 
