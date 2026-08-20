@@ -12,7 +12,7 @@ The endpoint record contains the protocol version, Runtime identity, port, proce
 
 Runtime-local routes accept native control only at the exact `127.0.0.1` authority with the private endpoint bearer token. A native caller mints a 60-second, single-use opaque handoff; `POST /_harness/handoff` consumes that value only from one URL-encoded form body, emits no CORS permission, and redirects cleanly after setting a session `HttpOnly; SameSite=Strict; Path=/` cookie with no expiry. The in-memory authenticator requires that exact Runtime Origin and cookie for Dashboard API and event carriers, while a launcher-owned cleanup controller removes only its bootstrap document and owner directory once after dispatch, exchange settlement, or expiry. Tokens, handoffs, and session values stay outside public exports, diagnostics, URLs, and browser script storage.
 
-The published package payload includes a private Runtime assembly module that mounts these routes and accepts the existing authenticated Connection callback. It owns each clean local bootstrap document through native dispatch and form-exchange settlement; the package `exports` map keeps that token-bearing assembly and its inputs outside application imports.
+The Runtime owner acquires the lock before it boots one application composition, requires that composition to expose a healthy `127.0.0.1` WebServer on an OS-assigned port, then publishes the private endpoint. It shares one injected `HarnessHomeProvider` with that composition, counts actual client attachments, agent work, and explicit background leases, and begins configured idle shutdown only when all three are absent. Ordered shutdown flushes composed durable services, removes the endpoint, releases the lock, and disposes the Cordis root. `startRuntime()` and its handle are orchestration internals; the connection and control API is deferred to the Runtime client layer.
 
 ## Model Experience
 
@@ -32,4 +32,4 @@ None. This package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **Runtime composition is separate from these primitives** — later host assembly owns the concrete control service, client attachment, leases, and idle shutdown.
+- **Runtime client connection and control are deferred** — the next layer owns endpoint discovery, authenticated attachment, and session-control APIs.

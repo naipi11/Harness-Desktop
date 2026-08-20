@@ -12,7 +12,7 @@ endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私
 
 Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoint bearer token 接受原生控制。原生调用方会签发一个 60 秒、单次使用的不透明 handoff；`POST /_harness/handoff` 只从一个 URL 编码表单正文消费该值，不发送 CORS permission，并在设置不带 expiry 的 `HttpOnly; SameSite=Strict; Path=/` session cookie 后执行干净重定向。内存认证器要求 Dashboard API 与 event carrier 同时具有该精确 Runtime Origin 和 cookie；启动器拥有的 cleanup controller 在 dispatch、exchange settlement 或 expiry 后只清理一次其 bootstrap document 与 owner directory。token、handoff 和 session 值不会进入公开导出、诊断、URL 或浏览器脚本存储。
 
-发布的包内容包含一个私有 Runtime assembly module，用于挂载这些路由并接收既有的 authenticated Connection callback。它从原生 dispatch 到表单 exchange settlement 全程拥有每个干净本地 bootstrap document；包的 `exports` map 将该含 token 的 assembly 及其输入排除在应用导入之外。
+Runtime owner 会在启动一个应用组合前取得锁，要求该组合公开一个健康的 `127.0.0.1` WebServer 和操作系统分配的端口，然后才发布私有 endpoint。它向该组合共享同一个注入的 `HarnessHomeProvider`，计数实际客户端附加、agent work 与显式 background lease，并且只在三者均不存在时开始配置的空闲关闭。关闭按顺序刷新组合中的持久化服务、移除 endpoint、释放锁，再 dispose Cordis 根。`startRuntime()` 及其 handle 是编排内部实现；连接与控制 API 留给 Runtime client 层。
 
 ## 模型体验
 
@@ -32,4 +32,4 @@ Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoi
 
 ## 已知限制与暂缓事项
 
-- **Runtime 组合不属于这些基础原语** — 后续宿主组装负责具体 control service、客户端附加、lease 与空闲关闭。
+- **Runtime client 连接与控制暂缓** — 下一层负责 endpoint discovery、已认证附加和 session-control API。

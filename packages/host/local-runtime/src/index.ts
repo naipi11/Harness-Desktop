@@ -20,3 +20,17 @@ export {
 export type { ProcessIdentity } from './process-identity.ts'
 
 export type { RedactedRuntimeStatus, RuntimeId } from './endpoint-record.ts'
+
+export {
+  startRuntime,
+  type BackgroundLease,
+  type BackgroundLeaseId,
+  type RuntimeAttachment,
+  type RuntimeBoot,
+  type RuntimeClientId,
+  type RuntimeHandle,
+  type RuntimeWorkLease,
+  type RuntimeWorkLeaseId,
+  type SessionId,
+  type StartRuntimeConfig,
+} from './runtime.ts'

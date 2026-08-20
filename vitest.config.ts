@@ -97,6 +97,7 @@ const testIncludes = [
   // credentialed provider e2e suites it is keyless and belongs in the focused
   // default command required by the Runtime authentication foundation.
   'packages/host/local-runtime/tests/local-auth.e2e.ts',
+  'packages/host/local-runtime/tests/runtime-*.e2e.ts',
   'apps/*/tests/**/*.spec.ts',
   'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',

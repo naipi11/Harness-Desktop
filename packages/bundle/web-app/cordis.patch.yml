@@ -114,10 +114,9 @@
     # the web-runtime row below through the fallback seat.
     - id: webserver
       name: '@harness-desktop/dsh-host-webserver'
-      inject: [webStartup]
       config:
-        host: !!js ctx.webStartup.host ?? '127.0.0.1'
-        port: !!js ctx.webStartup.port ?? 3080
+        host: '127.0.0.1'
+        port: 0
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the

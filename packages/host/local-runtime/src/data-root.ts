@@ -3,6 +3,7 @@
 import { posix, win32 } from 'node:path'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import { expandHomePath } from '@harness-desktop/dsh-home-paths'
+import { createHarnessHomeProvider, type HarnessHomeProvider } from './harness-home-provider.ts'
 
 /** Absolute path to the sole writable Harness Desktop data root. */
 export type HarnessHome = Branded<'HarnessHome'>
@@ -22,11 +23,7 @@ export interface HarnessHomeResolution {
   readonly legacyDshHome: string | undefined
 }
 
-/** One already-resolved root injected into every local durable writer. */
-export interface HarnessHomeProvider {
-  readonly home: HarnessHome
-  path(...segments: readonly string[]): string
-}
+export type { HarnessHomeProvider } from './harness-home-provider.ts'
 
 /** Environment variable that selects the writable Harness Desktop data root. */
 export const HARNESS_HOME_ENV = 'HARNESS_HOME'
@@ -91,9 +88,5 @@ export function resolveHarnessHome(input: HarnessHomeInput = {}): HarnessHomeRes
  * @returns a provider that joins child paths beneath the resolved root.
  */
 export function createLocalRuntimePlugin(config: HarnessHomeInput = {}): HarnessHomeProvider {
-  const home = resolveHarnessHome(config).path
-  return Object.freeze({
-    home,
-    path: (...segments: readonly string[]) => platformPaths(config.platform ?? process.platform).join(home, ...segments),
-  })
+  return createHarnessHomeProvider(resolveHarnessHome(config).path, config.platform ?? process.platform)
 }
