@@ -4,140 +4,50 @@ English | [中文](2026-08-18-harness-unified-local-runtime-design.zh.md)
 
 ## Status and scope
 
-This design defines the Runtime, persistence, public-entry, and desktop-integration architecture for Harness Desktop 1.1.0. It is the authoritative design for `harness`, `harness web`, and `harness desktop` on one computer.
+This document maps the current Runtime Foundation implemented by [`@harness-desktop/dsh-host-local-runtime`](../../../packages/host/local-runtime/README.md). The [Harness Desktop product topology Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) owns the durable rationale and rejected topologies. The [Harness Desktop product architecture design](2026-08-15-harness-desktop-design.md) retains broader presentation, packaging, and release plans.
 
-It refines the runtime ownership and client topology in the [Harness Desktop product architecture design](2026-08-15-harness-desktop-design.md). The earlier design continues to describe the application foundation and release constraints where this document does not replace them.
+The foundation supplies one shared local process, its persistence ownership, private authentication, migration transaction, lifecycle accounting, and public Node API. CLI, Web, and Desktop presentation layers consume that API in later work; they and cross-client product acceptance are not part of the shipped foundation described here.
 
-The durable topology rationale is recorded in the [Harness Desktop product topology Agent Note](../../../.agents/notes/proposed/architecture/2026-08-15-harness-desktop-product-topology.md).
+## Runtime ownership
 
-## Product promise
+One Runtime process owns one `HARNESS_HOME` and is its sole persistence writer. It acquires the per-home lock before booting the canonical base-and-Web Cordis composition, then supplies one injected `HarnessHomeProvider` to the API, Dashboard assets, session, settings, workspace, storage, and credential-reference providers.
 
-- `harness` is an interactive terminal coding agent, not a shortcut to a browser.
-- `harness web` is an independently usable browser Dashboard.
-- `harness desktop` is an independently usable native desktop application.
-- The three clients on one computer show the same projects, sessions, model settings, and credential references through one local Runtime.
-- No client reads or writes Harness persistence directly; the Runtime serializes durable operations and protects the local data directory.
+The lock records PID and operating-system process-start identity. A cross-process recovery guard serializes identity probing and stale replacement. A live or unverifiable identity remains authoritative; only a proved-absent identity permits replacement. Release removes only the acquiring Runtime's unchanged record.
 
-## Out of scope
+## Endpoint and Dashboard authentication
 
-- Harness 1.1.0 does not synchronize projects, sessions, settings, or credentials between computers.
-- The Runtime never listens on a LAN address and is not a remotely managed service.
-- Project records reference user-owned folders; Harness never copies an entire workspace into its data directory.
-- The desktop application does not create a separate conversation engine, persistence database, or credential store.
-- The product does not copy DeepSeek characters, logos, names, source art, or other identifiable visual assets.
+The Runtime binds an operating-system-assigned port on `127.0.0.1`. Its current-user-only endpoint record contains protocol version, Runtime identity, port, process identity, and a private access token. Protected same-directory temporary files and atomic renames publish and retire the record without overwriting a newer owner.
 
-## Local Runtime
+Native control accepts the exact loopback authority with the private bearer token. A Dashboard attachment mints a 60-second, single-use opaque handoff whose value travels only in one URL-encoded form body. The exchange emits no CORS permission and returns a clean redirect with a session `HttpOnly; SameSite=Strict; Path=/` cookie without an expiry attribute. Dashboard API and event requests require that cookie and the exact Runtime origin.
 
-### Process topology
-
-```mermaid
-flowchart LR
-  Cli["harness terminal client"] --> Runtime["Harness local Runtime"]
-  Web["harness web Dashboard"] --> Runtime
-  Desktop["Harness Desktop"] --> Runtime
-  Runtime --> Data["HARNESS_HOME: projects, sessions, settings, credential references"]
-  Runtime --> Agent["Harness plugin composition, tools, agents, providers"]
-```
-
-One Runtime instance owns one `HARNESS_HOME`. It assembles the existing Harness Web composition, API gateway, session services, settings services, and credential-reference services. It provides the authenticated local API that every client uses and remains the only process allowed to mutate durable Harness state.
-
-The first client that needs the Runtime starts it; a client that finds a healthy instance attaches to it. Startup uses an atomic per-home instance lock. The lock records a process identifier and platform-specific process-start identity so PID reuse cannot be mistaken for a live owner. An abandoned lock or endpoint record is removed only after the recorded process identity is proved dead.
-
-The Runtime binds an OS-selected random port on `127.0.0.1` only. Its endpoint record contains the protocol version, port, process identity, and an opaque local access token. The record is atomically replaced and is readable only by the current OS user. The token never appears in a command line, browser URL, transcript, diagnostic bundle, or persisted browser storage. Only a CLI launcher or the Electron main process uses the token for private loopback control operations; Dashboard JavaScript and the Electron renderer never receive it.
-
-### Local Dashboard authentication
-
-An authenticated launcher or Electron main process mints a high-entropy opaque, one-time browser handoff secret for a specific Runtime endpoint. The handoff expires within 60 seconds and is retained only in Runtime memory until its first successful exchange. The launcher creates a current-user-only, one-time local bootstrap directory and document, verifies owner-only POSIX modes or the current-user Windows ACL, rejects a broader-access location, and opens a clean file URL whose HTML body has the hidden handoff field. A local file has an opaque origin, so its top-level form `POST` to `http://127.0.0.1:<port>/_harness/handoff` is intentionally cross-origin: the handler does not require Origin equality, emits no CORS permission, authenticates only the form-body secret, atomically consumes it once, and returns a clean `303` Dashboard navigation. A launcher-owned cleanup helper receives only the bootstrap-document path, schedules exactly one cleanup at `expiresAt`, removes the document and owned directory after dispatch failure, exchange success or failure, or expiry, and never places the handoff in an argument, log, URL, history entry, referrer, header, browser storage, diagnostic, transcript, browser script storage, or Renderer IPC.
-
-Runtime issues the post-exchange randomized or signed session credential only through `Set-Cookie`, and the browser sends it only in `Cookie` headers and retains it only in its HttpOnly cookie jar. The session cookie is `HttpOnly; SameSite=Strict; Path=/` with no expiry attribute, and is never exposed to Dashboard JavaScript, Renderer IPC, localStorage, sessionStorage, IndexedDB, app persistence, diagnostics, snapshots, or transcripts. Runtime API endpoints and event streams accept the Dashboard only with that session cookie and the exact `http://127.0.0.1:<port>` origin; they reject cross-origin credential requests. Runtime shutdown invalidates every handoff and session. Electron main mints a replacement handoff before it reloads a recovered Dashboard; an ordinary browser tab instead shows a copyable `harness web` reconnection command.
-
-### Connection, ordering, and lifetime
-
-Clients use the existing API and event-stream mechanisms through a Runtime connection layer. Reads may proceed concurrently. The Runtime serializes every write to a session, project catalog, settings document, or credential-reference document, and it emits invalidations so attached clients converge without polling.
-
-Only one agent operation may actively write a given session. A second client receives a typed busy response that identifies the active session and offers to observe it, open a new session, or wait to resume it. This prevents split-brain transcripts without making one client a special owner.
-
-The Runtime stays alive while it has an attached client, active agent work, or an explicit background lease. `--daemon` and `--background` create the same in-process background lease. `harness web --status` authenticates to an existing Runtime without starting one and reports its redacted health and lease state; `harness web --stop` releases the background lease without cancelling agent work or disconnecting other clients. Only when no client, active work, or background lease remains does the Runtime begin its configurable idle period, flush state, remove its endpoint record, release its lock, and exit.
-
-A background lease never causes automatic restart after a Runtime crash, user sign-out, or application upgrade. Stale records are still cleaned only after process-identity verification. Closing one browser tab, terminal, or desktop window never stops work still used by another client.
+The endpoint token, handoff, and session credential remain outside public exports, command lines, URLs, diagnostics, transcripts, browser script storage, and Renderer IPC. Public values also exclude credential values, raw filesystem errors, and the selected Harness home. Authenticated response parsing rejects malformed, oversized, invalid-branded, token-bearing, or selected-home-bearing values before projection.
 
 ## Data root and migration
 
-`HARNESS_HOME` is the only writable Harness data root. When the environment variable is absent, the default is `%LOCALAPPDATA%\Harness Desktop` on Windows, `~/Library/Application Support/Harness Desktop` on macOS, and `$XDG_DATA_HOME/harness-desktop` or `~/.local/share/harness-desktop` on Linux.
+`HARNESS_HOME` is the only writable Harness data root. Its platform defaults are `%LOCALAPPDATA%\Harness Desktop` on Windows, `~/Library/Application Support/Harness Desktop` on macOS, and `$XDG_DATA_HOME/harness-desktop` or `~/.local/share/harness-desktop` on Linux. Credential values stay in their provider; Runtime-owned state stores references.
 
-The data root contains only Harness-owned metadata, durable sessions, settings documents, credential references, Runtime locks, and endpoint records. Secret values stay in the platform credential provider or an explicit environment-backed provider; they are not copied into the data root as plaintext.
+A detected `DSH_HOME` is an import source, never a second writable root. Native and authenticated Dashboard requests share one Runtime-owned transaction and retainer. Acceptance copies supported non-secret roots once into an otherwise empty target, decline persists before acceptance, retry accepts only a recorded retryable result, and concurrent decisions replay the committed outcome. Source directories remain intact, and collision or failure results expose only redacted correction data.
 
-On first start, a detected legacy `DSH_HOME` is offered as an import source. Import copies supported data into an empty target, records the result, preserves the legacy directory, and stops on a destination collision. It never silently overwrites or deletes data. A failed import leaves both roots inspectable and reports the exact next action.
+## Public Runtime API
 
-## Public entry points
+`createRuntimeConnector()` alone discovers the private endpoint and retains the token inside authenticated closures. `connect({ start: false })` performs a side-effect-free status attachment and reports typed absence. `connect({ start: true })` serializes racing process starts, waits for one authenticated healthy owner, and attaches all successful callers to it.
 
-### `harness`
+`RuntimeClient` exposes redacted status, legacy migration, the stable `web` background lease, owner-scoped active-work control, terminal attachments, Dashboard attachments, and independent close. `TerminalConnection` uses the composed session, Agent, command, model, permission, and approval owners; its submit, control, cancellation, event, and close operations remain scoped to that attachment. `DashboardAttachment` creates body-only browser navigation and releases independently.
 
-Running `harness` with no task starts an interactive terminal agent for the current directory. It starts or attaches to the local Runtime, opens or resumes a session associated with that workspace, and renders streaming model output, tool activity, approvals, and diagnostics in the terminal. It does not require `--profile`.
+`RuntimeUnavailableError` reports absence, `RuntimeBusyError` reports a same-session writer with recovery choices, and `RuntimeProtocolError` reports an incompatible or rejected local protocol value. `normalizeRecoveryDiagnostic()` returns stable, secret-free recovery categories, subject, correction, and correlation id without reflecting unknown local error text.
 
-`harness "task"` starts the same terminal experience with an initial task. `harness run "task"` is the script-oriented form, and `harness run "task" --json` writes JSONL protocol events to stdout while leaving diagnostics on stderr. The terminal client can list and resume shared sessions, change shared model and permission settings through the Runtime, and exit without stopping other clients.
+## Lifecycle and leases
 
-### `harness web`
+The Runtime remains live while it has a client attachment, Agent work, a migration or control-operation retainer, or the named `web` background lease. Closing an attachment never cancels active work. Cancellation removes only the request's unclaimed inbox message or signals the exact claimed operation, then waits only for its correlated `turn/end` and lease cleanup.
 
-`harness web` starts or attaches to the Runtime, mints a one-time browser handoff, opens the Dashboard in the default browser, and subscribes to the same project and session state as the terminal client. `--daemon` and `--background` are supported aliases that create the background lease after the launcher returns. `harness web --status` never starts a Runtime; `harness web --stop` only releases its background lease. `--no-open` prevents browser navigation and creates no background lease unless it is combined with `--daemon` or `--background`.
+Idle shutdown starts only after every retainer is absent. It closes private control and settles owned operations, flushes durable sessions, retires the endpoint, releases the lock, and disposes the Cordis root. Every stage settles before independent failures are reported. The background lease retains a healthy process but does not supervise or restart it after a crash, sign-out, or upgrade.
 
-The Dashboard is the real existing Harness Web application, not a second mock chat UI. It exposes workspace selection, session history, conversation, streaming tools, approvals, models, credentials, and settings through the Runtime API.
+## Source and built acceptance
 
-### `harness desktop`
+The package's declared `lib/bin.js` and direct `src/bin.ts` development entry boot the same canonical composition. Source startup preserves its TypeScript launcher requirements and consumes build-generated Typert and browser artifacts; built startup runs the published JavaScript path. Real process acceptance attaches the public connector to both entries and verifies shared ownership, authentication, lifecycle, control, and redacted protocol behavior.
 
-`harness desktop` starts or activates the installed Harness Desktop application. The desktop application starts or attaches to the same Runtime and renders the same Dashboard state. If the desktop application is not installed, the command prints the platform-specific installation route and exits without creating a hidden substitute process.
+This evidence establishes the Runtime Foundation only. It does not establish an installed `harness` terminal interface, Web command behavior, Electron presentation, platform packaging, or three-client convergence.
 
-Electron owns native operations such as folder selection, notifications, external-link opening, and recovery diagnostics. Its main process retains the Runtime token, mints the Dashboard handoff, and loads the real Dashboard through a narrow preload bridge. The renderer has context isolation, sandboxing, disabled Node integration, and a strict CSP; it cannot read the data root, credential provider, child-process handles, or Runtime token.
+## Known cross-package follow-up
 
-### Compatibility and source launches
-
-The installed CLI package remains `@harness-desktop/cli` and installs globally with `npm install -g @harness-desktop/cli`. Its primary executable is `harness`. The `dsh` executable stays as a compatibility alias that uses the same parser, Runtime, data root, and command graph.
-
-Source launches use `pnpm harness`, `pnpm harness web`, and `pnpm harness desktop` with the same public arguments. `dsh web --daemon` and `dsh web --background` remain valid aliases during the compatibility period.
-
-```text
-harness
-harness "fix the failing tests"
-harness run "task" --json
-harness web --daemon
-harness web --background --no-open
-harness web --status
-harness web --stop
-harness desktop
-```
-
-## Desktop and Dashboard
-
-The desktop window contains the real Dashboard rather than a standalone welcome screen. It must let a user select a workspace, create and recover sessions, converse with the agent, inspect streaming tool calls, answer approvals, and edit model, credential, and application settings. Changes made through any client appear in the other attached clients through the Runtime event stream.
-
-Desktop startup shows a clear local recovery page only while the Dashboard or Runtime is unavailable. The page provides retry, a copyable redacted diagnostic summary, and an installation or update action where applicable. It must never present an empty product shell as if the agent were ready.
-
-## Product icon assets
-
-Harness Desktop uses the approved original B direction, "star-trail little whale": a round blue-violet whale companion with soft pink highlights, a small star trail, and a friendly local-agent character. The icon is inspired by the requested friendly whale mood, not by a DeepSeek character or other protected artwork.
-
-The asset source is an editable SVG with documented color tokens. The release pipeline derives a Windows multi-size `.ico`, macOS `.icns`, Linux PNG variants, Web favicon and PWA icons, and light and dark variants. At 64 pixels and above the star trail is retained; at 32 and 16 pixels the mark reduces to a legible whale silhouette and one star.
-
-## Packaging, release, and documentation
-
-The 1.1.0 release produces Windows NSIS, macOS universal DMG, Linux AppImage and Deb, and the global npm CLI. Platform installer smoke tests start the desktop app, attach it to a local Runtime, and verify the Dashboard rather than only the Electron process.
-
-The English and Chinese root README documents global CLI installation, all three commands, the shared local data root, legacy `DSH_HOME` import, background Web operation, desktop download, installation, uninstallation, and the difference between the three independently usable clients. A code push does not by itself publish npm or create a GitHub Release; each external publication needs explicit approval.
-
-## Delivery workstreams
-
-1. Create the Runtime discovery, locking, local authentication, data-root resolution, and legacy import foundation with focused lifecycle tests.
-2. Replace the profile-required default CLI path with the terminal client, script mode, shared-session commands, and source/built entry tests.
-3. Make the Web command attach to the Runtime, preserve `--daemon` and `--background`, and verify live cross-client state delivery.
-4. Replace the desktop welcome shell with the secured Dashboard host and verify desktop startup, recovery, and Runtime attachment on clean output trees.
-5. Add the original icon source and derived platform assets, package metadata, release smoke checks, bilingual README guidance, and cross-client acceptance tests.
-
-Each workstream is separately reviewable and leaves a runnable source tree. No workstream may introduce a second persistence writer, a different credential store, or a client-private session format.
-
-## Failure behavior and verification
-
-The Runtime reports typed, redacted failures for lock contention, stale records, version mismatch, unavailable credentials, failed legacy import, malformed local requests, and child or plugin startup failures. A client reports the failed subject, correction, and a copyable diagnostic identifier without exposing access tokens or secret values.
-
-Focused tests cover data-root selection, import collision handling, lock recovery, loopback-only binding, token non-disclosure, owner-only bootstrap modes or ACLs with broader locations rejected, an exactly-once cleanup timer at `expiresAt` including a never-dispatched document and dispatch/exchange failures, an opaque-file-origin body-only handoff exchange with wrong, reused, and expired handoffs rejected, no CORS permission and a clean `303`, cookie-only exact-origin Dashboard authentication, Runtime idle behavior, background-lease status and stop behavior, CLI input and JSON output, Web daemon aliases, desktop privilege isolation, Dashboard availability, and icon-asset packaging. Cross-client integration tests create a project and session from each frontend, observe the same durable state from the other two, reject concurrent session operations, and prove safe recovery after an unexpected client exit.
-
-Acceptance for 1.1.0 requires a clean Windows, macOS, and Linux path where a user installs the CLI and desktop application, runs all three commands independently, selects the same local workspace, exchanges work through one session history, and can close either client without losing the others' active work.
+User-skill slash admission checks a complete catalog and a scoped pre-step consumer before inserting the request. The skill definition can still change between that API decision and the consumer's load at `agent/pre-step`; closing this interval requires a shared admission token or equivalent transaction across the skill and API owners. The foundation therefore does not claim a universal fail-closed guarantee for this interval.

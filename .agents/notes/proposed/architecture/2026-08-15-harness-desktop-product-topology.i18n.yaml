@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-15-harness-desktop-product-topology.md
-2026-08-15-harness-desktop-product-topology.md: 58d8deb3e9110d2529b0a7fceecc2ed964881f7b
-2026-08-15-harness-desktop-product-topology.zh.md: a04d70d4a239e539632e0438aa67186b6c8241b9

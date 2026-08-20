@@ -2,60 +2,68 @@
 
 [English](README.md) | 中文
 
-该包提供单一本地 Harness Desktop Runtime 的宿主基础。它解析唯一可写的数据根目录，在挂载有状态服务前取得排他 owner 锁，并持久化 Runtime 的私有环回 endpoint。
+该包拥有[统一本地 Runtime 设计](../../../docs/superpowers/specs/2026-08-18-harness-unified-local-runtime-design.md)所述的共享本地 Harness Runtime。Runtime 是一个 `HARNESS_HOME` 的唯一持久化 owner。原生客户端使用其公开 connector 与 client API，不直接打开 session、settings、workspace、storage 或 credential-reference 状态。
+
+## 配置与所有权
 
 `HARNESS_HOME` 在展开波浪号后作为绝对路径覆盖值。未设置时，Windows 使用 `%LOCALAPPDATA%\Harness Desktop`，macOS 使用 `~/Library/Application Support/Harness Desktop`，Linux 使用 `$XDG_DATA_HOME/harness-desktop` 或 `~/.local/share/harness-desktop`。`resolveHarnessHome()` 只将 `DSH_HOME` 报告为旧数据导入来源，绝不以它选择可写目标。
 
-owner 锁同时记录 PID 与操作系统进程启动身份。短期跨进程 recovery guard 串行化 acquisition、身份探测与过期替换，确保竞争方不能同时恢复同一记录。竞争方保留存活或无法核验的 owner；只有证明记录身份已经消失后，才恢复过期记录。释放操作只删除当前 Runtime 所取得且未变化的锁。
+Runtime 在启动已发货的 base-and-Web Cordis 组合前取得每个 home 的排他锁。一个注入的 `HarnessHomeProvider` 向每个 writer 提供所选根目录。锁记录 PID 与操作系统进程启动身份；串行 recovery guard 只有在证明该精确身份不存在后才替换陈旧记录，释放操作也只删除当前 Runtime 所取得且未变化的锁。
 
-endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私有访问 token。内部写入方先保护同目录临时文件，再以原子重命名发布；内部读取方在读文件前验证 POSIX owner-only `0600` 权限或 Windows 当前用户专属 DACL。retirement 将当前 endpoint 原子重命名为私有 tombstone，并在该文件上复核 Runtime 身份；若 claim 到 replacement，则在不覆盖更新 endpoint 的前提下恢复它。包根入口只导出不含 token 的状态与 owner 类型，不导出 endpoint 解析器、写入方、文件名或含 token 的记录。
+## 私有 endpoint 与认证
 
-`createRuntimeConnector()` 是唯一由应用调用、负责发现私有 endpoint 并保留其 token 的入口。`connect({ start: false })` 会在不创建所选 home、lock、endpoint 或进程的前提下报告类型化 absence；`connect({ start: true })` 通过 owner lock 串行化相互竞争的进程启动，等待经过认证的健康 replacement，再把每个成功调用方附加到同一个 Runtime。每个已认证 HTTP response 都会在 UTF-8 解码或 JSON 解析前限制为 1 MiB；随后，每个 wire 成功值与错误都会在投影前经过精确字段、有界字符串和 branded value 校验。单个 terminal page 最多包含 256 个 event 和 256 KiB 编码后 event，每个人类可读 event 字符串最多 64 KiB。形态错误或超限的值、包含精确私有 endpoint token 的 response，以及在绝对路径组件边界包含所选 Harness home 的 response，都会以 `RuntimeProtocolError` 被拒绝；Windows home 匹配会折叠大小写和分隔符，POSIX 则保持大小写敏感。若所选 home 是文件系统根，则每个绝对后代都在其内；若是非根 home，则点号后缀备份等同级组件不会被匹配。公开 status、migration、lease、busy、active-work、terminal 与 diagnostic 值不包含 endpoint 字段、token、credential 值、原始文件系统错误或所选 Harness home。同级路径、只在普通文本中包含 home 字符串的内容，以及无关的绝对 workspace 路径仍然有效。
+组装后的 WebServer 在 `127.0.0.1` 上绑定由操作系统分配的端口。仅 owner 可读的 endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私有访问 token。发布和移除使用受保护的同目录文件及原子重命名；移除操作会恢复已 claim 的 replacement，但不会覆盖更新的 endpoint。
 
-Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoint bearer token 接受原生控制。原生调用方会签发一个 60 秒、单次使用的不透明 handoff；`POST /_harness/handoff` 只从一个 URL 编码表单正文消费该值，不发送 CORS permission，并在设置不带 expiry 的 `HttpOnly; SameSite=Strict; Path=/` session cookie 后执行干净重定向。内存认证器要求 Dashboard API 与 event carrier 同时具有该精确 Runtime Origin 和 cookie；启动器拥有的 cleanup controller 在 dispatch、exchange settlement 或 expiry 后只清理一次其 bootstrap document 与 owner directory。token、handoff 和 session 值不会进入公开导出、诊断、URL 或浏览器脚本存储。
+原生控制要求精确的 loopback authority 与 bearer token。原生调用方创建一个 60 秒、单次使用、仅正文的 handoff。`POST /_harness/handoff` 只从一个 URL 编码表单正文接受该值，不发送 CORS permission，并通过不带 expiry attribute 的 session `HttpOnly; SameSite=Strict; Path=/` cookie 返回干净重定向。Dashboard API 与 event 请求需要该 cookie 和精确 Runtime origin，从而提供 cookie-only Dashboard authentication。launcher 拥有的 cleanup controller 会在 dispatch、exchange settlement 或 expiry 后只删除其私有 bootstrap document 与目录。
 
-Runtime owner 会在启动已发货的 base 与 Web 组合前取得锁，其中包括 API、静态 Dashboard、session、settings、workspace、storage 和 credential-reference provider。它要求该组合公开一个健康的 `127.0.0.1` WebServer 和操作系统分配的端口，在发布私有 endpoint 前挂载私有已认证控制，并向每个 writer 共享同一个注入的 `HarnessHomeProvider`。它计数实际客户端附加、agent work 与显式 background lease，并且只在三者均不存在时开始配置的空闲关闭。Dashboard migration 与 terminal-control transaction 会持有私有 Runtime retainer 直至结算，因此空闲关闭无法在它们修改持久状态时移除 ownership。直接内部 dispose 也要求 retention 计数全部为零；仍有任何 retainer 时，它会拒绝且不开始关闭。关闭先让 control service 关闭并结算其拥有的操作，再等待每个持久化 flush 结算，然后依次移除 endpoint、释放锁并 dispose Cordis 根；所有阶段结算后才报告彼此独立的失败。`startRuntime()` 及其 handle 仍是编排内部实现；应用使用 `RuntimeConnector` 与 `RuntimeClient`。
+## 非披露保证
 
-每个 `RuntimeClient`、`TerminalConnection` 与 `DashboardAttachment` 都拥有一个服务端映射的 attachment；经过认证的 parent 无法释放、提交到、取消或控制另一个 parent 的 child id。`close()` 只有在幂等服务端 release 成功后才提交 closed 状态，因此瞬时传输失败可以重试同一次 release，成功后则不会重复发出。关闭 attachment 不会取消活动工作。取消只移除本操作尚未 claim 的 inbox message，并在确认移除后立即释放其 lease；若操作已 claim，则在保留 inbox 的同时向该精确 Agent 操作发出信号，并且只等待其关联 `turn/end` 与 Runtime lease cleanup。无关的 queued、steering 与 replacement work 会保留，既不会延迟也不会继承该 release。
+- 包根入口绝不导出 endpoint parser、writer、filename、private record、access token、handoff secret 或 browser session credential。
+- URL、launch argument、diagnostic、transcript、browser script storage、Renderer IPC 和公开 Runtime 值绝不包含这些 secret。
+- 公开 status、migration、lease、busy、active-work、terminal 与 diagnostic 值绝不公开 credential value、原始 filesystem error 或所选 Harness home。
+- 已认证 response parsing 会把精确 private-token 泄露、绝对路径组件边界上的 selected-home 泄露、畸形字段、无效 branded value，以及超过所配置 byte 或 item 上限的值作为 `RuntimeProtocolError` 拒绝。
 
-`openTerminal()` 通过已组装的 API owner 创建或恢复，`submit()` 则进入真实 Agent turn。Runtime 将请求的 `rpcId` 与精确 inbox claim、turn 编号、Agent 实例和 `turn/end` 关联；该精确 end record 会在无关 replacement work 之前释放本操作，而陈旧 turn 或 cancel completion 无法清除后来的 lease。精确且已识别的 slash command 通过 `ApiProxy.sessions.prompt` 与已组装 command owner 执行，发出安全的成功文本，记录 `command/run` 与 `command/done`，并因不存在 inbox claim 或 turn 而立即释放其精确 work lease。command 未命中后，已确认可由用户调用的 skill 会进入真实 Agent pre-step 路径；目录不完整或完整目录仍未命中时会拒绝，不会把未知 slash 文本准入模型。Terminal event 来自实时 session 和 approval 机制：流式 assistant 文本、tool activity、model／permission 变化及 approval question。只有拥有活动 Agent 操作的 terminal 才能提交 approval response。`runControl()` 会恢复 terminal、查询或选择 model、改变 permission preset、执行已注册 command，或在 `exit` 时只关闭该 terminal；每项操作都核验 owner 并持有 Runtime，unavailable、busy、rejected 或 wrong-owner 请求会拒绝，而不是返回合成成功。
+## 公开 Runtime API 与失败
 
-每个 home 的 Web background lease 使用稳定 id `web`；跨客户端重复获取和释放会被串行化且都是幂等的，释放 lease 不会取消工作或断开 attachment。
+只有 `createRuntimeConnector()` 会发现 endpoint，并将其 token 保留在已认证 request closure 中。`connect({ start: false })` 执行只读发现，在不创建 home、lock、endpoint 或 process 的前提下抛出 `RuntimeUnavailableError`。`connect({ start: true })` 通过 owner lock 串行化竞争启动，等待已认证的健康 owner，并把成功调用方附加到该 Runtime。
 
-旧数据导入决定与结果存放在 `HARNESS_HOME` 下，并由原生控制请求和已认证 Dashboard 控制请求通过一个 Runtime-owned transaction queue 与私有 Runtime retainer 共享。接受决定只会把受支持的非秘密根目录复制一次到原本为空的目标；并发 accept 会回放已提交的成功，后来的 decline 无法覆盖它。接受前的 decline 会持久化，retry 只从精确的可重试 collision／failure 状态运行，所有源目录始终保留。状态文件会在 UTF-8 解码与 JSON 解析前限制为 64 KiB；持久记录会在公开投影前拒绝未知、缺失、多余、带路径或 branded value 无效的字段。碰撞与失败结果只公开脱敏诊断和修正操作。
+`RuntimeClient` 提供脱敏 status、稳定的 `web` background lease、耐久 legacy migration、owner-scoped active-work control、terminal attachment、Dashboard attachment 和独立 close。`TerminalConnection` 通过已组装的 API 与 Agent owner 提交 task 和 approval，运行已注册的 model、permission、session 与 command control，流式发送有界 protocol event，只取消其关联 operation，并且只关闭自身 attachment。`DashboardAttachment` 创建 body-only handoff 并独立释放。关闭 attachment 绝不取消活动 work。
 
-声明的 `lib/bin.js` 与直接运行的开发入口 `src/bin.ts` 都会启动完整的已发货组合。运行源码入口前必须先执行 `pnpm run build:lib`，因为 Typert contribution 与浏览器 bundle 是构建生成的产物；只使用源码的干净集成 fixture 必须显式声明仅后端 overlay，不得改变产品组合。
+`RuntimeUnavailableError` 标识缺失，`RuntimeBusyError` 标识同一 session 的 writer 并携带其 branded session id，`RuntimeProtocolError` 标识不兼容、畸形、超限或携带 secret 的本地 response。`normalizeRecoveryDiagnostic()` 将这些错误及未知本地失败投影为稳定且不含 token、path 和 secret 的 recovery field，并提供可复制的 diagnostic id。
+
+## 迁移与提供方所有权
+
+旧数据决定与结果存放在 `HARNESS_HOME` 下，并通过一个 Runtime-owned transaction queue 与私有 Runtime retainer。接受操作只把受支持的非秘密根目录复制一次到原本为空的目标；接受前的拒绝会持久化；retry 只接受精确的可重试 collision 或 failure。并发调用方回放已提交结果，source directory 始终保留，公开 failure value 只包含脱敏 correction data。
+
+规范组合在同一 ownership lock 后挂载 API、Dashboard asset、session、settings、workspace、storage 和 credential-reference provider。Credential value 留在其 credential provider 中；只有 reference 进入 Runtime-owned state。
+
+## 生命周期与 lease
+
+Runtime 计数实际 client attachment、Agent work 和具名 background lease。只有三类计数都为零时才开始空闲关闭。Migration 与 terminal-control transaction 会保留 Runtime 直至结算；存在任何 retainer 时，直接 dispose 会拒绝且不开始关闭。
+
+有序关闭会关闭 private control 并结算其 operation、flush 耐久 session、移除 endpoint、释放 lock，最后 dispose Cordis root。所有阶段结算后才报告彼此独立的失败。Background retention 让健康进程保持存活，但不监督或重启它。
+
+## 源码与构建入口
+
+声明的 `lib/bin.js` 与直接开发入口 `src/bin.ts` 启动相同的完整组合。源码入口需要先执行 `pnpm run build:lib`，因为 Typert contribution 与 browser bundle 是生成产物。源码和构建 process acceptance 通过这些真实入口演练公开 connector；产品展示层仍是 `RuntimeConnector` 与 `RuntimeClient` 的独立 consumer。
 
 ## 模型体验
 
-### Runtime owner 与 endpoint 记录
+### Runtime 所有权与控制
 
 #### 模型所见内容
 
-无。`acquireRuntimeLock()` 与 endpoint-record 基础原语不添加提示词、消息、工具 schema 或工具结果。
+`RuntimeConnector` discovery、ownership、authentication、status、migration、attachment、lease 与 diagnostic 不添加 prompt text、message、tool schema 或 tool result。提交的 terminal task 通过既有 session API 进入普通的耐久 user message 与 Agent turn；Runtime 不添加 transport wrapper。
 
 #### Token 影响
 
-无。Runtime 访问 token 保留在私有控制面文件中，绝不进入模型请求。
+Runtime control 不消耗模型 token。提交的 task 及其回答正常消耗模型输入和输出 token。
 
 #### KV Cache 影响
 
-无。这些 Runtime ownership 与 endpoint-record 原语既不组装也不发送提供方请求。
+Runtime metadata 不改变模型 request prefix。模型可见 task 与 command effect 保留既有 session 路径的 cache 行为。
 
-### Terminal Agent 操作
+## 已知限制与延期工作
 
-#### 模型所见内容
-
-Terminal task 通过既有 session API 准入，成为与 Dashboard 相同的持久 user message 和 Agent turn。Runtime 不会向模型可见内容添加 wrapper prompt 或传输元数据。改变 model 或 permission 状态的 control 使用既有 owner；已注册 slash command 保留其自身的日志行为。
-
-#### Token 影响
-
-提交的 task 与产生的会话消耗正常的模型输入／输出 token。Runtime control、attachment ownership、status、lease、migration、busy result 和 diagnostic 不添加模型 token。
-
-#### KV Cache 影响
-
-Task 追加在 session 的可复用前缀之后。Runtime control 元数据不会改变请求前缀；普通模型可见 task 或 command effect 与既有 Agent／session 路径具有相同缓存行为。
-
-## 已知限制与暂缓事项
-
-- **后台保留不是进程监督** — 命名 Web lease 会让健康 Runtime 保持运行，但不会在崩溃、退出登录或升级后重启该进程。
+- **Background retention 不是 supervision** — 具名 Web lease 不会在 Runtime crash、sign-out 或 upgrade 后重启它。
+- **Skill admission 仍有跨包 race** — API 根据一次完整 catalog observation 准入精确且 user-invocable 的 skill，但其 definition 可能在 pre-step consumer 加载前发生变化。关闭该区间需要共享 admission token 或等价的 skill/API transaction；Runtime 不宣称该区间具有普遍 fail-closed 保证。

@@ -36,6 +36,10 @@ Any row it prints can be replaced by a patch of your own.
 
 Composition mechanics are in [app-boot](../packages/boot/app-boot/README.md#profiles); config fields are in the generated [config catalog](config-catalog.md).
 
+## Local Runtime ownership
+
+The shipped [local Runtime package](../packages/host/local-runtime/README.md) boots the base-and-Web composition behind one process-identity lock and is the sole persistence owner for its selected `HARNESS_HOME`. Its public connector and client types give presentation layers independent attachments without exposing the private endpoint token or granting direct storage access. The [Harness Desktop product topology decision](../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) owns the shared-process rationale and rejected client-private runtimes.
+
 ## Core packages
 
 Here are some core packages that contribute to the Cordis tree.

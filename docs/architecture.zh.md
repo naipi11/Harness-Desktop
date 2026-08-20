@@ -36,6 +36,10 @@ dsh --profile web --dump-config
 
 组装机制见 [app-boot](../packages/boot/app-boot/README.md#profiles)；配置字段见生成的[配置目录](config-catalog.md)。
 
+## 本地 Runtime 所有权
+
+已发货的[本地 Runtime 包](../packages/host/local-runtime/README.md)在一个 process-identity lock 后启动 base-and-Web composition，并且是其所选 `HARNESS_HOME` 的唯一 persistence owner。其 public connector 与 client type 向展示层提供独立 attachment，且不公开 private endpoint token 或授予直接 storage access。[Harness Desktop 产品拓扑决策](../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md)拥有 shared-process 理由和被否决的 client-private runtime。
+
 ## 核心包
 
 以下是向 Cordis 树贡献内容的部分核心包。

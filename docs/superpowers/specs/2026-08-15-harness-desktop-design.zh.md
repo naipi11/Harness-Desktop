@@ -10,7 +10,7 @@
 
 [Harness 统一本地 Runtime 设计](2026-08-18-harness-unified-local-runtime-design.md) 是 Runtime 所有权、`HARNESS_HOME`、公开的 `harness` 命令图、Dashboard 集成和三客户端拓扑的权威定义。本文把这些决定应用于更广泛的 Desktop 产品与发布架构。
 
-长期有效的理由与未采用的拓扑记录在 [Harness Desktop 产品拓扑 Agent Note](../../../.agents/notes/proposed/architecture/2026-08-15-harness-desktop-product-topology.md) 中。
+长期有效的理由与未采用的拓扑记录在 [Harness Desktop 产品拓扑 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) 中。
 
 ## 目标
 

@@ -10,7 +10,7 @@ This is a program-level design divided into five implementation workstreams. Eac
 
 The [Harness unified local Runtime design](2026-08-18-harness-unified-local-runtime-design.md) is authoritative for Runtime ownership, `HARNESS_HOME`, the public `harness` command graph, Dashboard integration, and the three-client topology. This document applies those decisions to the wider Desktop product and release architecture.
 
-The long-lived rationale and rejected topologies are recorded in the [Harness Desktop product topology Agent Note](../../../.agents/notes/proposed/architecture/2026-08-15-harness-desktop-product-topology.md).
+The long-lived rationale and rejected topologies are recorded in the [Harness Desktop product topology Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md).
 
 ## Goals
 
