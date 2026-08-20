@@ -4,7 +4,7 @@
 
 每个子系统一页，覆盖 DeepSeek Harness 的全部子系统：它是什么、它操作哪些数据结构，以及——当它由某个 `ctx` 服务或事件作用域支撑时——一段生成的 **Cordis API** 小节，承载其服务与事件参考。本目录与 [architecture.md](../architecture.md) 互补：后者描述跨子系统的*行为*（服务映射、会话/轮次/步骤生命周期、事件分类体系）；这里的每一页是单个子系统词汇与接线的参考。
 
-Host 层的[本地 Runtime 包](../../packages/host/local-runtime/README.md)在一个 `HARNESS_HOME` owner 下组合这些子系统；它是包约定，而不是另一个生成的 Cordis subsystem 页面。[产品拓扑决策](../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md)拥有 terminal、Web 与 Desktop 层共享该 process 的理由。
+主机层的[本地运行时包](../../packages/host/local-runtime/README.md)在一个 `HARNESS_HOME` 所有者下组合这些子系统；它是包约定，而不是另一个生成的 Cordis 子系统页面。[产品拓扑决策](../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md)拥有终端、Web 与 Desktop 层共享该进程的理由。
 
 | 页面 | 负责内容 |
 |---|---|

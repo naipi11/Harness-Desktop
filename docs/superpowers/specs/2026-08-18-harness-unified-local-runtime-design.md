@@ -34,7 +34,7 @@ A detected `DSH_HOME` is an import source, never a second writable root. Native 
 
 `RuntimeClient` exposes redacted status, legacy migration, the stable `web` background lease, owner-scoped active-work control, terminal attachments, Dashboard attachments, and independent close. `TerminalConnection` uses the composed session, Agent, command, model, permission, and approval owners; its submit, control, cancellation, event, and close operations remain scoped to that attachment. `DashboardAttachment` creates body-only browser navigation and releases independently.
 
-`RuntimeUnavailableError` reports absence, `RuntimeBusyError` reports a same-session writer with recovery choices, and `RuntimeProtocolError` reports an incompatible or rejected local protocol value. `normalizeRecoveryDiagnostic()` returns stable, secret-free recovery categories, subject, correction, and correlation id without reflecting unknown local error text.
+`RuntimeUnavailableError` reports absence. `RuntimeBusyError` exposes the same-session writer's branded `sessionId` and its diagnostic id; the authenticated wire's `session-busy` result carries the structured `['observe', 'new-session', 'wait']` recovery options, which the error class does not expose. `RuntimeProtocolError` reports an incompatible or rejected local protocol value. `normalizeRecoveryDiagnostic()` returns stable, secret-free recovery categories, subject, correction, and correlation id without reflecting unknown local error text.
 
 ## Lifecycle and leases
 
@@ -44,7 +44,7 @@ Idle shutdown starts only after every retainer is absent. It closes private cont
 
 ## Source and built acceptance
 
-The package's declared `lib/bin.js` and direct `src/bin.ts` development entry boot the same canonical composition. Source startup preserves its TypeScript launcher requirements and consumes build-generated Typert and browser artifacts; built startup runs the published JavaScript path. Real process acceptance attaches the public connector to both entries and verifies shared ownership, authentication, lifecycle, control, and redacted protocol behavior.
+The [package evidence contract](../../../packages/host/local-runtime/README.md#source-and-built-entry-points) keeps three tiers distinct. Built full-product evidence boots the canonical composition from `lib/bin.js` and exercises public connector/control behavior. Declared `src/bin.ts` evidence observes source Loader/module selection, the required generated Typert/browser artifacts, endpoint publication, and shutdown cleanup. Source public-connector/control evidence instead uses an explicit Loader-launched backend fixture with workspace `lib/` imports denied; it does not establish direct source-bin parity.
 
 This evidence establishes the Runtime Foundation only. It does not establish an installed `harness` terminal interface, Web command behavior, Electron presentation, platform packaging, or three-client convergence.
 

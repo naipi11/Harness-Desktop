@@ -4,7 +4,7 @@
 
 事件日志的**持久性 seam**。[session.md](session.md) 描述了内存中的 `Session`：仅追加的 `SessionEvent` 日志即为真源。本页描述如何使该日志持久化：抽象的 `SessionPersistence` 服务、它的后端、flush 检查点、崩溃恢复，以及随日志一同存储的元数据头。日志承载的事件词汇在生成的[持久化日志事件目录](../persistence-catalog.md)中逐项列举。
 
-在已发货的本地组合中，[本地 Runtime 包](../../packages/host/local-runtime/README.md)是为一个 `HARNESS_HOME` 挂载 persistence writer 的唯一 process owner；原生客户端只通过其公开 API 到达这些服务。[Harness Desktop 产品拓扑决策](../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md)拥有该 process boundary。本页继续拥有 backend-neutral session durability type 与 semantics。
+在已发货的本地组合中，[本地运行时包](../../packages/host/local-runtime/README.md)是为一个 `HARNESS_HOME` 挂载持久化写入方的唯一进程所有者；原生客户端只通过其公开 API 到达这些服务。[Harness Desktop 产品拓扑决策](../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md)拥有该进程边界。本页继续拥有后端无关的会话持久性类型与语义。
 
 该 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)：一个抽象服务（[dsh-session-persistence](../../packages/session/session-persistence)，`ctx.sessionPersistence`）在现有 `SessionEvent` 上定义 locate/create/append、可复用的 Session 准备流程、逻辑 load/inspect、物理后缀读取，以及轻量的 list/snapshot 观察——**没有平行的持久化事件类型**——以及两个实现同一约定的可互换后端。见 [session-persistence Agent Note](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md)。
 

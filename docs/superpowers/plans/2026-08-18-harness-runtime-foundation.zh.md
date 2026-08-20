@@ -682,7 +682,7 @@ pnpm run verify-agent-note-format
 
 - [ ] **Step 3: 只编写当前契约并记录所有双语配对**
 
-在包 README 中记录正在运行的 Runtime、其配置、类型化错误类别和唯一写入者/回环/令牌规则。既有 [Harness Desktop 产品拓扑 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) 是拓扑理由和已拒绝 private-child 模型的唯一归宿。此工作流交付时，将该配对记录及其 i18n record 移到 `implemented/`、更新为当前状态验证，并保留其互不重叠的替代方案和后果。通过链接到这些所有者更新 `architecture.md` 和相关 subsystem 页面，而不是重述其测试清单。用匹配的标题、列表、链接和代码围栏写中文对应文档，然后创建所有包 `.i18n.yaml` 记录。
+在包 README 中记录正在运行的运行时、其配置、类型化错误类别和唯一写入方／回环／令牌规则。既有 [Harness Desktop 产品拓扑 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) 是拓扑理由和被否决私有子进程模型的唯一归宿。此工作流交付时，将该配对记录及其 i18n 记录移到 `implemented/`、更新为当前状态验证，并保留其互不重叠的替代方案和后果。通过链接到这些所有者更新 `architecture.md` 和相关子系统页面，而不是重述其测试清单。用匹配的标题、列表、链接和代码围栏写中文对侧文件，然后创建所有包 `.i18n.yaml` 记录。
 
 - [ ] **Step 4: 运行聚焦文档和包门禁**
 
