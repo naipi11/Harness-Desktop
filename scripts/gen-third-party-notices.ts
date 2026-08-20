@@ -333,11 +333,16 @@ function collectClaudeDistribution(): ClaudeDistribution {
   return distribution
 }
 
-/** Normalize a manifest repository/homepage value to a browsable https URL. */
-function normalizeRepo(raw: string | undefined): string | undefined {
+/**
+ * Normalize a manifest repository/homepage value to a browsable HTTPS URL.
+ * @param raw - repository or homepage metadata from an installed manifest.
+ * @returns the public URL, or `undefined` when the manifest provides no value.
+ */
+export function normalizeRepo(raw: string | undefined): string | undefined {
   if (raw === undefined || raw === '') return undefined
   let url = raw
     .replace(/^git\+ssh:\/\/git@/, 'https://')
+    .replace(/^git@github\.com:/, 'https://github.com/')
     .replace(/^git\+/, '')
     .replace(/^git:\/\//, 'https://')
     .replace(/^github:/, 'https://github.com/')

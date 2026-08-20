@@ -10,6 +10,7 @@ import {
   isPermissive,
   type Manifest,
   manifestPatterns,
+  normalizeRepo,
   parsePyprojectRequirements,
   parseVendoredRows,
   render,
@@ -28,6 +29,12 @@ describe('THIRD_PARTY_NOTICES.md', () => {
     const generated = render()
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
+  })
+
+  it('renders SCP-style GitHub repository metadata as a public HTTPS URL', () => {
+    const generated = render()
+    expect(generated).toContain('[`proper-lockfile`](https://github.com/moxystudio/node-proper-lockfile)')
+    expect(generated).not.toContain('https://github.com/git@github.com/')
   })
 })
 
@@ -126,6 +133,15 @@ describe('virtualManifest', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('normalizeRepo', () => {
+  it('normalizes SCP-style and URL-style GitHub remotes deterministically', () => {
+    expect(normalizeRepo('git@github.com:moxystudio/node-proper-lockfile.git'))
+      .toBe('https://github.com/moxystudio/node-proper-lockfile')
+    expect(normalizeRepo('git+ssh://git@github.com/moxystudio/node-proper-lockfile.git'))
+      .toBe('https://github.com/moxystudio/node-proper-lockfile')
   })
 })
 
