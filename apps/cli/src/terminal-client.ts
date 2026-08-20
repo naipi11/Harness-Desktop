@@ -182,7 +182,7 @@ export async function runTerminalInvocation(
         if (surface === undefined || actions === undefined) throw new Error('interactive terminal surface is unavailable')
         code = await runInteractive(terminal, surface, actions, io.forceExit)
       } else {
-        code = await runTask(terminal, runtime, fallbackRenderer, io.interrupts)
+        code = await runTask(terminal, runtime, fallbackRenderer, io.interrupts, io.forceExit)
       }
     }
   } catch (error: unknown) {
@@ -328,6 +328,7 @@ async function runTask(
   runtime: TerminalRuntimeClient,
   renderer: TerminalRenderer,
   interrupts: AsyncIterable<void> | undefined,
+  forceExit: TerminalIO['forceExit'],
 ): Promise<number> {
   let pumpSettled = false
   const lifecycle = { closing: false }
@@ -346,6 +347,7 @@ async function runTask(
   const monitor = interrupts === undefined ? Promise.resolve() : (async () => {
     for await (const _ of interrupts) {
       if (cancellation !== undefined) {
+        forceExit?.(131)
         resolveExit(131)
         return
       }
@@ -374,6 +376,7 @@ async function runTask(
   })()
   const code = await Promise.race([exit, completion, pumpExit])
   lifecycle.closing = true
+  if (code === 131) return code
   await terminal.close()
   await pump.catch(() => {})
   void monitor

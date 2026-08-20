@@ -43,11 +43,13 @@ class FakeTerminal implements TerminalConnection {
   closeError: Error | undefined
   closeResult: Promise<void> | undefined
   eventsError: Error | undefined
+  eventsResult: Promise<void> | undefined
 
   constructor(private readonly protocolEvents: readonly TerminalProtocolEvent[]) {}
 
   async * events(): AsyncIterable<TerminalProtocolEvent> {
     for (const event of this.protocolEvents) yield event
+    if (this.eventsResult !== undefined) await this.eventsResult
     if (this.eventsError !== undefined) throw this.eventsError
   }
 
@@ -378,6 +380,34 @@ describe('runTerminalInvocation', () => {
 
     expect(code).toBe(131)
     expect(forcedCode).toBe(131)
+  })
+
+  it('forces a JSON second Ctrl+C without waiting for stalled pump or cleanup', async () => {
+    const terminal = new FakeTerminal([])
+    terminal.cancelResult = new Promise(() => {})
+    terminal.closeResult = new Promise(() => {})
+    terminal.eventsResult = new Promise(() => {})
+    const client = new FakeRuntimeClient(terminal)
+    client.activeResult = new Promise(() => {})
+    client.closeResult = new Promise(() => {})
+    async function * interrupts(): AsyncIterable<void> {
+      yield undefined
+      yield undefined
+    }
+    let forcedCode: number | undefined
+    const streams = io(undefined, { interrupts: interrupts(), forceExit: (code) => { forcedCode = code } })
+
+    const code = await Promise.race([
+      runTerminalInvocation(
+        { mode: 'run', task: 'force stalled JSON exit', json: true }, streams.io, new FakeConnector(client),
+      ),
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+    ])
+
+    expect(code).toBe(131)
+    expect(forcedCode).toBe(131)
+    expect(streams.stdout()).toBe('')
+    expect(streams.stderr()).toBe('')
   })
 
   it('maps an interactive Runtime-unavailable event pump failure to exit 3', async () => {
