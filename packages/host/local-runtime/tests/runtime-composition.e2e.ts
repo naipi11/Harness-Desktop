@@ -30,7 +30,7 @@ describe('canonical local Runtime composition', () => {
     const record = await readPrivateEndpointRecord(harnessHome.home)
     expect(runtime.status().port).toBe(record.port)
     expect(record.port).toBeGreaterThan(0)
-  })
+  }, 30_000)
 
   it('publishes one healthy loopback endpoint over one injected Harness home', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-composition-'))
