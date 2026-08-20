@@ -91,7 +91,13 @@ export interface RuntimeHandle {
   acquireBackgroundLease(owner: RuntimeClientId): Promise<BackgroundLease>
   /** @param lease - explicit background lease to release. */
   releaseBackgroundLease(lease: BackgroundLease): Promise<void>
-  /** Flush, retire the endpoint, release ownership, and dispose the Cordis root once. */
+  /**
+   * Flush, retire the endpoint, release ownership, and dispose the Cordis root once.
+   * Requires zero attached clients, active work leases, and background leases;
+   * otherwise rejects without starting shutdown. Cleanup failures reject only
+   * after every ordered cleanup stage settles.
+   * @returns settlement after the Runtime reaches quiescence or cleanup fails.
+   */
   dispose(): Promise<void>
 }
 
@@ -163,14 +169,25 @@ export async function startCanonicalRuntime(config: CanonicalRuntimeConfig): Pro
   })
 }
 
-/** Flush every live session through the composition's sole durable session service. */
-async function flushCanonicalSessions(ctx: Context): Promise<void> {
+/**
+ * Flush every live session through the composition's sole durable session service.
+ * @param ctx - canonical Runtime context carrying the session store.
+ * @returns settlement after the session flushes complete.
+ */
+export async function flushCanonicalSessions(ctx: Context): Promise<void> {
   const sessions = ctx.get('sessions') as {
     list(): readonly unknown[]
     flush(session: unknown): Promise<boolean>
   } | undefined
   if (sessions === undefined) throw new Error('host-local-runtime: canonical composition has no session service to flush')
-  await Promise.all(sessions.list().map(session => sessions.flush(session)))
+  const settled = await Promise.allSettled(sessions.list().map(session => sessions.flush(session)))
+  const errors: unknown[] = []
+  for (const result of settled) {
+    if (result.status === 'rejected') errors.push(result.reason as unknown)
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'host-local-runtime: canonical session flush failed')
+  }
 }
 
 /** Boot the shipped base and Web patch layers over the package-owned empty root. */

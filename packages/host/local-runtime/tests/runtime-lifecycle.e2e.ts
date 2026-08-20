@@ -8,7 +8,7 @@ import { Context } from '@harness-desktop/cordis'
 import WebServer from '@harness-desktop/dsh-host-webserver'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import { createLocalRuntimePlugin } from '../src/data-root.ts'
-import { startRuntime, type RuntimeHandle } from '../src/runtime.ts'
+import { flushCanonicalSessions, startRuntime, type RuntimeHandle } from '../src/runtime.ts'
 
 let root: string | undefined
 let runtime: RuntimeHandle | undefined
@@ -74,6 +74,66 @@ describe('Runtime lifecycle accounting', () => {
     await expect(runtime.dispose()).rejects.toThrow('flush failed')
     runtime = undefined
     expect(flushObservedPublishedOwner).toBe(true)
+    expect(cordisDisposed).toBe(true)
+    await expect(access(join(root, 'runtime-endpoint.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('settles every canonical session flush before retiring the Runtime owner', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-flush-settlement-'))
+    const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
+    const fastFailure = new Error('first session flush failed')
+    const slowFailure = new Error('second session flush failed')
+    const slowStarted = Promise.withResolvers<undefined>()
+    const slow = Promise.withResolvers<undefined>()
+    let canonicalFlush: Promise<void> | undefined
+    let cordisDisposed = false
+
+    runtime = await startRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      flush(ctx) {
+        canonicalFlush = flushCanonicalSessions(ctx)
+        return canonicalFlush
+      },
+      async boot() {
+        const ctx = new Context()
+        await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        const first = { id: 'first' }
+        const second = { id: 'second' }
+        ctx.provide('sessions', {
+          list: () => [first, second],
+          flush(candidate: unknown) {
+            if (candidate === first) return Promise.reject(fastFailure)
+            slowStarted.resolve(undefined)
+            return slow.promise.then(() => Promise.reject(slowFailure))
+          },
+        } as never)
+        ctx.effect(() => () => { cordisDisposed = true }, 'runtime canonical flush disposal probe')
+        return ctx
+      },
+    })
+
+    const disposal = runtime.dispose()
+    await slowStarted.promise
+    await Promise.resolve()
+    const early = await Promise.race([
+      canonicalFlush!.then(
+        () => 'flush completed early',
+        () => 'flush rejected early',
+      ),
+      Promise.resolve('flush is pending'),
+    ])
+    expect(early).toBe('flush is pending')
+    await access(join(root, 'runtime-endpoint.json'))
+    await access(join(root, 'runtime.lock'))
+    expect(cordisDisposed).toBe(false)
+
+    slow.resolve(undefined)
+    const error: unknown = await disposal.then(() => undefined, (reason: unknown) => reason)
+    runtime = undefined
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors).toEqual([fastFailure, slowFailure])
     expect(cordisDisposed).toBe(true)
     await expect(access(join(root, 'runtime-endpoint.json'))).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })

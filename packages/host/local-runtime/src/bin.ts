@@ -5,9 +5,10 @@ import { once } from 'node:events'
 import { createLocalRuntimePlugin } from './data-root.ts'
 import { startCanonicalRuntime } from './runtime.ts'
 
-const harnessHome = createLocalRuntimePlugin({ env: process.env })
-const restoreOutput = silenceStartupOutput()
+let restoreOutput = (): void => {}
 try {
+  restoreOutput = silenceStartupOutput()
+  const harnessHome = createLocalRuntimePlugin({ env: process.env })
   const runtime = await startCanonicalRuntime({
     harnessHome,
     idleTimeoutMs: 60_000,

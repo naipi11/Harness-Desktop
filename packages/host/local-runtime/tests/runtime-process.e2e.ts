@@ -1,6 +1,7 @@
 /** Clean-source backend acceptance over the real base/Web Runtime patches. */
 
 import { access, mkdir, readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { isAbsolute, join, relative } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { decompressZstdFrame, scanZstdFrames } from '../../../session/session-persistence-jsonl/src/zstd.ts'
@@ -47,11 +48,14 @@ describe('clean source backend Runtime fixture', () => {
     expect(settings.namespaces.find(namespace => namespace.ns === 'llm-deepseek')?.user?.baseURL)
       .toBe('https://runtime-fixture.invalid')
 
+    const credentialRef = 'TASK5_WRITABLE_CREDENTIAL'
+    const credentialValue = `runtime-credential-${randomUUID()}`
+    await runtimeRpc(endpoint.port, first, 'credentials.set', { ref: credentialRef, value: credentialValue })
     const credential = await runtimeRpc<{
       credentials: Record<string, { configured: boolean; source?: string; writable: boolean }>
-    }>(endpoint.port, second, 'credentials.describe', { refs: ['TASK5_RUNTIME_CREDENTIAL'] })
-    expect(credential.credentials.TASK5_RUNTIME_CREDENTIAL)
-      .toEqual({ configured: true, source: 'env', writable: false })
+    }>(endpoint.port, second, 'credentials.describe', { refs: [credentialRef] })
+    expect(credential.credentials[credentialRef])
+      .toEqual({ configured: true, source: 'platform', writable: true })
 
     const createdWorkspace = await runtimeRpc<{ workspace: { workspaceId: string; path: string } }>(
       endpoint.port, first, 'workspace.create', { path: workspacePath },
@@ -87,6 +91,11 @@ describe('clean source backend Runtime fixture', () => {
     expect(events.indexOf('listener-close')).toBeLessThan(events.indexOf('process-exit'))
 
     const files = await listFiles(runtime.harnessHome)
+    const credentialMetadata = join(runtime.harnessHome, '.credential-references.json')
+    expect(files).toContain(credentialMetadata)
+    const metadataText = await readFile(credentialMetadata, 'utf8')
+    expect(JSON.parse(metadataText)).toEqual({ version: 1, references: [credentialRef] })
+    expect(metadataText).not.toContain(credentialValue)
     expect(files.some(path => path === join(runtime!.harnessHome, 'settings.yaml'))).toBe(true)
     expect(files.some(path => relative(runtime!.harnessHome, path).split(/[\\/]/)[0] === 'storages')).toBe(true)
     const sessionLog = files.find(path => path.endsWith('.jsonl.zstd'))
@@ -97,6 +106,8 @@ describe('clean source backend Runtime fixture', () => {
     expect(decoded.join('')).toContain('committed before retirement')
     expect(files.every(path => isAbsolute(path) && !relative(runtime!.harnessHome, path).startsWith('..'))).toBe(true)
     await expect(access(runtime.legacyHome)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(join(runtime.legacyHome, '.credential-references.json')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
     const platformFiles = (await listFiles(runtime.platformHome)).map(path => relative(runtime!.platformHome, path))
     const productWriter = new RegExp(
       String.raw`(?:^|[\\/])(?:sessions|storages|settings\.yaml|\.credential-references\.json|runtime\.lock|runtime-endpoint\.json)(?:$|[\\/])`,

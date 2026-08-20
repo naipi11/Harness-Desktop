@@ -59,6 +59,7 @@ export interface StartRuntimeProcessOptions {
   readonly entry?: 'runtime-bin' | 'source-backend-fixture'
   readonly denyWorkspaceLib?: boolean
   readonly observeWorkspaceModules?: boolean
+  readonly harnessHomeEnv?: string
   readonly failImport?: string
   readonly failureMessage?: string
 }
@@ -96,14 +97,13 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...launch.env,
-    HARNESS_HOME: harnessHome,
+    HARNESS_HOME: options.harnessHomeEnv ?? harnessHome,
     DSH_HOME: legacyHome,
     HOME: platformHome,
     USERPROFILE: platformHome,
     APPDATA: join(platformHome, 'AppData', 'Roaming'),
     LOCALAPPDATA: join(platformHome, 'AppData', 'Local'),
     XDG_CONFIG_HOME: join(platformHome, '.config'),
-    TASK5_RUNTIME_CREDENTIAL: 'fixture-credential-value',
     HARNESS_RUNTIME_TEST_MODE: 'stdin-lifetime',
     HARNESS_RUNTIME_TEST_TRACE: tracePath,
     ...(options.denyWorkspaceLib === true ? { HARNESS_RUNTIME_TEST_DENY_WORKSPACE_LIB_ROOT: repoRoot } : {}),

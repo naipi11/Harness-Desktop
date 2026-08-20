@@ -60,4 +60,19 @@ describe.each([
       expect(result.stdout + result.stderr).not.toContain(secret)
     }
   })
+
+  it.each([
+    { label: 'blank', value: '' },
+    { label: 'whitespace', value: ' \t ' },
+  ])('redacts a $label HARNESS_HOME validation failure', async ({ value }) => {
+    runtime = await startRuntimeProcess({ mode, harnessHomeEnv: value })
+    const result = await waitForRuntimeExit(runtime)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.signal).toBeNull()
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('harness-runtime: startup failed\n')
+    expect(result.stderr).not.toContain('/packages/host/local-runtime/')
+    expect(result.stderr).not.toContain('\\packages\\host\\local-runtime\\')
+  })
 })

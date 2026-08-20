@@ -14,6 +14,7 @@ const ARTIFACT_ONLY_PACKAGES = new Set([
   '@harness-desktop/dsh-cordis-client-runner',
   '@harness-desktop/dsh-typert-loader',
 ])
+const WRITABLE_CREDENTIAL_PROVIDER = new URL('./runtime-writable-credentials.ts', import.meta.url).href
 
 /** Apply the real patch while explicitly excluding rows whose only runtime is build-generated. */
 function sourceBackendPatches(patches: readonly PatchOptions[]): PatchOptions[] {
@@ -24,7 +25,9 @@ function sourceBackendPatches(patches: readonly PatchOptions[]): PatchOptions[] 
       insert: patch.insert.map((entry) => {
         if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string') return entry
         const disabled = entry.name.startsWith('@harness-desktop/dsh-client-') || ARTIFACT_ONLY_PACKAGES.has(entry.name)
-        const name = entry.name.startsWith('cordis:') ? entry.name : import.meta.resolve(entry.name)
+        const name = entry.id === 'credentials'
+          ? WRITABLE_CREDENTIAL_PROVIDER
+          : entry.name.startsWith('cordis:') ? entry.name : import.meta.resolve(entry.name)
         return { ...entry, name, ...(disabled ? { disabled: true } : {}) }
       }),
     }
