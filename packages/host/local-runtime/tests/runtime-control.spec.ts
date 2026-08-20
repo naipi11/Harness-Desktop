@@ -29,6 +29,7 @@ interface TimerCapture {
 async function start(
   openBootstrap: (url: string) => Promise<void>,
   clock: { now: number } = { now: 0 },
+  remove?: (path: string) => Promise<void>,
 ): Promise<{ control: PrivateRuntimeControl; timers: TimerCapture; origin: string }> {
   root = await mkdtemp(join(tmpdir(), 'harness-runtime-control-'))
   context = new Context()
@@ -55,8 +56,9 @@ async function start(
         now: () => clock.now,
         cleanup: {
           now: () => clock.now,
-          setTimer: timers.setTimer,
+          setTimer: callback => timers.setTimer(callback),
           clearTimer() {},
+          ...(remove === undefined ? {} : { remove }),
         },
         mountAuthenticatedDashboard(auth) {
           mountAuthenticatedConnection(routeContext, { authorize: request => auth.authorizeDashboard(request) })
@@ -71,7 +73,7 @@ async function expectRemoved(fileUrl: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const result = await readFile(fileURLToPath(fileUrl), 'utf8').then(
       () => undefined,
-      error => error as NodeJS.ErrnoException,
+      (error: unknown) => error as NodeJS.ErrnoException,
     )
     if (result?.code === 'ENOENT') return
     await new Promise<void>(resolve => setTimeout(resolve, 10))
@@ -137,5 +139,27 @@ describe('private Runtime control assembly', () => {
     })
     expect(rejected.status).toBe(403)
     await expectRemoved(rejectedUrl)
+  })
+
+  it('waits for every owned bootstrap cleanup before reporting independent failures', async () => {
+    const slow = Promise.withResolvers<undefined>()
+    let removals = 0
+    const { control } = await start(async () => {}, { now: 0 }, async () => {
+      removals += 1
+      if (removals === 1) throw new Error('first cleanup failed')
+      await slow.promise
+    })
+    await control.openDashboard()
+    await control.openDashboard()
+
+    const closing = control.close()
+    const early = await Promise.race([
+      closing.then(() => 'settled', () => 'settled'),
+      new Promise<'pending'>(resolve => setTimeout(() => { resolve('pending') }, 20)),
+    ])
+    expect(early).toBe('pending')
+    slow.resolve(undefined)
+    await expect(closing).rejects.toThrow('bootstrap cleanup failed')
+    expect(removals).toBe(2)
   })
 })

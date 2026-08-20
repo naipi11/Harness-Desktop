@@ -5012,6 +5012,9 @@ importers:
       '@harness-desktop/dsh-host-webserver':
         specifier: workspace:^
         version: link:../webserver
+      '@harness-desktop/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@harness-desktop/dsh-web-app':
         specifier: workspace:^
         version: link:../../bundle/web-app

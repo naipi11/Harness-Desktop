@@ -18,6 +18,8 @@ Creates and holds event-sourced `Session` instances. Persistence is intentionall
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
 
+`SessionWriteCoordinator` is a process-local admission primitive for hosts that expose one session through several clients. `tryAcquire(sessionId)` returns one exact-owner lease or a typed busy result; reads remain unrestricted, and duplicate or stale `release(lease)` calls cannot clear a later writer. It does not create, resume, or persist a session.
+
 #### Advanced: ordered-teardown lifecycle primitives
 
 Use the split lifecycle only when teardown must be ordered with another resource:

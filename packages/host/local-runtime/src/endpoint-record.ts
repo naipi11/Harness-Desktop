@@ -1,7 +1,7 @@
 /** Private Runtime endpoint persistence and token-free status projection. */
 
 import { randomBytes } from 'node:crypto'
-import { link, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { link, lstat, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import type { HarnessHome } from './data-root.ts'
@@ -79,6 +79,7 @@ export async function readPrivateEndpointRecord(
   options: PrivateEndpointRecordOptions = {},
 ): Promise<PrivateEndpointRecord> {
   const path = join(home, RUNTIME_ENDPOINT_FILENAME)
+  await lstat(path)
   await (options.privatePathPolicy ?? runtimePrivatePathPolicy).verifyFile(path)
   return parsePrivateEndpointRecord(await readFile(path, 'utf8'))
 }

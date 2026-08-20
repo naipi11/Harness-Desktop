@@ -6,8 +6,9 @@ import { sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
-import type { WebServer } from '@harness-desktop/dsh-host-webserver'
+import { SessionWriteCoordinator, type SessionWriteLease } from '@harness-desktop/dsh-session'
 import type { HarnessHomeProvider } from './harness-home-provider.ts'
+import { createRuntimeControlService, type RuntimeControlService } from './control-service.ts'
 import { mountPrivateRuntimeControl } from './runtime-control.ts'
 import {
   redactRuntimeStatus,
@@ -36,6 +37,14 @@ export type RuntimeWorkLeaseId = Branded<'RuntimeWorkLeaseId'>
 export interface RuntimeWorkLease {
   readonly id: RuntimeWorkLeaseId
   readonly session: SessionId
+}
+
+/** Internal rejection raised when another operation owns one session writer. */
+export class RuntimeSessionBusyError extends Error {
+  constructor(public readonly sessionId: SessionId) {
+    super('host-local-runtime: session already has an active writer')
+    this.name = 'RuntimeSessionBusyError'
+  }
 }
 
 /** Identity of one explicit background retention lease. */
@@ -70,6 +79,8 @@ export interface StartRuntimeConfig {
   readonly mountPrivateControl?: boolean
   /** Native bootstrap dispatcher retained by the Runtime process. */
   readonly openBootstrap?: (url: string) => Promise<void>
+  /** Optional legacy `DSH_HOME` candidate retained only by the migration service. */
+  readonly legacyDshHome?: string
 }
 
 /** Inputs for the shipped base-and-Web Runtime composition. */
@@ -112,9 +123,10 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
   if (acquisition.kind !== 'acquired') throw ownershipError(acquisition)
   let ctx: Context | undefined
   let runtimeId: RuntimeId | undefined
+  let handle: RuntimeHandle | undefined
   try {
     ctx = await config.boot(config.harnessHome)
-    const webServer = ctx.get('webServer') as WebServer | undefined
+    const webServer = ctx.get('webServer')
     if (webServer === undefined || webServer.host !== '127.0.0.1' || !Number.isSafeInteger(webServer.port) || webServer.port < 1) {
       throw new Error('host-local-runtime: composition must expose one healthy 127.0.0.1 WebServer with an OS-assigned port')
     }
@@ -126,6 +138,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       process: acquisition.lock.process,
       accessToken: randomBytes(32).toString('base64url'),
     }
+    handle = createRuntimeHandle(config, acquisition.lock, ctx, record)
     if (config.mountPrivateControl === true) {
       const connectionModule = await import(CLIENT_CONNECTION_MODULE) as {
         apply: (
@@ -134,22 +147,53 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
           authentication: { authorize(request: unknown): boolean },
         ) => void
       }
-      mountPrivateRuntimeControl(ctx, {
-        accessToken: record.accessToken,
-        origin: `http://127.0.0.1:${String(record.port)}`,
-        bootstrapParent: config.harnessHome.path('runtime-bootstrap'),
-        openBootstrap: config.openBootstrap ?? (async () => {}),
-        mountAuthenticatedDashboard(auth) {
-          connectionModule.apply(ctx as Context, { trustedHosts: ['127.0.0.1'] }, {
-            authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
-          })
+      const sessions = ctx.get('sessions') as RuntimeControlService['sessions']
+      const controlService = createRuntimeControlService({
+        runtime: handle,
+        ...(sessions === undefined ? {} : { sessions }),
+        resolution: {
+          path: config.harnessHome.home,
+          source: 'environment',
+          legacyDshHome: config.legacyDshHome,
         },
       })
+      const logger = ctx.logger
+      ctx.on('session/event', (session, event) => {
+        void controlService.handleSessionEvent(session.id, event.type).catch(() => {
+          logger.warn('host-local-runtime: session work settlement failed')
+        })
+      })
+      await ctx.plugin({
+        inject: ['webServer'],
+        apply(controlCtx) {
+          mountPrivateRuntimeControl(controlCtx, {
+            accessToken: record.accessToken,
+            origin: `http://127.0.0.1:${String(record.port)}`,
+            bootstrapParent: config.harnessHome.path('runtime-bootstrap'),
+            openBootstrap: config.openBootstrap ?? (async () => {}),
+            controlService,
+            mountAuthenticatedDashboard(auth) {
+              connectionModule.apply(controlCtx, { trustedHosts: ['127.0.0.1'] }, {
+                authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
+              })
+            },
+          })
+        },
+      }).await()
     }
     await writePrivateEndpointRecord(config.harnessHome.home, record)
-    return createRuntimeHandle(config, acquisition.lock, ctx, record)
+    return handle
   } catch (error) {
-    const cleanup = await cleanupFailedStart(config, acquisition.lock, ctx, runtimeId)
+    let cleanup: unknown
+    if (handle === undefined) {
+      cleanup = await cleanupFailedStart(config, acquisition.lock, ctx, runtimeId)
+    } else {
+      try {
+        await handle.dispose()
+      } catch (cleanupError: unknown) {
+        cleanup = cleanupError
+      }
+    }
     if (cleanup !== undefined) throw new AggregateError([error, cleanup], 'host-local-runtime: Runtime startup and cleanup both failed')
     throw error
   }
@@ -257,7 +301,8 @@ function createRuntimeHandle(
   record: { readonly runtimeId: RuntimeId; readonly port: number },
 ): RuntimeHandle {
   const clients = new Set<RuntimeClientId>()
-  const work = new Map<RuntimeWorkLeaseId, SessionId>()
+  const admissions = new SessionWriteCoordinator()
+  const work = new Map<RuntimeWorkLeaseId, { readonly session: SessionId; readonly admission: SessionWriteLease }>()
   const backgrounds = new Set<BackgroundLeaseId>()
   let state: RedactedRuntimeStatus['state'] = 'running'
   let disposal: Promise<void> | undefined
@@ -269,7 +314,9 @@ function createRuntimeHandle(
       if (clients.size === 0 && work.size === 0 && backgrounds.size === 0) await dispose()
     },
   })
-  const reconcile = (): void => lifecycle.reconcile(clients.size === 0 && work.size === 0 && backgrounds.size === 0 && state === 'running')
+  const reconcile = (): void => {
+    lifecycle.reconcile(clients.size === 0 && work.size === 0 && backgrounds.size === 0 && state === 'running')
+  }
   const dispose = async (): Promise<void> => {
     if (disposal !== undefined) return disposal
     if (clients.size !== 0 || work.size !== 0 || backgrounds.size !== 0) {
@@ -287,37 +334,46 @@ function createRuntimeHandle(
   }
   const handle: RuntimeHandle = {
     status: () => redactRuntimeStatus({ ...record, protocolVersion: 1, process: lock.process, accessToken: '' }, state, backgrounds.size),
-    async attachClient(client) {
+    attachClient(client) {
       ensureRunning(state)
       clients.add(client)
       reconcile()
-      return Object.freeze({})
+      return Promise.resolve(Object.freeze({}))
     },
-    async releaseClient(client) {
+    releaseClient(client) {
       clients.delete(client)
       reconcile()
+      return Promise.resolve()
     },
-    async beginAgentWork(session) {
+    beginAgentWork(session) {
       ensureRunning(state)
+      const admission = admissions.tryAcquire(session)
+      if (admission.kind === 'busy') throw new RuntimeSessionBusyError(session)
       const id = randomId('RuntimeWorkLeaseId')
-      work.set(id, session)
+      work.set(id, { session, admission: admission.lease })
       reconcile()
-      return Object.freeze({ id, session })
+      return Promise.resolve(Object.freeze({ id, session }))
     },
-    async endAgentWork(lease) {
-      work.delete(lease.id)
+    endAgentWork(lease) {
+      const active = work.get(lease.id)
+      if (active !== undefined) {
+        work.delete(lease.id)
+        admissions.release(active.admission)
+      }
       reconcile()
+      return Promise.resolve()
     },
-    async acquireBackgroundLease(_owner) {
+    acquireBackgroundLease(_owner) {
       ensureRunning(state)
       const id = randomId('BackgroundLeaseId')
       backgrounds.add(id)
       reconcile()
-      return Object.freeze({ id })
+      return Promise.resolve(Object.freeze({ id }))
     },
-    async releaseBackgroundLease(lease) {
+    releaseBackgroundLease(lease) {
       backgrounds.delete(lease.id)
       reconcile()
+      return Promise.resolve()
     },
     dispose,
   }
@@ -331,12 +387,17 @@ async function cleanupFailedStart(
   lock: RuntimeLock,
   ctx: Context | undefined,
   runtimeId: RuntimeId | undefined,
-): Promise<unknown | undefined> {
-  return runCleanup([
-    async () => runtimeId === undefined ? undefined : removePrivateEndpointRecord(config.harnessHome.home, runtimeId),
-    async () => ctx?.fiber.dispose(),
-    async () => lock.release(),
-  ]).then(() => undefined, error => error)
+): Promise<unknown> {
+  try {
+    await runCleanup([
+      async () => runtimeId === undefined ? undefined : removePrivateEndpointRecord(config.harnessHome.home, runtimeId),
+      async () => ctx?.fiber.dispose(),
+      async () => lock.release(),
+    ])
+    return undefined
+  } catch (error: unknown) {
+    return error
+  }
 }
 
 /** Execute every ordered cleanup operation and preserve every independent failure. */

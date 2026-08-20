@@ -70,6 +70,7 @@ export type LegacyMigrationState =
   | { readonly kind: 'failed'; readonly retained: readonly string[]; readonly retryable: true; readonly diagnosticId: RuntimeDiagnosticId }
 
 const fsPromises: LegacyImportFs = { cp, mkdir, mkdtemp, readdir, rename, rm }
+const RUNTIME_CONTROL_FILES = new Set([LEGACY_MIGRATION_FILENAME, 'runtime.lock', 'runtime-endpoint.json'])
 
 /** Whether an error means absence; every other failure must surface. */
 function isENOENT(error: unknown): boolean {
@@ -100,7 +101,7 @@ export async function importLegacyDshHome(request: LegacyImportRequest): Promise
 
     const targetEntries = await safeReaddir(target, fs)
     const retained = new Set(request.retained ?? [])
-    const blocker = [...targetEntries].filter(name => name !== LEGACY_MIGRATION_FILENAME && !retained.has(name))
+    const blocker = [...targetEntries].filter(name => !RUNTIME_CONTROL_FILES.has(name) && !retained.has(name))
     if (blocker.length > 0) return { kind: 'target-not-empty', target }
 
     await fs.mkdir(target, { recursive: true, mode: 0o700 })

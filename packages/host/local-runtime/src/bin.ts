@@ -12,6 +12,7 @@ try {
   const runtime = await startCanonicalRuntime({
     harnessHome,
     idleTimeoutMs: 60_000,
+    ...(process.env.DSH_HOME === undefined ? {} : { legacyDshHome: process.env.DSH_HOME }),
   })
   restoreOutput()
   process.stderr.write(`harness-runtime: ready ${JSON.stringify(runtime.status())}\n`)

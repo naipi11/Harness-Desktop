@@ -8,6 +8,7 @@ import {
   type BootstrapCleanupOptions,
 } from './auth.ts'
 import { mountLocalControlRoutes } from './control-routes.ts'
+import type { RuntimeControlService } from './control-service.ts'
 
 type BootstrapCleanup = ReturnType<typeof createBootstrapCleanup>
 
@@ -35,6 +36,8 @@ export interface PrivateRuntimeControlOptions {
   readonly cleanup?: BootstrapCleanupOptions
   /** Mounts the existing browser API and event transport with the session validator. */
   readonly mountAuthenticatedDashboard: (auth: LocalDashboardAuth) => void
+  /** Runtime-owned control state shared by native and Dashboard request routes. */
+  readonly controlService?: RuntimeControlService
 }
 
 /**
@@ -83,11 +86,18 @@ export function mountPrivateRuntimeControl(ctx: Context, options: PrivateRuntime
     async close() {
       const cleanups = [...pending.values()]
       pending.clear()
-      await Promise.all(cleanups.map(cleanup => cleanup.exchangeSettled()))
+      const settled = await Promise.allSettled(cleanups.map(cleanup => cleanup.exchangeSettled()))
+      const errors = settled
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map(result => result.reason as unknown)
+      if (errors.length > 0) {
+        throw new AggregateError(errors, 'host-local-runtime: bootstrap cleanup failed')
+      }
     },
   }
   mountLocalControlRoutes(ctx, {
     auth,
+    ...(options.controlService === undefined ? {} : { controlService: options.controlService }),
     mountAuthenticatedDashboard: options.mountAuthenticatedDashboard,
     onHandoffSettled: settle,
   })

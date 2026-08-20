@@ -61,6 +61,7 @@ export default defineConfig({
       'apps/cli/tests/**/*.snapshot.ts',
       'apps/desktop/tests/**/*.snapshot.tsx',
       'examples/*/tests/**/*.snapshot.ts',
+      'packages/host/local-runtime/tests/**/*.snapshot.ts',
     ],
     // Replay never writes committed outputs and every scenario owns its
     // mutable runtime state (the subprocess suites use a unique temp dir and

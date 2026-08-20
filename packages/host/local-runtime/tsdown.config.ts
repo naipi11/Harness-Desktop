@@ -11,6 +11,8 @@ export default defineConfig([
       'lib/types/runtime.js',
       'lib/types/idle-lifecycle.js',
       'lib/types/harness-home-provider.js',
+      'lib/types/control-service.js',
+      'lib/types/runtime-client.js',
       'lib/types/bin.js',
     ],
     outDir: 'lib',
