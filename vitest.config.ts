@@ -99,6 +99,8 @@ const testIncludes = [
   'packages/host/local-runtime/tests/local-auth.e2e.ts',
   'packages/host/local-runtime/tests/runtime-*.e2e.ts',
   'apps/*/tests/**/*.spec.ts',
+  'apps/cli/tests/runtime-client.e2e.ts',
+  'apps/cli/tests/interactive-terminal.pty.e2e.ts',
   'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',
 ]

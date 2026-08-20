@@ -66,6 +66,7 @@ interface TerminalRecord {
   readonly owner: RuntimeClientId
   agent: Agent
   readonly events: TerminalProtocolEvent[]
+  model?: { readonly provider: string; readonly model: string }
   workId?: ActiveWorkId
 }
 
@@ -84,7 +85,7 @@ export interface RuntimeControlServiceOptions {
   readonly api?: { readonly sessions: RuntimeSessionsApi }
   readonly agents?: Pick<AgentRegistry, 'get'>
   readonly commands?: Pick<CommandRuntime, 'execute'>
-  readonly permissionPresets?: Pick<PermissionPresetService, 'set'>
+  readonly permissionPresets?: Pick<PermissionPresetService, 'current' | 'set'>
   readonly resolution: HarnessHomeResolution
   readonly detectMigration?: typeof detectLegacyImport
   readonly recordMigration?: typeof recordLegacyImportDecision
@@ -401,27 +402,34 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
           const agent = requireAgents(options).get(response.result.value.sessionId)
           if (agent === undefined) throw new Error('host-local-runtime: resumed session has no live Agent')
           terminal.agent = agent
+          delete terminal.model
           terminal.events.push({ kind: 'session-opened', sessionId: agent.id })
           return
         }
         if (command.command === 'model') {
           const api = requireApi(options)
-          const models = await api.sessions.models({ rpcId: randomUUID() as RpcId, payload: { sessionId: terminal.agent.id } })
-          if (!models.result.ok) throw new Error('host-local-runtime: model selection is unavailable')
-          const model = command.model ?? models.result.value.current.model
+          const current = terminal.model ?? currentModel(terminal.agent)
+          const model = command.model ?? current.model
           if (command.model !== undefined) {
             const selected = await api.sessions.selectModel({
               rpcId: randomUUID() as RpcId,
-              payload: { sessionId: terminal.agent.id, provider: models.result.value.current.provider, model },
+              payload: { sessionId: terminal.agent.id, provider: current.provider, model },
             })
             if (!selected.result.ok) throw new Error('host-local-runtime: model selection failed')
           }
+          terminal.model = { provider: current.provider, model }
           terminal.events.push({ kind: 'model-changed', model })
           return
         }
         if (command.command === 'permissions') {
-          if (command.permission === undefined) throw new Error('host-local-runtime: a permission preset is required')
           if (options.permissionPresets === undefined) throw new Error('host-local-runtime: permission presets are unavailable')
+          if (command.permission === undefined) {
+            terminal.events.push({
+              kind: 'permission-changed',
+              permission: options.permissionPresets.current(terminal.agent.session.events),
+            })
+            return
+          }
           options.permissionPresets.set(terminal.agent.session, command.permission)
           return
         }
@@ -516,6 +524,16 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
   return service
 }
 
+function currentModel(agent: Agent): { readonly provider: string; readonly model: string } {
+  const header = agent.session.events.findLast(event => event.type === 'request/header')
+  const provider = header?.data.header.config.provider ?? agent.options.provider
+  const model = header?.data.header.config.model ?? agent.options.model
+  if (provider === undefined || model === undefined) {
+    throw new Error('host-local-runtime: model selection is unavailable')
+  }
+  return { provider, model }
+}
+
 function requireApi(options: RuntimeControlServiceOptions): { readonly sessions: RuntimeSessionsApi } {
   if (options.api === undefined) throw new Error('host-local-runtime: composed Agent API is unavailable')
   return options.api
@@ -557,6 +575,10 @@ function publishSessionEvent(terminal: TerminalRecord, session: Session, event: 
   } else if (event.type === 'permission/preset') {
     terminal.events.push({ kind: 'permission-changed', permission: event.data.preset })
   } else if (event.type === 'request/header') {
+    terminal.model = {
+      provider: event.data.header.config.provider,
+      model: event.data.header.config.model,
+    }
     terminal.events.push({ kind: 'model-changed', model: event.data.header.config.model })
   }
 }

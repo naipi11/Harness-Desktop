@@ -273,6 +273,75 @@ describe('Runtime real control transcript', () => {
     expect((await releaseRuntime(runtime)).exitCode).toBe(0)
   }, 120_000)
 
+  it('refuses a user skill when its scoped consumer disappears during real catalog discovery', async () => {
+    runtime = await startRuntimeProcess({
+      mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
+      racingSkillConsumerPreset: true,
+    })
+    const endpoint = await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    firstClient = await connector.connect({ start: false })
+    terminal = await firstClient.openTerminal({ workspace: runtime.cwd })
+    const iterator = terminal.events()[Symbol.asyncIterator]()
+    const opened = await nextKind(iterator, 'session-opened')
+    if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const response = await fetch(`http://127.0.0.1:${String(endpoint.port)}/api/session.prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie, origin: `http://127.0.0.1:${String(endpoint.port)}` },
+      body: JSON.stringify({
+        type: 'client-request', rpcId: 'task2-raced-skill-consumer', method: 'session.prompt',
+        payload: {
+          sessionId: opened.sessionId, mode: 'queue',
+          content: [{ type: 'text', text: '/runtime-raced-skill' }],
+        },
+      }),
+    })
+    expect(response.ok).toBe(true)
+    const envelope = await response.json() as { result: unknown }
+    const history = await runtimeRpc<{ events: Array<{ event: {
+      type: string
+      data?: { source?: { kind?: string } }
+    } }> }>(
+      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+    )
+    const transcript = normalizeProtocol({
+      result: envelope.result,
+      active: await firstClient.observeActiveWork(),
+      skillInvocations: history.events.filter(({ event }) =>
+        event.type === 'user/message' && event.data?.source?.kind === 'skill-invocation'),
+      turnTypes: history.events.map(({ event }) => event.type)
+        .filter(type => type === 'turn/start' || type === 'turn/end'),
+    })
+    expect(JSON.stringify(transcript)).not.toContain(endpoint.accessToken)
+    expect(JSON.stringify(transcript)).not.toContain(runtime.harnessHome)
+    expect(transcript).toMatchInlineSnapshot(`
+      {
+        "active": {
+          "ownUiWork": [],
+        },
+        "result": {
+          "error": {
+            "code": "unknown-command",
+            "details": {},
+            "message": "unknown command: /runtime-raced-skill",
+          },
+          "ok": false,
+        },
+        "skillInvocations": [],
+        "turnTypes": [],
+      }
+    `)
+
+    await terminal.close()
+    terminal = undefined
+    await firstClient.close()
+    firstClient = undefined
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+  }, 120_000)
+
   it('streams a logged task, reports exact busy recovery, and cancels a real operation', async () => {
     const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
     const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE

@@ -52,6 +52,9 @@ const webPatch = fileURLToPath(new URL('../../../../bundle/web-app/cordis.patch.
 
 const runtime = await startRuntime({
   harnessHome,
+  ...(process.env.DSH_RUNTIME_TEST_ENABLE_LEGACY_MIGRATION === '1' && process.env.DSH_HOME !== undefined
+    ? { legacyDshHome: process.env.DSH_HOME }
+    : {}),
   idleTimeoutMs: 60_000,
   mountPrivateControl: true,
   flush: flushSessions,

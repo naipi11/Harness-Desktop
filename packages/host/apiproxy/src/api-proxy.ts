@@ -1828,6 +1828,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     try {
       const snapshot = await skills.snapshot({ cwd: agent.session.header.cwd, scope: agent })
       if (!snapshot.complete) return 'unavailable'
+      if (!skills.hasUserInvocationConsumer(agent)) return 'unknown'
       return snapshot.skills.some(skill => skill.name === name && isUserInvocable(skill))
         ? 'user-skill'
         : 'unknown'

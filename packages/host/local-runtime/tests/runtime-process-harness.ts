@@ -16,6 +16,8 @@ const sourceBin = join(packageRoot, 'src', 'bin.ts')
 const sourceBackendFixture = fileURLToPath(new URL('./fixtures/runtime-source-backend.ts', import.meta.url))
 const sourceToolSkill = new URL('../../../skill/tool-skill/src/index.ts', import.meta.url).href
 const sourceUserSkillFixture = new URL('./fixtures/runtime-user-skill.ts', import.meta.url).href
+const sourceApprovalToolFixture = new URL('./fixtures/runtime-approval-tool.ts', import.meta.url).href
+const sourceRacingSkillConsumer = new URL('./fixtures/runtime-racing-skill-consumer.ts', import.meta.url).href
 const processHook = fileURLToPath(new URL('./fixtures/runtime-process-hooks.mjs', import.meta.url))
 const repoTsconfig = join(repoRoot, 'tsconfig.json')
 const PROCESS_TIMEOUT_MS = 45_000
@@ -66,6 +68,12 @@ export interface StartRuntimeProcessOptions {
   readonly failureMessage?: string
   /** Mount the deterministic user-only skill with or without its real pre-step consumer. */
   readonly userSkillPreset?: 'consumer-mounted' | 'consumer-missing'
+  /** Mount the deterministic tool that asks the real approval service once. */
+  readonly terminalApprovalPreset?: boolean
+  /** Mount a scoped skill consumer that revokes itself during catalog discovery. */
+  readonly racingSkillConsumerPreset?: boolean
+  /** Seed one supported legacy session so first-start migration needs an explicit decision. */
+  readonly legacySession?: boolean
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -75,13 +83,19 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
   const legacyHome = join(cwd, 'legacy-dsh-home')
   const platformHome = join(cwd, 'platform-default-home')
   const tracePath = join(cwd, 'runtime-trace.jsonl')
+  if (options.legacySession === true) {
+    await mkdir(join(legacyHome, 'sessions'), { recursive: true })
+    await writeFile(join(legacyHome, 'sessions', 'legacy.jsonl'), '{"legacy":true}\n')
+  }
   await mkdir(join(harnessHome, '.agent-presets', 'standard'), { recursive: true })
-  const agentPreset = options.userSkillPreset === undefined
-    ? []
-    : [
+  const agentPreset = [
+    ...options.userSkillPreset === undefined ? [] : [
       ...options.userSkillPreset === 'consumer-mounted' ? [{ name: sourceToolSkill }] : [],
       { name: sourceUserSkillFixture },
-    ]
+    ],
+    ...options.terminalApprovalPreset === true ? [{ name: sourceApprovalToolFixture }] : [],
+    ...options.racingSkillConsumerPreset === true ? [{ name: sourceRacingSkillConsumer }] : [],
+  ]
   await writeFile(
     join(harnessHome, '.agent-presets', 'standard', 'agent.cordis.yml'),
     `${JSON.stringify(agentPreset, undefined, 2)}\n`,
@@ -119,6 +133,7 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
     XDG_CONFIG_HOME: join(platformHome, '.config'),
     HARNESS_RUNTIME_TEST_MODE: 'stdin-lifetime',
     HARNESS_RUNTIME_TEST_TRACE: tracePath,
+    ...(options.legacySession === true ? { DSH_RUNTIME_TEST_ENABLE_LEGACY_MIGRATION: '1' } : {}),
     ...(options.denyWorkspaceLib === true ? { HARNESS_RUNTIME_TEST_DENY_WORKSPACE_LIB_ROOT: repoRoot } : {}),
     ...(options.observeWorkspaceModules === true ? { HARNESS_RUNTIME_TEST_OBSERVE_WORKSPACE_ROOT: repoRoot } : {}),
     ...(options.failImport === undefined ? {} : { HARNESS_RUNTIME_TEST_FAIL_IMPORT: options.failImport }),

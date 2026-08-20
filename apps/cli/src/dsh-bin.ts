@@ -2,4 +2,4 @@
 
 import { runCli } from './main.ts'
 
-await runCli('dsh')
+process.exitCode = await runCli('dsh')

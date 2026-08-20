@@ -816,6 +816,56 @@ describe('sessions.prompt synchronous rejection', () => {
     await foreignConsumer.dispose()
   })
 
+  it('refuses a skill when its exact Agent consumer disappears during asynchronous catalog discovery', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const consumer = await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-skill-consumer-race'))
+    const followup = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.skills.register({
+      name: 'raced-skill', description: 'Skill whose consumer is unloading.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    let catalogStarted!: () => void
+    const started = new Promise<void>((resolve) => { catalogStarted = resolve })
+    let releaseCatalog!: () => void
+    const released = new Promise<void>((resolve) => { releaseCatalog = resolve })
+    ctx.skills.registerProvider(() => ({
+      name: 'delayed-provider',
+      list: async () => {
+        catalogStarted()
+        await released
+        return []
+      },
+      get: () => Promise.resolve(undefined),
+    }))
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const pending = api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/raced-skill' }],
+    }))
+    await started
+    await consumer.dispose()
+    releaseCatalog()
+    const response = await pending
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /raced-skill', details: {} },
+    })
+    expect(followup).not.toHaveBeenCalled()
+  })
+
   it('does not classify an incomplete skill catalog as an unknown command', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

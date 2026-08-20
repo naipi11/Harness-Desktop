@@ -284,6 +284,47 @@ describe('Runtime control service', () => {
     expect(delegated).toBe(0)
   })
 
+  it('renders the Agent-owned model without waiting for the provider catalog', async () => {
+    const { agents } = await start()
+    const owner = client('model-owner')
+    const terminal = client('model-terminal')
+    const sessionId = makeSessionId('model-session')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected live model Agent')
+    ;(agent as { options: Agent['options'] }).options = { provider: 'test-provider', model: 'test-model' }
+
+    await control!.runTerminalControl(owner, terminal, { command: 'model' })
+    await control!.runTerminalControl(owner, terminal, { command: 'model', model: 'next-model' })
+    await control!.runTerminalControl(owner, terminal, { command: 'model' })
+
+    expect((await control!.readTerminalEvents(owner, terminal, 0)).events.filter(event => event.kind === 'model-changed'))
+      .toEqual([
+        { kind: 'model-changed', model: 'test-model' },
+        { kind: 'model-changed', model: 'next-model' },
+        { kind: 'model-changed', model: 'next-model' },
+      ])
+  })
+
+  it('renders the current permission preset when the optional argument is absent', async () => {
+    const permissionPresets = {
+      current: () => 'workspace-write',
+      set: () => { throw new Error('query-only permission control must not set') },
+    }
+    await start(undefined, { permissionPresets })
+    const owner = client('permission-owner')
+    const terminal = client('permission-terminal')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, { workspace: root! })
+
+    await control!.runTerminalControl(owner, terminal, { command: 'permissions' })
+
+    expect((await control!.readTerminalEvents(owner, terminal, 0)).events).toContainEqual({
+      kind: 'permission-changed', permission: 'workspace-write',
+    })
+  })
+
   it('cancels with no-clear semantics and preserves unrelated queued and steering work', async () => {
     const { agents } = await start()
     const owner = client('cancel-owner')
