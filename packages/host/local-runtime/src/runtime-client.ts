@@ -985,7 +985,8 @@ function encodedBytes(value: unknown): number {
 
 /**
  * Reject the exact endpoint token or selected home found in an untrusted decoded value.
- * Windows matching folds case and separators; every platform requires a path-component boundary.
+ * Windows matching folds case and separators; every platform requires a path-component boundary,
+ * and a selected filesystem root contains every absolute descendant on that root.
  * @param value - decoded response value to inspect recursively.
  * @param token - exact private endpoint token.
  * @param home - selected absolute Harness home.
@@ -1019,6 +1020,7 @@ function containsSelectedHome(value: string, home: string, platform: string): bo
   const separator = windows ? '\\' : '/'
   const normalizedHome = trimTrailingSeparators(normalize(home), separator, windows)
   const normalizedValue = normalize(value)
+  const rootHome = normalizedHome.endsWith(separator)
   let offset = 0
   for (;;) {
     const index = normalizedValue.indexOf(normalizedHome, offset)
@@ -1026,7 +1028,7 @@ function containsSelectedHome(value: string, home: string, platform: string): bo
     const before = normalizedValue[index - 1]
     const after = normalizedValue[index + normalizedHome.length]
     const beginsAtBoundary = before === undefined || !/[\p{L}\p{N}_.-]/u.test(before)
-    const endsAtBoundary = after === undefined || after === separator || /[\s"'.,;:!?()[\]{}]/u.test(after)
+    const endsAtBoundary = rootHome || after === undefined || after === separator || !/[\p{L}\p{N}_.-]/u.test(after)
     if (beginsAtBoundary && endsAtBoundary) return true
     offset = index + 1
   }

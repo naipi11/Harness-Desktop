@@ -100,6 +100,8 @@ describe('selected Runtime private-value redaction', () => {
     }
     expect(() => { guard({ text: 'C:\\Users\\Alice\\Harness-sibling\\file.txt' }, 'private-token-value', home, 'win32') })
       .not.toThrow()
+    expect(() => { guard({ text: 'C:\\Users\\Alice\\Harness.backup\\file.txt' }, 'private-token-value', home, 'win32') })
+      .not.toThrow()
     expect(() => { guard({ text: 'prefixC:\\Users\\Alice\\Harness\\ordinary' }, 'private-token-value', home, 'win32') })
       .not.toThrow()
   })
@@ -114,9 +116,28 @@ describe('selected Runtime private-value redaction', () => {
       .not.toThrow()
     expect(() => { guard({ text: '/Users/Alice/Harness-sibling/file.txt' }, 'private-token-value', home, 'linux') })
       .not.toThrow()
+    expect(() => { guard({ text: '/Users/Alice/Harness.backup/file.txt' }, 'private-token-value', home, 'linux') })
+      .not.toThrow()
     expect(() => { guard({ text: 'prefix/Users/Alice/Harness/ordinary' }, 'private-token-value', home, 'linux') })
       .not.toThrow()
     expect(() => { guard({ text: 'prefix private-token-value suffix' }, 'private-token-value', home, 'linux') })
       .toThrow(RuntimeProtocolError)
+  })
+
+  it('treats POSIX and Windows filesystem roots as containing every descendant', () => {
+    const guard = privateValueGuard()
+    for (const rejected of ['/', '/etc', 'failure under /var/lib/harness']) {
+      expect(() => { guard({ text: rejected }, 'private-token-value', '/', 'linux') }).toThrow(RuntimeProtocolError)
+    }
+    expect(() => { guard({ text: 'prefix/etc is ordinary text' }, 'private-token-value', '/', 'linux') })
+      .not.toThrow()
+
+    for (const rejected of ['C:\\', 'c:/Users', 'failure under C:/USERS/Alice']) {
+      expect(() => { guard({ text: rejected }, 'private-token-value', 'C:\\', 'win32') }).toThrow(RuntimeProtocolError)
+    }
+    expect(() => { guard({ text: 'prefixC:\\Users is ordinary text' }, 'private-token-value', 'C:\\', 'win32') })
+      .not.toThrow()
+    expect(() => { guard({ text: 'D:\\unrelated-workspace\\file.txt' }, 'private-token-value', 'C:\\', 'win32') })
+      .not.toThrow()
   })
 })

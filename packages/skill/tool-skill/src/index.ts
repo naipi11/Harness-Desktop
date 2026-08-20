@@ -170,8 +170,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   // listener, so the waterfall hands it the catalog-bearing list to extend.
   // Only `source.kind === 'user'` messages are scanned — external text
   // cannot forge the gesture — and a token naming no user-invocable skill
-  // stays ordinary prose (the command registry is a different closed
-  // namespace, resolved client-side before a line ever becomes a prompt).
+  // stays ordinary prose at this boundary. The command registry is a separate
+  // namespace; Host prompt APIs classify an exact leading slash line before
+  // admission, while direct Agent entry points can reach this listener.
   // This is the only entry point for `disable-model-invocation` skills; the
   // catalog and the `skill` tool below never see them.
   ctx.on('agent/pre-step', async (

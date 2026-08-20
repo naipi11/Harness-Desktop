@@ -21,7 +21,7 @@ import type { SessionPersistence } from '@harness-desktop/dsh-session-persistenc
 import { SessionQueryError, type SessionSearchCursor } from '@harness-desktop/dsh-session-query'
 import { SubagentError } from '@harness-desktop/dsh-subagent'
 import type { SubagentListEntry as CatalogSubagentListEntry } from '@harness-desktop/dsh-subagent'
-import { isUserInvocable } from '@harness-desktop/dsh-skill'
+import { isSkillName, isUserInvocable } from '@harness-desktop/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@harness-desktop/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
@@ -241,6 +241,14 @@ function commandCandidate(content: readonly PromptContentPart[]): string | undef
   const [first, ...rest] = content
   if (first === undefined || rest.length > 0 || first.type !== 'text' || !first.text.startsWith('/')) return undefined
   return first.text
+}
+
+/** Return a valid skill name only when it is the command-like line's leading token. */
+function leadingSkillName(line: string): string | undefined {
+  const separator = line.search(/\s/u)
+  const token = separator === -1 ? line : line.slice(0, separator)
+  const name = token.slice(1)
+  return isSkillName(name) ? name : undefined
 }
 
 /** Resolve the first reference matching one opaque id. */
@@ -1809,6 +1817,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return goals
   }
 
+  /** Classify an unregistered command-like line against the exact Agent skill catalog. */
+  async function resolveSkillGesture(agent: Agent, line: string): Promise<'user-skill' | 'unknown' | 'unavailable'> {
+    const name = leadingSkillName(line)
+    if (name === undefined) return 'unknown'
+    const presets = ctx.get('agentPresets')
+    const skills = presets?.serviceFor(agent, 'skills') ?? ctx.get('skills')
+    if (skills === undefined) return 'unknown'
+    try {
+      const snapshot = await skills.snapshot({ cwd: agent.session.header.cwd, scope: agent })
+      if (!snapshot.complete) return 'unavailable'
+      return snapshot.skills.some(skill => skill.name === name && isUserInvocable(skill))
+        ? 'user-skill'
+        : 'unknown'
+    } catch {
+      return 'unavailable'
+    }
+  }
+
   /** Map one goal-domain rejection to the wire error (stable GoalError codes ride in details). */
   function goalError(request: RpcRequest<unknown>, error: unknown): RpcResponse<never> {
     const details = error instanceof GoalError ? { goalCode: error.code } : {}
@@ -2483,18 +2509,34 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const commandLine = commandCandidate(content)
         if (commandLine !== undefined) {
           const commands = ctx.get('commands')
-          if (commands === undefined) {
-            return err(request, {
-              code: 'internal', message: 'command registry is absent from this Host composition', details: {},
-            })
+          let execution: Awaited<ReturnType<NonNullable<typeof commands>['execute']>> = undefined
+          if (commands !== undefined) {
+            try {
+              execution = await commands.execute(agent, commandLine, new AbortController().signal)
+            } catch (error: unknown) {
+              return err(request, {
+                code: 'command-error',
+                message: error instanceof Error ? error.message : 'command execution failed',
+                details: {},
+              })
+            }
           }
-          try {
-            const execution = await commands.execute(agent, commandLine, new AbortController().signal)
-            if (execution === undefined) {
+          if (execution === undefined) {
+            const skill = await resolveSkillGesture(agent, commandLine)
+            if (skill === 'unavailable') {
+              return err(request, { code: 'internal', message: 'skill catalog is temporarily unavailable', details: {} })
+            }
+            if (skill === 'unknown') {
+              if (commands === undefined) {
+                return err(request, {
+                  code: 'internal', message: 'command registry is absent from this Host composition', details: {},
+                })
+              }
               const separator = commandLine.search(/\s/u)
               const token = separator === -1 ? commandLine : commandLine.slice(0, separator)
               return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
             }
+          } else {
             if (execution.result.kind === 'error') {
               return err(request, { code: 'command-error', message: execution.result.text, details: {} })
             }
@@ -2504,12 +2546,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 kind: 'success' as const,
                 ...execution.result.text === undefined ? {} : { text: execution.result.text },
               },
-            })
-          } catch (error: unknown) {
-            return err(request, {
-              code: 'command-error',
-              message: error instanceof Error ? error.message : 'command execution failed',
-              details: {},
             })
           }
         }

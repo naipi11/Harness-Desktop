@@ -313,13 +313,6 @@ export interface SessionsApi {
   Promise<RpcResponse<{ title: string; seq: number }>>
 
   /**
-   * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
-   * A prompt whose content is exactly one text block starting with '/' uses the host command registry
-   * (mode-agnostic) and never reaches the model. A recognized command returns ok with the command slot
-   * (including its success text when present); a usage/state error is `command-error`, and an
-   * unrecognized name is `unknown-command`.
-   */
-  /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`
    * anchors the cut: the boundary is the first `turn/end` at or after it
    * (a message's fork button passes the message seq, so the fork includes
@@ -341,7 +334,10 @@ export interface SessionsApi {
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
-   * `subagent.prompt`.
+   * `subagent.prompt`. Exactly one text block starting with `/` first uses the host command registry;
+   * a recognized command returns its optional success text without a user message or turn. After a
+   * command miss, a complete Agent skill catalog admits a user-invocable leading name for
+   * `dsh-tool-skill`; incomplete discovery is `internal`, and a complete miss is `unknown-command`.
    */
   prompt(request: RpcRequest<{
     sessionId: SessionId

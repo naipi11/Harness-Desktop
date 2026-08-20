@@ -58,16 +58,25 @@ function normalizeProtocol(value: unknown): unknown {
 }
 
 describe('Runtime real control transcript', () => {
-  it('snapshots a recognized slash command with no Agent turn or active work', async () => {
-    const previous = process.env.DSH_RUNTIME_TEST_COMMAND
+  it('snapshots command, user-only skill, and unknown slash dispatch through the assembled Runtime', async () => {
+    const previousCommand = process.env.DSH_RUNTIME_TEST_COMMAND
+    const previousReplayFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+    const previousReplayOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
     process.env.DSH_RUNTIME_TEST_COMMAND = '1'
+    process.env.DSH_RUNTIME_TEST_REPLAY_FILE = `${replayOverride}.missing`
+    process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = replayOverride
     try {
       runtime = await startRuntimeProcess({
         mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
+        userSkillPreset: true,
       })
     } finally {
-      if (previous === undefined) delete process.env.DSH_RUNTIME_TEST_COMMAND
-      else process.env.DSH_RUNTIME_TEST_COMMAND = previous
+      if (previousCommand === undefined) delete process.env.DSH_RUNTIME_TEST_COMMAND
+      else process.env.DSH_RUNTIME_TEST_COMMAND = previousCommand
+      if (previousReplayFile === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_FILE = previousReplayFile
+      if (previousReplayOverride === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = previousReplayOverride
     }
     const endpoint = await waitForEndpoint(runtime)
     const connector = createRuntimeConnector({
@@ -78,20 +87,57 @@ describe('Runtime real control transcript', () => {
     const iterator = terminal.events()[Symbol.asyncIterator]()
     const opened = await nextKind(iterator, 'session-opened')
     if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const skillCatalog = await runtimeRpc<{ skills: Array<{ name: string; description: string; modelInvocable: boolean }> }>(
+      endpoint.port, cookie, 'skill.list', { sessionId: opened.sessionId },
+    )
+    expect(skillCatalog.skills).toContainEqual({
+      name: 'runtime-user-skill', modelInvocable: false,
+      description: 'Deterministic user-only Runtime skill',
+    })
 
     await terminal.submit({ kind: 'task', text: '/runtime_no_turn' })
-    const output = await nextKind(iterator, 'output')
+    const commandOutput = await nextKind(iterator, 'output')
+    expect(await firstClient.observeActiveWork()).toEqual({ ownUiWork: [] })
+
+    await terminal.submit({ kind: 'task', text: '/runtime-user-skill use the loaded instructions' })
+    const skillOutput = await nextKind(iterator, 'output')
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await firstClient.observeActiveWork()).ownUiWork.length === 0) break
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
     const active = await firstClient.observeActiveWork()
-    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
-    const history = await runtimeRpc<{ events: Array<{ event: { type: string } }> }>(
+    const unknownResponse = await fetch(`http://127.0.0.1:${String(endpoint.port)}/api/session.prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie, origin: `http://127.0.0.1:${String(endpoint.port)}` },
+      body: JSON.stringify({
+        type: 'client-request', rpcId: 'task6-unknown-command', method: 'session.prompt',
+        payload: {
+          sessionId: opened.sessionId, mode: 'queue',
+          content: [{ type: 'text', text: '/missing-command' }],
+        },
+      }),
+    })
+    expect(unknownResponse.ok).toBe(true)
+    const unknownEnvelope = await unknownResponse.json() as { result: unknown }
+    const history = await runtimeRpc<{ events: Array<{ event: {
+      type: string
+      data?: { source?: { kind?: string; name?: string; form?: string } }
+    } }> }>(
       endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
     )
     const durableTypes = history.events.map(entry => entry.event.type)
+    const skillInvocations = history.events.flatMap(({ event }) =>
+      event.type === 'user/message' && event.data?.source?.kind === 'skill-invocation'
+        ? [{ kind: event.data.source.kind, name: event.data.source.name, form: event.data.source.form }]
+        : [])
     const transcript = normalizeProtocol({
-      events: [opened, output],
+      events: [opened, commandOutput, skillOutput],
       active,
       commandTypes: durableTypes.filter(type => type === 'command/run' || type === 'command/done'),
+      skillInvocations,
       turnTypes: durableTypes.filter(type => type === 'turn/start' || type === 'turn/end'),
+      unknown: unknownEnvelope.result,
     })
     expect(JSON.stringify(transcript)).not.toContain(endpoint.accessToken)
     expect(JSON.stringify(transcript)).not.toContain(runtime.harnessHome)
@@ -113,8 +159,30 @@ describe('Runtime real control transcript', () => {
             "kind": "output",
             "text": "REAL_COMMAND_OUTPUT",
           },
+          {
+            "kind": "output",
+            "text": "REAL_RUNTIME_OUTPUT",
+          },
         ],
-        "turnTypes": [],
+        "skillInvocations": [
+          {
+            "form": "instructions",
+            "kind": "skill-invocation",
+            "name": "runtime-user-skill",
+          },
+        ],
+        "turnTypes": [
+          "turn/start",
+          "turn/end",
+        ],
+        "unknown": {
+          "error": {
+            "code": "unknown-command",
+            "details": {},
+            "message": "unknown command: /missing-command",
+          },
+          "ok": false,
+        },
       }
     `)
 

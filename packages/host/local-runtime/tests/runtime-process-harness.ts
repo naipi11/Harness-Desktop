@@ -14,6 +14,8 @@ const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 const sourceBin = join(packageRoot, 'src', 'bin.ts')
 const sourceBackendFixture = fileURLToPath(new URL('./fixtures/runtime-source-backend.ts', import.meta.url))
+const sourceToolSkill = new URL('../../../skill/tool-skill/src/index.ts', import.meta.url).href
+const sourceUserSkillFixture = new URL('./fixtures/runtime-user-skill.ts', import.meta.url).href
 const processHook = fileURLToPath(new URL('./fixtures/runtime-process-hooks.mjs', import.meta.url))
 const repoTsconfig = join(repoRoot, 'tsconfig.json')
 const PROCESS_TIMEOUT_MS = 45_000
@@ -62,6 +64,8 @@ export interface StartRuntimeProcessOptions {
   readonly harnessHomeEnv?: string
   readonly failImport?: string
   readonly failureMessage?: string
+  /** Mount the real tool-skill consumer and deterministic user-only skill in the standard preset. */
+  readonly userSkillPreset?: boolean
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -72,7 +76,13 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
   const platformHome = join(cwd, 'platform-default-home')
   const tracePath = join(cwd, 'runtime-trace.jsonl')
   await mkdir(join(harnessHome, '.agent-presets', 'standard'), { recursive: true })
-  await writeFile(join(harnessHome, '.agent-presets', 'standard', 'agent.cordis.yml'), '[]\n')
+  const agentPreset = options.userSkillPreset === true
+    ? [{ name: sourceToolSkill }, { name: sourceUserSkillFixture }]
+    : []
+  await writeFile(
+    join(harnessHome, '.agent-presets', 'standard', 'agent.cordis.yml'),
+    `${JSON.stringify(agentPreset, undefined, 2)}\n`,
+  )
 
   const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as PackageManifest
   const declaredBin = resolve(packageRoot, manifest.bin['harness-runtime'] ?? '')
