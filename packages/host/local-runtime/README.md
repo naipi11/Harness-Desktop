@@ -10,6 +10,8 @@ The owner lock records both PID and operating-system process-start identity. A s
 
 The endpoint record contains the protocol version, Runtime identity, port, process identity, and private access token. The internal writer protects a same-directory temporary file before its atomic rename; the internal reader verifies owner-only `0600` access on POSIX or a current-user-only Windows DACL before reading. Retirement atomically renames the current endpoint to a private tombstone and rechecks its Runtime identity there; a claimed replacement is restored without overwriting a newer endpoint. The package root exports only token-free status and ownership types, never the endpoint parser, writer, filename, or token-bearing record.
 
+Runtime-local routes accept native control only at the exact `127.0.0.1` authority with the private endpoint bearer token. A native caller mints a 60-second, single-use opaque handoff; `POST /_harness/handoff` consumes that value only from one URL-encoded form body, emits no CORS permission, and redirects cleanly after setting a session `HttpOnly; SameSite=Strict; Path=/` cookie with no expiry. The in-memory authenticator requires that exact Runtime Origin and cookie for Dashboard API and event carriers, while a launcher-owned cleanup controller removes only its bootstrap document and owner directory once after dispatch, exchange settlement, or expiry. Tokens, handoffs, and session values stay outside public exports, diagnostics, URLs, and browser script storage.
+
 ## Model Experience
 
 ### Runtime ownership and endpoint records
@@ -28,4 +30,4 @@ None. This package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **Runtime composition is separate from these primitives** — later host assembly owns service mounting, authenticated routes, client attachment, leases, and idle shutdown.
+- **Runtime composition is separate from these primitives** — later host assembly owns the concrete control service, client attachment, leases, and idle shutdown.

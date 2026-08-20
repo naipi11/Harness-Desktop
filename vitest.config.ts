@@ -93,6 +93,10 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
 
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
+  // Runtime-local auth exercises only a disposable loopback WebServer; unlike
+  // credentialed provider e2e suites it is keyless and belongs in the focused
+  // default command required by the Runtime authentication foundation.
+  'packages/host/local-runtime/tests/local-auth.e2e.ts',
   'apps/*/tests/**/*.spec.ts',
   'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',

@@ -1,4 +1,5 @@
 /** Host HTTP bridge for browser-client RPC. */
+import type { IncomingMessage } from 'node:http'
 import type { Context } from '@harness-desktop/cordis'
 import z from '@harness-desktop/schemastery'
 import type {} from '@harness-desktop/dsh-attachment'
@@ -22,6 +23,12 @@ export type {
 export { HostConnectionService } from './rpc-host.ts'
 
 export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+
+/** Cookie and exact-origin verifier supplied by a Runtime-local composition. */
+export interface ConnectionAuthentication {
+  /** @returns true only when the carrier may reach the browser API or event stream. */
+  authorize(request: IncomingMessage | Request): boolean
+}
 
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
@@ -126,8 +133,9 @@ const PRIVILEGED_METHODS = new Set([
  * pins them to loopback.
  * @param ctx - Host plugin context.
  * @param config - resolved plugin config (schema defaults applied).
+ * @param authentication - optional Runtime browser-session validator.
  */
-export function apply(ctx: Context, config?: ConnectionConfig): void {
+export function apply(ctx: Context, config?: ConnectionConfig, authentication?: ConnectionAuthentication): void {
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
   const trustedHosts = config?.trustedHosts ?? []
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
@@ -135,6 +143,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const webServer = ctx.webServer
   const connection = new HostConnectionService(ctx, trustedHosts)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
@@ -157,12 +166,12 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       if (apiProxy === undefined) return new Response('not found', { status: 404 })
       return toFetchHandler(apiProxy).fetch(request)
     },
-  })
+  }, authentication)
   const route: WebRoute = {
     kind: 'prefix',
     path: API_PATH,
     handler: async (req, res) => {
-      if (!isTrustedApiRequest(req, trustedHosts)) {
+      if (!isTrustedApiRequest(req, trustedHosts) || !authorized(authentication, req)) {
         res.writeHead(403)
         res.end('forbidden')
         return
@@ -170,7 +179,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       await bridge(req, res, fetchHandler, maxRequestBodyBytes)
     },
   }
-  ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
+  ctx.effect(() => webServer.register(route), 'client-connection: /api route')
   ctx.inject(['apiProxy'], (apiCtx) => {
     assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
     const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)
@@ -178,10 +187,10 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       path: string,
       handle: WebUpgradeRoute['handler'],
     ): void => {
-      apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
+      apiCtx.effect(() => webServer.registerUpgrade({
         path,
         handler: (req, socket, head) => {
-          if (!isTrustedApiRequest(req, trustedHosts)) {
+          if (!isTrustedApiRequest(req, trustedHosts) || !authorized(authentication, req)) {
             rejectWebSocketUpgrade(socket)
             return
           }
@@ -193,4 +202,22 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     registerDownlink(MUX_EVENTS_PATH, (req, socket, head) => { downlinks.handleMux(req, socket, head) })
     registerDownlink(HOST_EVENTS_PATH, (req, socket, head) => { downlinks.handleHost(req, socket, head) })
   })
+}
+
+/**
+ * Mount Connection's API and event carriers behind a Runtime-issued browser session.
+ * @param ctx - Context already injected with the WebServer service.
+ * @param authentication - Runtime-specific cookie and Origin validator.
+ * @param config - Resolved connection deployment configuration.
+ */
+export function mountAuthenticatedConnection(
+  ctx: Context,
+  authentication: ConnectionAuthentication,
+  config?: ConnectionConfig,
+): void {
+  apply(ctx, config, authentication)
+}
+
+function authorized(authentication: ConnectionAuthentication | undefined, request: IncomingMessage | Request): boolean {
+  return authentication === undefined || authentication.authorize(request)
 }

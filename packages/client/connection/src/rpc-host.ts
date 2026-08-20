@@ -14,6 +14,7 @@ import {
 import { bridge, type FetchHandler } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
+import type { ConnectionAuthentication } from './index.ts'
 import type {
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
@@ -66,14 +67,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Compose one shared-channel Fetch handler from its interceptor and fallback.
    * @param channel - shared channel mounted by Connection.
    * @param fallback - handler for endpoints not claimed by the interceptor.
+   * @param authentication - optional Runtime session validator applied before routing.
    * @returns Fetch handler that selects exactly one target for each request.
    */
   createSharedFetchHandler(
     channel: '/api',
     fallback: FetchHandler,
+    authentication?: ConnectionAuthentication,
   ): FetchHandler {
     return {
       fetch: (request) => {
+        if (authentication !== undefined && !authentication.authorize(request)) {
+          return Promise.resolve(new Response('forbidden', { status: 403 }))
+        }
         const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
         const interceptor = this.interceptors.get(channel)
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {

@@ -10,6 +10,8 @@ owner 锁同时记录 PID 与操作系统进程启动身份。短期跨进程 re
 
 endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私有访问 token。内部写入方先保护同目录临时文件，再以原子重命名发布；内部读取方在读文件前验证 POSIX owner-only `0600` 权限或 Windows 当前用户专属 DACL。retirement 将当前 endpoint 原子重命名为私有 tombstone，并在该文件上复核 Runtime 身份；若 claim 到 replacement，则在不覆盖更新 endpoint 的前提下恢复它。包根入口只导出不含 token 的状态与 owner 类型，不导出 endpoint 解析器、写入方、文件名或含 token 的记录。
 
+Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoint bearer token 接受原生控制。原生调用方会签发一个 60 秒、单次使用的不透明 handoff；`POST /_harness/handoff` 只从一个 URL 编码表单正文消费该值，不发送 CORS permission，并在设置不带 expiry 的 `HttpOnly; SameSite=Strict; Path=/` session cookie 后执行干净重定向。内存认证器要求 Dashboard API 与 event carrier 同时具有该精确 Runtime Origin 和 cookie；启动器拥有的 cleanup controller 在 dispatch、exchange settlement 或 expiry 后只清理一次其 bootstrap document 与 owner directory。token、handoff 和 session 值不会进入公开导出、诊断、URL 或浏览器脚本存储。
+
 ## 模型体验
 
 ### Runtime owner 与 endpoint 记录
@@ -28,4 +30,4 @@ endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私
 
 ## 已知限制与暂缓事项
 
-- **Runtime 组合不属于这些基础原语** — 后续宿主组装负责服务挂载、认证路由、客户端附加、lease 与空闲关闭。
+- **Runtime 组合不属于这些基础原语** — 后续宿主组装负责具体 control service、客户端附加、lease 与空闲关闭。
