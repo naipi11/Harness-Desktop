@@ -1,6 +1,6 @@
-/** Keyless transcript for daemon help, which must remain parent-owned. */
+/** Keyless transcript for side-effect-free Web Runtime status discovery. */
 
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,47 +17,35 @@ function cliCommand(): { args: string[]; executable: string } {
   return { executable: process.execPath, args: ['--import', 'tsx/esm', harnessSourceBin] }
 }
 
-describe('web daemon help snapshot', () => {
-  it('shows both detached aliases without launching a child', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'dsh-web-daemon-help-'))
+describe('Web Runtime status snapshot', () => {
+  it('reports absence without creating the selected Harness home', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'harness-web-status-'))
+    const home = join(root, 'missing-home')
     try {
       const command = cliCommand()
-      const result = await execa(command.executable, [...command.args, 'web', '--daemon', '--help'], {
+      const result = await execa(command.executable, [...command.args, 'web', '--status'], {
         env: { ...process.env, HARNESS_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
         extendEnv: false,
         input: '',
         reject: false,
       })
-      const transcript = { code: result.exitCode ?? -1, stderr: result.stderr, stdout: result.stdout }
+      const transcript = {
+        code: result.exitCode ?? -1,
+        stderr: result.stderr.replace(/Diagnostic: [0-9a-f-]+/u, 'Diagnostic: <diagnostic-id>'),
+        stdout: result.stdout,
+      }
       expect(transcript).toMatchInlineSnapshot(`
         {
-          "code": 0,
-          "stderr": "",
-          "stdout": "Usage: dsh --profile web [options]
-
-        Serve the Harness Desktop browser UI.
-
-        Options:
-          --host <host>                  bind host
-          --port <port>                  listen port; pass 0 to let the OS pick a free
-                                         one
-          --trusted-host <authority...>  extra authority the /api browser-trust fence
-                                         accepts (host or host:port; repeatable)
-          -h, --help                     show this help
-
-        Examples:
-          dsh --profile web                          serve on the composed host and port
-          dsh --profile web --port 8080              serve on another port
-          dsh web --daemon                           start the web server in the background
-          dsh web --background                       alias for --daemon
-        ",
+          "code": 3,
+          "stderr": "The local Harness Runtime is not running.
+        Start Harness again, or retry after the existing Runtime becomes available.
+        Diagnostic: <diagnostic-id>",
+          "stdout": "",
         }
       `)
-      expect(transcript.stdout).toContain('dsh web --daemon')
-      expect(transcript.stdout).toContain('dsh web --background')
-      expect(transcript.stdout).not.toContain('dsh web: started detached process')
+      await expect(access(home)).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
-      await rm(home, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true })
     }
   })
 })
