@@ -20,9 +20,9 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4`（`6dd0a683e198783e30feabf7abaf42f925bd18b1`） | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0`（`ba9e46ced152c37a7cb9e576153c41995873e2fc`） | stdio | Go 1.25.10+，并执行 `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`，或安装匹配的发布版二进制文件 |
 
-## 启用一个
+## 配置校验
 
-这些 overlay 是内部组装示例。公开 CLI 无法附加它们；app-boot 测试 harness 可以直接组装所选文件：
+这些 overlay 是内部格式示例。公开 CLI 与产品 Runtime 不会启用或启动它们。只能用以下命令校验已检入的配置引用：
 
 ```sh
 pnpm run verify-cordis-config
@@ -30,7 +30,7 @@ pnpm run verify-cordis-config
 
 该门禁会验证已检入 overlay 的引用与配置结构；它不会启动第三方服务器。出厂产品组合不包含任何 memory server，所以三个方案都保持禁用。
 
-单独的旧版／内部 app-boot fixture 可以把所选文件中的单个 `insert` patch 合并到自身配置，以跨次运行保留选择。公开 CLI 与产品 Runtime 不提供 overlay／profile 层，也不会加载这些文件。
+这些文件可以作为另行编写的旧版／内部 app-boot fixture 输入，但本仓库不为其提供公开选择或启用流程。
 
 ## 提供方设置
 

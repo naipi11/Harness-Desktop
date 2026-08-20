@@ -37,7 +37,7 @@ export function apply(ctx: Context) {
 
 ## 运行并调用工具
 
-公开 CLI 无法重新启动这个 scratch overlay。请通过内部 app-boot 测试组装运行它：
+scratch `greet` 文件仅是格式示例。通用工具验收命令是：
 
 ```sh
 pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"

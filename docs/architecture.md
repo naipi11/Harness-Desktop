@@ -26,13 +26,7 @@ Each declares itself in its own `package.json` under a `dsh` field: `dsh.profile
 
 Layers apply to an empty entry list in this order: each bundle in the profile's listed order, then the profile's `cordis.patch.yml`, then the home-level one, then any overlay supplied by the internal app-boot owner. A patch targets a row by id and replaces its whole config, or inserts new rows.
 
-To see the tree your machine actually boots:
-
-```sh
-# Profile patches are legacy/internal app-boot composition; the product Runtime does not load them.
-```
-
-Any row it prints can be replaced by a patch of your own.
+There is no public profile/config-dump command. Internal callers may compose and inspect these legacy trees through app-boot's `boot` and `renderConfigDump` APIs; this is separate from the product Runtime composition.
 
 Composition mechanics are in [app-boot](../packages/boot/app-boot/README.md#profiles); config fields are in the generated [config catalog](config-catalog.md).
 

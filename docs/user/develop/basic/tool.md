@@ -37,7 +37,7 @@ export function apply(ctx: Context) {
 
 ## Run and call the tool
 
-The public CLI cannot restart this scratch overlay. Exercise it through an internal app-boot test composition:
+The scratch `greet` file is a format example only. The generic tool acceptance command is:
 
 ```sh
 pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"

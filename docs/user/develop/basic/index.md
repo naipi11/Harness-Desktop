@@ -55,7 +55,7 @@ Run `pwd` from the repository root, then create `scratch-plugin/cordis.yml` as a
 
 The plugin path must be absolute. A patch file contributes configuration but does not change the profile directory from which the loader resolves module paths.
 
-The public tutorial stops at the plugin and patch files because the product CLI cannot load an arbitrary overlay. Internal app-boot tests may compose it directly:
+The scratch files above are format examples only; no checked-in test composes them. The canonical internal app-boot artifact gate is:
 
 ```sh
 pnpm exec vitest run --config vitest.artifact.config.ts packages/boot/app-boot/tests/app-boot.artifact.ts

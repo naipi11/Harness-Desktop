@@ -26,13 +26,7 @@
 
 各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是内部 app-boot 所有者提供的 overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 
-要查看你的机器实际启动的配置树：
-
-```sh
-# Profile patches are legacy/internal app-boot composition; the product Runtime does not load them.
-```
-
-它打印出的任何条目，都可以由你自己的 patch 替换。
+没有公开 profile／配置 dump 命令。内部调用方可以通过 app-boot 的 `boot` 与 `renderConfigDump` API 组装和检查这些旧版树；这与产品 Runtime 组装相互独立。
 
 组装机制见 [app-boot](../packages/boot/app-boot/README.md#profiles)；配置字段见生成的[配置目录](config-catalog.md)。
 

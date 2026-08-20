@@ -20,9 +20,9 @@ The stdio bridge deliberately removes ambient variables whose names usually iden
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4` (`6dd0a683e198783e30feabf7abaf42f925bd18b1`) | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0` (`ba9e46ced152c37a7cb9e576153c41995873e2fc`) | stdio | Go 1.25.10+ and `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`, or the matching release binary |
 
-## Enable one
+## Configuration validation
 
-These overlays are internal composition examples. The public CLI cannot attach one; an app-boot test harness may compose a selected file directly:
+These overlays are internal format examples. The public CLI and product Runtime do not enable or launch them. Validate only their checked-in configuration references with:
 
 ```sh
 pnpm run verify-cordis-config
@@ -30,7 +30,7 @@ pnpm run verify-cordis-config
 
 That gate validates the checked-in overlay references and configuration structure; it does not launch a third-party server. No memory server is present in the shipped product composition, so all three remain disabled.
 
-A separate legacy/internal app-boot fixture may keep a selection by merging the chosen file's single `insert` patch into its own config. The public CLI and product Runtime expose no overlay/profile layer and do not load these files.
+The files may serve as inputs to a separately authored legacy/internal app-boot fixture, but this repository provides no public selection or enablement workflow for them.
 
 ## Provider setup
 

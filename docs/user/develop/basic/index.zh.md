@@ -55,7 +55,7 @@ export function apply(ctx: Context) {
 
 插件路径必须是绝对路径。patch 文件只贡献配置，不会改变 loader 解析模块路径时使用的 profile 目录。
 
-由于产品 CLI 无法加载任意 overlay，公开教程到插件与 patch 文件为止。内部 app-boot 测试可以直接组装它：
+以上 scratch 文件仅是格式示例；没有已检入测试会组装它们。规范内部 app-boot 产物门禁是：
 
 ```sh
 pnpm exec vitest run --config vitest.artifact.config.ts packages/boot/app-boot/tests/app-boot.artifact.ts
