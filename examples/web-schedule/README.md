@@ -2,10 +2,10 @@
 
 English | [中文](README.zh.md)
 
-This overlay opts one `dsh web` process into Schedule reminders without changing the shipped default Web composition:
+This internal overlay adds Schedule reminders without changing the shipped default Web composition. Internal app-boot tests compose it directly; the public CLI cannot select it:
 
 ```sh
-dsh web --patch examples/web-schedule/cordis.yml
+# Internal app-boot/test overlay; the public CLI rejects web --patch.
 ```
 
 The current overlay supports reminders created with a positive whole-number `after_seconds`, an absolute `at` target, or a fixed-rate `every_seconds` interval of at least 300 seconds. The model manages them through `schedule_create`, `schedule_list`, and `schedule_delete`; every result identifies delivery as `session-local`.

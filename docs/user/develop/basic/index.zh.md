@@ -55,13 +55,13 @@ export function apply(ctx: Context) {
 
 插件路径必须是绝对路径。patch 文件只贡献配置，不会改变 loader 解析模块路径时使用的 profile 目录。
 
-使用该覆盖层启动 Web UI：
+由于产品 CLI 无法加载任意 overlay，公开教程到插件与 patch 文件为止。内部 app-boot 测试可以直接组装它：
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+# Internal app-boot/test overlay; the public CLI rejects web --patch.
 ```
 
-打开 `http://127.0.0.1:3080`。启动期间，终端会打印 `[hello-plugin] plugin loaded!`。
+内部组装测试可以断言启动期间出现 `[hello-plugin] plugin loaded!`；这里不暗示存在公开 Web 命令。
 
 ## 自动清理
 

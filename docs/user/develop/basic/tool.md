@@ -37,13 +37,13 @@ export function apply(ctx: Context) {
 
 ## Run and call the tool
 
-Restart the development command if it is not running:
+The public CLI cannot restart this scratch overlay. Exercise it through an internal app-boot test composition:
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+# Internal app-boot/test overlay; the public CLI rejects web --patch.
 ```
 
-Open `http://127.0.0.1:3080` and ask: `Use the greet tool to greet Ada.` The model can call `greet` and receives `Hello, Ada!` as the tool result.
+That internal composition can submit `Use the greet tool to greet Ada.` and assert the `Hello, Ada!` tool result.
 
 ## Next steps
 

@@ -37,13 +37,13 @@ export function apply(ctx: Context) {
 
 ## 运行并调用工具
 
-如果开发命令未在运行，请重新启动：
+公开 CLI 无法重新启动这个 scratch overlay。请通过内部 app-boot 测试组装运行它：
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+# Internal app-boot/test overlay; the public CLI rejects web --patch.
 ```
 
-打开 `http://127.0.0.1:3080`，然后输入：`Use the greet tool to greet Ada.` 模型可以调用 `greet`，并收到 `Hello, Ada!` 这一工具结果。
+该内部组装可以提交 `Use the greet tool to greet Ada.`，并断言得到 `Hello, Ada!` 工具结果。
 
 ## 下一步
 

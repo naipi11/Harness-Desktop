@@ -55,13 +55,13 @@ Run `pwd` from the repository root, then create `scratch-plugin/cordis.yml` as a
 
 The plugin path must be absolute. A patch file contributes configuration but does not change the profile directory from which the loader resolves module paths.
 
-Start the Web UI with that overlay:
+The public tutorial stops at the plugin and patch files because the product CLI cannot load an arbitrary overlay. Internal app-boot tests may compose it directly:
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+# Internal app-boot/test overlay; the public CLI rejects web --patch.
 ```
 
-Open `http://127.0.0.1:3080`. The terminal prints `[hello-plugin] plugin loaded!` during startup.
+An internal composition test can assert `[hello-plugin] plugin loaded!` during startup; no public Web command is implied here.
 
 ## Automatic cleanup
 
