@@ -29,6 +29,46 @@ function session(value: string) {
 }
 
 describe('Runtime lifecycle accounting', () => {
+  it('refuses ordinary disposal while any client, work, or background owner remains', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-retained-'))
+    const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
+    runtime = await startRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      async boot() {
+        const ctx = new Context()
+        await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        return ctx
+      },
+    })
+
+    await runtime.attachClient(client('retained'))
+    await expect(runtime.dispose()).rejects.toThrow('active owners')
+    await runtime.releaseClient(client('retained'))
+    await runtime.dispose()
+    runtime = undefined
+  })
+
+  it('continues endpoint, lock, and Cordis cleanup after a durable flush failure', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-flush-failure-'))
+    const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
+    runtime = await startRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      async flush() { throw new Error('flush failed') },
+      async boot() {
+        const ctx = new Context()
+        await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+        return ctx
+      },
+    })
+
+    await expect(runtime.dispose()).rejects.toThrow('flush failed')
+    runtime = undefined
+    await expect(access(join(root, 'runtime-endpoint.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('waits for the final attachment, active work, and background lease before idle shutdown', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-lifecycle-'))
     const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })

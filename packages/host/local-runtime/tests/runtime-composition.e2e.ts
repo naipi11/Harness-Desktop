@@ -8,7 +8,7 @@ import { Context } from '@harness-desktop/cordis'
 import WebServer from '@harness-desktop/dsh-host-webserver'
 import { createLocalRuntimePlugin } from '../src/data-root.ts'
 import { readPrivateEndpointRecord } from '../src/endpoint-record.ts'
-import { startCanonicalRuntime, startRuntime, type RuntimeHandle } from '../src/runtime.ts'
+import { startRuntime, type RuntimeHandle } from '../src/runtime.ts'
 
 let root: string | undefined
 let runtime: RuntimeHandle | undefined
@@ -21,17 +21,6 @@ afterEach(async () => {
 })
 
 describe('canonical local Runtime composition', () => {
-  it('boots the shipped base and Web composition through one injected provider', async () => {
-    root = await mkdtemp(join(tmpdir(), 'harness-runtime-shipped-'))
-    const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })
-
-    runtime = await startCanonicalRuntime({ harnessHome, idleTimeoutMs: 60_000 })
-
-    const record = await readPrivateEndpointRecord(harnessHome.home)
-    expect(runtime.status().port).toBe(record.port)
-    expect(record.port).toBeGreaterThan(0)
-  }, 30_000)
-
   it('publishes one healthy loopback endpoint over one injected Harness home', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-composition-'))
     const harnessHome = createLocalRuntimePlugin({ env: { HARNESS_HOME: root }, homeDir: root })

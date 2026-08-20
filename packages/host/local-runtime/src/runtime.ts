@@ -129,7 +129,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
         bootstrapParent: config.harnessHome.path('runtime-bootstrap'),
         openBootstrap: config.openBootstrap ?? (async () => {}),
         mountAuthenticatedDashboard(auth) {
-          connectionModule.apply(ctx, { trustedHosts: ['127.0.0.1'] }, {
+          connectionModule.apply(ctx as Context, { trustedHosts: ['127.0.0.1'] }, {
             authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
           })
         },
@@ -150,7 +150,22 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
  * @returns the canonical local Runtime owner.
  */
 export async function startCanonicalRuntime(config: CanonicalRuntimeConfig): Promise<RuntimeHandle> {
-  return startRuntime({ ...config, mountPrivateControl: true, boot: bootCanonicalComposition })
+  return startRuntime({
+    ...config,
+    mountPrivateControl: true,
+    boot: bootCanonicalComposition,
+    flush: flushCanonicalSessions,
+  })
+}
+
+/** Flush every live session through the composition's sole durable session service. */
+async function flushCanonicalSessions(ctx: Context): Promise<void> {
+  const sessions = ctx.get('sessions') as {
+    list(): readonly unknown[]
+    flush(session: unknown): Promise<boolean>
+  } | undefined
+  if (sessions === undefined) throw new Error('host-local-runtime: canonical composition has no session service to flush')
+  await Promise.all(sessions.list().map(session => sessions.flush(session)))
 }
 
 /** Boot the shipped base and Web patch layers over the package-owned empty root. */
@@ -224,14 +239,17 @@ function createRuntimeHandle(
   const reconcile = (): void => lifecycle.reconcile(clients.size === 0 && work.size === 0 && backgrounds.size === 0 && state === 'running')
   const dispose = async (): Promise<void> => {
     if (disposal !== undefined) return disposal
+    if (clients.size !== 0 || work.size !== 0 || backgrounds.size !== 0) {
+      throw new Error('host-local-runtime: ordinary disposal requires zero active owners')
+    }
     state = 'stopping'
     lifecycle.cancel()
-    disposal = (async () => {
-      await config.flush?.(ctx)
-      await removePrivateEndpointRecord(config.harnessHome.home, record.runtimeId)
-      await lock.release()
-      await ctx.fiber.dispose()
-    })()
+    disposal = runCleanup([
+      async () => config.flush?.(ctx),
+      async () => removePrivateEndpointRecord(config.harnessHome.home, record.runtimeId),
+      async () => lock.release(),
+      async () => ctx.fiber.dispose(),
+    ])
     return disposal
   }
   const handle: RuntimeHandle = {
@@ -281,14 +299,25 @@ async function cleanupFailedStart(
   ctx: Context | undefined,
   runtimeId: RuntimeId | undefined,
 ): Promise<unknown | undefined> {
-  try {
-    if (runtimeId !== undefined) await removePrivateEndpointRecord(config.harnessHome.home, runtimeId)
-    await ctx?.fiber.dispose()
-    await lock.release()
-    return undefined
-  } catch (error) {
-    return error
+  return runCleanup([
+    async () => runtimeId === undefined ? undefined : removePrivateEndpointRecord(config.harnessHome.home, runtimeId),
+    async () => ctx?.fiber.dispose(),
+    async () => lock.release(),
+  ]).then(() => undefined, error => error)
+}
+
+/** Execute every ordered cleanup operation and preserve every independent failure. */
+async function runCleanup(operations: readonly (() => Promise<void | undefined>)[]): Promise<void> {
+  const errors: unknown[] = []
+  for (const operation of operations) {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(error)
+    }
   }
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, 'host-local-runtime: multiple cleanup operations failed')
 }
 
 /** Turn a non-owner lock result into a redacted caller diagnostic. */
