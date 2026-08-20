@@ -273,7 +273,7 @@ describe('Runtime real control transcript', () => {
     expect((await releaseRuntime(runtime)).exitCode).toBe(0)
   }, 120_000)
 
-  it('refuses a user skill when its scoped consumer disappears during real catalog discovery', async () => {
+  it('refuses a user skill when its scoped consumer disappears after real followup admission', async () => {
     runtime = await startRuntimeProcess({
       mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
       racingSkillConsumerPreset: true,
@@ -301,12 +301,18 @@ describe('Runtime real control transcript', () => {
     })
     expect(response.ok).toBe(true)
     const envelope = await response.json() as { result: unknown }
-    const history = await runtimeRpc<{ events: Array<{ event: {
+    type SkillRaceHistory = { events: Array<{ event: {
       type: string
       data?: { source?: { kind?: string } }
-    } }> }>(
-      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
-    )
+    } }> }
+    let history!: SkillRaceHistory
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      history = await runtimeRpc<SkillRaceHistory>(
+        endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+      )
+      if (history.events.some(({ event }) => event.type === 'turn/end')) break
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
     const transcript = normalizeProtocol({
       result: envelope.result,
       active: await firstClient.observeActiveWork(),
@@ -331,7 +337,10 @@ describe('Runtime real control transcript', () => {
           "ok": false,
         },
         "skillInvocations": [],
-        "turnTypes": [],
+        "turnTypes": [
+          "turn/start",
+          "turn/end",
+        ],
       }
     `)
 

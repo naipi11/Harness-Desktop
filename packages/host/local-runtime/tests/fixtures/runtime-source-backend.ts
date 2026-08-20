@@ -79,6 +79,29 @@ const runtime = await startRuntime({
       installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))
       provideCmdline(ctx, { args: [], exit: () => {} })
     }, undefined, provider)
+    const api = context.get('apiProxy')
+    const fixedSessionId = process.env.DSH_RUNTIME_TEST_FIXED_TERMINAL_SESSION
+    if (api !== undefined && (process.env.DSH_RUNTIME_TEST_TERMINAL_UNAVAILABLE === '1' || fixedSessionId !== undefined)) {
+      const sessions = api.sessions as {
+        create: typeof api.sessions.create
+      }
+      const create = sessions.create.bind(api.sessions)
+      sessions.create = (request) => {
+        if (process.env.DSH_RUNTIME_TEST_TERMINAL_UNAVAILABLE === '1') {
+          return Promise.resolve({
+            rpcId: request.rpcId,
+            result: {
+              ok: false as const,
+              error: { code: 'internal' as const, message: 'terminal owner unavailable fixture', details: {} },
+            },
+          })
+        }
+        return create({
+          ...request,
+          payload: { ...request.payload, sessionId: fixedSessionId as never },
+        })
+      }
+    }
     if (process.env.DSH_RUNTIME_TEST_COMMAND === '1') {
       context.commands.register({
         name: 'runtime_no_turn',

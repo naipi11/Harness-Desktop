@@ -291,6 +291,23 @@ attachUserInvocationConsumer(): () => void
 hasUserInvocationConsumer(scope: ScopeKey): boolean
 
 /**
+ * Load one user-invocable definition under the exact reachable consumer generation.
+ * @param name - catalog-confirmed skill name.
+ * @param options - exact Agent scope plus cwd/cancellation lookup fields.
+ * @returns a one-shot admission lease, or undefined when the definition or consumer changed.
+ */
+async acquireUserInvocation( name: string, options: SkillViewOptions & { readonly scope: ScopeKey }, ): Promise<UserSkillInvocationLease | undefined>
+
+/**
+ * Claim the exact Host-bound definition for one pre-step gesture.
+ * @param scope - Agent proposing the step.
+ * @param message - claimed user message object.
+ * @param name - gesture name found in that message.
+ * @returns captured definition, explicit revocation, or no Host admission for direct Agent input.
+ */
+claimUserInvocation(scope: ScopeKey, message: object, name: string): UserSkillInvocationClaim
+
+/**
  * List invocation-neutral skill summaries for a workspace. Consumers apply
  * model or user invocation policy at their operational boundary. Lookup
  * options and provider candidates are readonly same-process values borrowed
@@ -323,7 +340,7 @@ async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/skill/skill/src/index.ts:361`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/index.ts:396`](../../packages/skill/skill/src/index.ts)
 
 <a id="skills-events"></a>
 
@@ -346,5 +363,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/index.ts:298`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/index.ts:319`](../../packages/skill/skill/src/index.ts)
 <!-- END GENERATED cordis-surface -->

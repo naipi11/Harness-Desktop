@@ -1514,6 +1514,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'whether a reachable user-invocation consumer is attached.',
       },
       {
+        signature: 'async acquireUserInvocation( name: string, options: SkillViewOptions & { readonly scope: ScopeKey }, ): Promise<UserSkillInvocationLease | undefined>',
+        description: 'Load one user-invocable definition under the exact reachable consumer generation.',
+        parameters: [{ name: 'name', description: 'catalog-confirmed skill name.' }, { name: 'options', description: 'exact Agent scope plus cwd/cancellation lookup fields.' }],
+        returns: 'a one-shot admission lease, or undefined when the definition or consumer changed.',
+      },
+      {
+        signature: 'claimUserInvocation(scope: ScopeKey, message: object, name: string): UserSkillInvocationClaim',
+        description: 'Claim the exact Host-bound definition for one pre-step gesture.',
+        parameters: [{ name: 'scope', description: 'Agent proposing the step.' }, { name: 'message', description: 'claimed user message object.' }, { name: 'name', description: 'gesture name found in that message.' }],
+        returns: 'captured definition, explicit revocation, or no Host admission for direct Agent input.',
+      },
+      {
         signature: 'async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>',
         description: 'List invocation-neutral skill summaries for a workspace. Consumers apply model or user invocation policy at their operational boundary. Lookup options and provider candidates are readonly same-process values borrowed throughout discovery.',
         parameters: [{ name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects project roots, and `signal` cancels discovery.' }],
@@ -3810,10 +3822,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
-    name: 'SessionId',
-    declaration: 'export type SessionId = Branded<\'SessionId\'>;',
-  },
-  {
     name: 'SessionInspection',
     declaration: 'export interface SessionInspection {\n    readonly meta: SessionHeader;\n    readonly events: readonly SessionEvent[];\n}',
   },
@@ -4540,6 +4548,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserQuestionProvider',
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
+  },
+  {
+    name: 'UserSkillInvocationClaim',
+    declaration: 'export type UserSkillInvocationClaim = {\n    readonly kind: \'admitted\';\n    readonly skill: SkillDefinition;\n} | {\n    readonly kind: \'revoked\';\n} | {\n    readonly kind: \'none\';\n};',
+  },
+  {
+    name: 'UserSkillInvocationLease',
+    declaration: 'export interface UserSkillInvocationLease {\n    bind(message: object): boolean;\n    isValid(): boolean;\n    release(): void;\n}',
   },
   {
     name: 'WebBootEntry',

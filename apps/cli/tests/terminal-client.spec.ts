@@ -41,11 +41,14 @@ class FakeTerminal implements TerminalConnection {
   cancelResult: Promise<{ readonly kind: 'cancelled' | 'idle' }> = Promise.resolve({ kind: 'cancelled' })
   closed = false
   closeError: Error | undefined
+  closeResult: Promise<void> | undefined
+  eventsError: Error | undefined
 
   constructor(private readonly protocolEvents: readonly TerminalProtocolEvent[]) {}
 
   async * events(): AsyncIterable<TerminalProtocolEvent> {
     for (const event of this.protocolEvents) yield event
+    if (this.eventsError !== undefined) throw this.eventsError
   }
 
   submit(input: TerminalInput): Promise<void> {
@@ -63,6 +66,7 @@ class FakeTerminal implements TerminalConnection {
   }
 
   async close(): Promise<void> {
+    if (this.closeResult !== undefined) return this.closeResult
     if (this.closeError !== undefined) throw this.closeError
     this.closed = true
   }
@@ -75,6 +79,8 @@ class FakeRuntimeClient implements RuntimeClient {
   closeError: Error | undefined
   migration: LegacyMigrationState = { kind: 'not-needed' }
   active: ActiveWorkStatus[] = [{ ownUiWork: [] }]
+  activeResult: Promise<ActiveWorkStatus> | undefined
+  closeResult: Promise<void> | undefined
 
   constructor(readonly terminal: FakeTerminal) {}
 
@@ -121,6 +127,7 @@ class FakeRuntimeClient implements RuntimeClient {
   }
 
   observeActiveWork(): Promise<ActiveWorkStatus> {
+    if (this.activeResult !== undefined) return this.activeResult
     return Promise.resolve(this.active.shift() ?? { ownUiWork: [] })
   }
 
@@ -129,6 +136,7 @@ class FakeRuntimeClient implements RuntimeClient {
   }
 
   close(): Promise<void> {
+    if (this.closeResult !== undefined) return this.closeResult
     if (this.closeError !== undefined) return Promise.reject(this.closeError)
     this.closed = true
     return Promise.resolve()
@@ -151,6 +159,7 @@ class FakeSurface implements InteractiveTerminalSurface {
   readonly diagnostics: unknown[] = []
   readonly migrationStates: LegacyMigrationState[] = []
   closed = false
+  closeResult: Promise<void> | undefined
   private readonly actionStream: AsyncIterable<TerminalUserAction>
 
   constructor(userActions: () => AsyncIterable<TerminalUserAction>) {
@@ -174,6 +183,7 @@ class FakeSurface implements InteractiveTerminalSurface {
   }
 
   close(): Promise<void> {
+    if (this.closeResult !== undefined) return this.closeResult
     this.closed = true
     return Promise.resolve()
   }
@@ -186,7 +196,10 @@ function output(): { stream: PassThrough; text: () => string } {
   return { stream, text: () => value }
 }
 
-function io(surface?: FakeSurface): { io: TerminalIO; stdout: () => string; stderr: () => string } {
+function io(
+  surface?: FakeSurface,
+  overrides: Partial<TerminalIO> = {},
+): { io: TerminalIO; stdout: () => string; stderr: () => string } {
   const out = output()
   const err = output()
   return {
@@ -198,6 +211,7 @@ function io(surface?: FakeSurface): { io: TerminalIO; stdout: () => string; stde
       colorDepth: 1,
       columns: 80,
       ...(surface === undefined ? {} : { createInteractiveSurface: () => Promise.resolve(surface) }),
+      ...overrides,
     },
     stdout: out.text,
     stderr: err.text,
@@ -345,18 +359,79 @@ describe('runTerminalInvocation', () => {
     const terminal = new FakeTerminal([])
     terminal.cancelResult = new Promise(() => {})
     const client = new FakeRuntimeClient(terminal)
+    terminal.closeResult = new Promise(() => {})
+    client.closeResult = new Promise(() => {})
     const surface = new FakeSurface(async function * () {
       yield { kind: 'interrupt' }
       yield { kind: 'interrupt' }
     })
+    surface.closeResult = new Promise(() => {})
+    let forcedCode: number | undefined
+    const streams = io(surface, { forceExit: (code) => { forcedCode = code } })
 
-    const code = await runTerminalInvocation(
-      { mode: 'interactive', initialTask: undefined }, io(surface).io, new FakeConnector(client),
-    )
+    const code = await Promise.race([
+      runTerminalInvocation(
+        { mode: 'interactive', initialTask: undefined }, streams.io, new FakeConnector(client),
+      ),
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+    ])
 
     expect(code).toBe(131)
-    expect(terminal.closed).toBe(true)
-    expect(client.closed).toBe(true)
+    expect(forcedCode).toBe(131)
+  })
+
+  it('maps an interactive Runtime-unavailable event pump failure to exit 3', async () => {
+    const terminal = new FakeTerminal([])
+    terminal.eventsError = new RuntimeUnavailableError()
+    const client = new FakeRuntimeClient(terminal)
+    const surface = new FakeSurface(async function * () {
+      await new Promise(() => {})
+    })
+    const streams = io(surface)
+
+    const code = await Promise.race([
+      runTerminalInvocation(
+        { mode: 'interactive', initialTask: undefined }, streams.io, new FakeConnector(client),
+      ),
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+    ])
+
+    expect(code).toBe(3)
+    expect(surface.diagnostics).toHaveLength(1)
+  })
+
+  it('maps an interactive pump failure after the action stream closes', async () => {
+    const terminal = new FakeTerminal([])
+    terminal.eventsError = new RuntimeUnavailableError()
+    const client = new FakeRuntimeClient(terminal)
+    const surface = new FakeSurface(async function * () {})
+    const streams = io(surface)
+
+    const code = await runTerminalInvocation(
+      { mode: 'interactive', initialTask: undefined }, streams.io, new FakeConnector(client),
+    )
+
+    expect(code).toBe(3)
+    expect(surface.diagnostics).toHaveLength(1)
+  })
+
+  it.each([
+    [new RuntimeUnavailableError(), 3],
+    [new RuntimeBusyError(sessionId('pump-busy-session')), 4],
+    [new RuntimeProtocolError(), 5],
+  ])('maps a JSON event pump failure to exit %i', async (pumpError, expectedCode) => {
+    const terminal = new FakeTerminal([])
+    terminal.eventsError = pumpError
+    const client = new FakeRuntimeClient(terminal)
+    client.activeResult = new Promise(() => {})
+    const streams = io()
+
+    const code = await runTerminalInvocation(
+      { mode: 'run', task: 'pump failure', json: true }, streams.io, new FakeConnector(client),
+    )
+
+    expect(code).toBe(expectedCode)
+    expect(JSON.parse(streams.stderr())).toMatchObject({ subject: 'Runtime' })
   })
 
   it('returns protocol/internal failure when attachment cleanup rejects', async () => {

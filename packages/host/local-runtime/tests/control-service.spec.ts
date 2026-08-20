@@ -325,6 +325,39 @@ describe('Runtime control service', () => {
     })
   })
 
+  it('streams safe command results for every command-backed terminal control', async () => {
+    const commands = {
+      execute: (_agent: Agent, line: string) => Promise.resolve({
+        commandId: `command-${line}`,
+        result: { kind: 'success' as const, text: `CONTROL_RESULT ${line}` },
+      }),
+    }
+    const { agents } = await start(undefined, { commands: commands as never })
+    const owner = client('command-result-owner')
+    const terminal = client('command-result-terminal')
+    const sessionId = makeSessionId('command-result-session')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected command result Agent')
+    const agentCtx = new Context()
+    agentCtx.provide('commands', commands as never)
+    ;(agent as { ctx: Agent['ctx'] }).ctx = agentCtx
+
+    for (const command of ['plan', 'compact', 'diff', 'terminal', 'doctor'] as const) {
+      await control!.runTerminalControl(owner, terminal, { command })
+    }
+
+    expect((await control!.readTerminalEvents(owner, terminal, 0)).events.filter(event => event.kind === 'output'))
+      .toEqual([
+        { kind: 'output', text: 'CONTROL_RESULT /plan' },
+        { kind: 'output', text: 'CONTROL_RESULT /compact' },
+        { kind: 'output', text: 'CONTROL_RESULT /diff' },
+        { kind: 'output', text: 'CONTROL_RESULT /terminal' },
+        { kind: 'output', text: 'CONTROL_RESULT /doctor' },
+      ])
+  })
+
   it('cancels with no-clear semantics and preserves unrelated queued and steering work', async () => {
     const { agents } = await start()
     const owner = client('cancel-owner')

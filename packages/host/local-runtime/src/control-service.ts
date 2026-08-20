@@ -438,6 +438,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         if (line === undefined || commands === undefined) throw new Error('host-local-runtime: terminal control is unavailable')
         const execution = await commands.execute(terminal.agent, line, new AbortController().signal)
         if (execution === undefined || execution.result.kind === 'error') throw new Error('host-local-runtime: terminal control was rejected')
+        if (execution.result.text !== undefined) terminal.events.push({ kind: 'output', text: execution.result.text })
       })
     },
     readTerminalEvents(owner, terminalId, cursor) {

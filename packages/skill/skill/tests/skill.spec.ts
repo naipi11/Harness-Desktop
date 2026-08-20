@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
+import { agentEvents, type Agent } from '@harness-desktop/dsh-agent'
 import { bindScopeParent, createScope, scopeOf } from '@harness-desktop/dsh-scope'
 import SkillRegistry, {
   isModelInvocable,
@@ -58,6 +59,58 @@ function scopedSkills(ctx: Context): SkillRegistry {
 }
 
 describe('SkillRegistry registry', () => {
+  it('rejects a bound user invocation after its exact consumer generation detaches', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const agent = { id: 'lease-agent', ctx } as unknown as Agent
+    const message = { id: 'lease-message' }
+    ctx.skills.register({
+      name: 'leased-skill', description: 'Leased skill.', source: 'runtime', content: 'Captured instructions.',
+    })
+    const detach = ctx.skills.attachUserInvocationConsumer()
+    const lease = await ctx.skills.acquireUserInvocation('leased-skill', { scope: agent })
+    if (lease === undefined) throw new Error('expected user invocation lease')
+    expect(lease.bind(message)).toBe(true)
+    detach()
+
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [message as never], turn: 1, step: 1, signal: new AbortController().signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [message as never] }),
+    )
+
+    expect(decision).toEqual({ kind: 'reject' })
+    expect(lease.isValid()).toBe(false)
+  })
+
+  it('completes a bound admission only when the exact pre-step consumer claims it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const agent = { id: 'claimed-lease-agent', ctx } as unknown as Agent
+    const message = { id: 'claimed-lease-message' }
+    ctx.skills.register({
+      name: 'claimed-skill', description: 'Claimed skill.', source: 'runtime', content: 'Captured instructions.',
+    })
+    ctx.skills.attachUserInvocationConsumer()
+    const lease = await ctx.skills.acquireUserInvocation('claimed-skill', { scope: agent })
+    if (lease === undefined) throw new Error('expected user invocation lease')
+    expect(lease.bind(message)).toBe(true)
+
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [message as never], turn: 1, step: 1, signal: new AbortController().signal },
+      () => {
+        expect(ctx.skills.claimUserInvocation(agent, message, 'claimed-skill')).toMatchObject({
+          kind: 'admitted', skill: { content: 'Captured instructions.' },
+        })
+        return Promise.resolve({ kind: 'enter' as const, messages: [message as never] })
+      },
+    )
+
+    expect(decision.kind).toBe('enter')
+    expect(lease.isValid()).toBe(true)
+  })
+
   it('registers providers, resolves duplicates first-wins, and disposes providers', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)

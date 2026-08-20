@@ -1081,7 +1081,10 @@ async function attachRuntimeClient(wire: RuntimeWire, clientId: RuntimeClientId)
 async function startMatchingRuntimeProcess(home: string): Promise<void> {
   const source = fileURLToPath(import.meta.url).endsWith(`${process.platform === 'win32' ? '\\' : '/'}src${process.platform === 'win32' ? '\\' : '/'}runtime-client.ts`)
   const entry = fileURLToPath(new URL(source ? './bin.ts' : './bin.js', import.meta.url))
-  const args = source ? ['--import', 'tsx/esm', entry] : [entry]
+  const inherited = source ? inheritedSourceLoaderArgs(process.execArgv) : []
+  const args = source
+    ? [...inherited, ...hasImport(inherited, 'tsx/esm') ? [] : ['--import', 'tsx/esm'], entry]
+    : [entry]
   const child = spawn(process.execPath, args, {
     env: { ...process.env, HARNESS_HOME: home },
     detached: true,
@@ -1093,6 +1096,50 @@ async function startMatchingRuntimeProcess(home: string): Promise<void> {
     child.once('error', reject)
   })
   child.unref()
+}
+
+const SOURCE_FLAGS_WITH_VALUE = new Set([
+  '--conditions',
+  '--experimental-loader',
+  '--import',
+  '--loader',
+  '--require',
+  '-C',
+  '-r',
+])
+
+const SOURCE_STANDALONE_FLAGS = new Set([
+  '--enable-source-maps',
+  '--experimental-strip-types',
+  '--no-warnings',
+])
+
+function inheritedSourceLoaderArgs(args: readonly string[]): string[] {
+  const inherited: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (argument === undefined) continue
+    if (SOURCE_STANDALONE_FLAGS.has(argument)) {
+      inherited.push(argument)
+      continue
+    }
+    const equals = argument.indexOf('=')
+    if (equals !== -1 && SOURCE_FLAGS_WITH_VALUE.has(argument.slice(0, equals))) {
+      inherited.push(argument)
+      continue
+    }
+    if (!SOURCE_FLAGS_WITH_VALUE.has(argument)) continue
+    const value = args[index + 1]
+    if (value === undefined) continue
+    inherited.push(argument, value)
+    index += 1
+  }
+  return inherited
+}
+
+function hasImport(args: readonly string[], specifier: string): boolean {
+  return args.some((argument, index) => argument === `--import=${specifier}`
+    || (argument === '--import' && args[index + 1] === specifier))
 }
 
 function diagnosticId(): RuntimeDiagnosticId {

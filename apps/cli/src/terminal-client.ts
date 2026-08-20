@@ -77,6 +77,8 @@ export interface TerminalIO {
   readonly createInteractiveSurface?: (io: TerminalIO) => Promise<InteractiveTerminalSurface>
   /** Optional signal stream used by non-interactive commands. */
   readonly interrupts?: AsyncIterable<void>
+  /** Immediate process-owned forced exit used only by a second Ctrl+C. */
+  readonly forceExit?: (code: 131) => void
 }
 
 /** Invocation fields accepted by the terminal path, including a programmatic resume identity. */
@@ -124,6 +126,7 @@ export function createProcessTerminalIO(): TerminalIO {
     columns: stdout.columns ?? 80,
     colorDepth: stdout.getColorDepth?.() ?? 1,
     interrupts,
+    forceExit: code => process.exit(code),
   }
 }
 
@@ -177,7 +180,7 @@ export async function runTerminalInvocation(
       })
       if (invocation.mode === 'interactive') {
         if (surface === undefined || actions === undefined) throw new Error('interactive terminal surface is unavailable')
-        code = await runInteractive(terminal, surface, actions, fallbackRenderer)
+        code = await runInteractive(terminal, surface, actions, io.forceExit)
       } else {
         code = await runTask(terminal, runtime, fallbackRenderer, io.interrupts)
       }
@@ -187,6 +190,13 @@ export async function runTerminalInvocation(
     renderer.writeDiagnostic({ kind: 'runtime', error })
     code = exitCodeFor(error)
   } finally {
+    if (io.interrupts instanceof ActionQueue) io.interrupts.close()
+    if (code === 131) {
+      containCleanup(() => terminal?.close())
+      containCleanup(() => surface?.close())
+      containCleanup(() => runtime?.close())
+      return code
+    }
     let cleanupError: unknown
     try {
       await terminal?.close()
@@ -203,7 +213,6 @@ export async function runTerminalInvocation(
     } catch (error: unknown) {
       cleanupError ??= error
     }
-    if (io.interrupts instanceof ActionQueue) io.interrupts.close()
     if (cleanupError !== undefined && code === 0) {
       fallbackRenderer.writeDiagnostic({ kind: 'runtime', error: cleanupError })
       code = 5
@@ -247,14 +256,14 @@ async function runInteractive(
   terminal: TerminalConnection,
   surface: InteractiveTerminalSurface,
   actions: AsyncIterator<TerminalUserAction>,
-  fallbackRenderer: TerminalRenderer,
+  forceExit: TerminalIO['forceExit'],
 ): Promise<number> {
-  let stopping = false
   let pendingApproval: Extract<TerminalProtocolEvent, { kind: 'approval-requested' }> | undefined
   const pump = pumpEvents(terminal, surface, (event) => {
     if (event.kind === 'approval-requested') pendingApproval = event
-  }).catch((error: unknown) => {
-    if (!stopping) fallbackRenderer.writeDiagnostic({ kind: 'runtime', error })
+  })
+  const pumpFailure = new Promise<{ readonly error: unknown }>((resolve) => {
+    void pump.catch((error: unknown) => { resolve({ error }) })
   })
   let cancellation: Promise<void> | undefined
   const interrupt = (): boolean => {
@@ -271,14 +280,17 @@ async function runInteractive(
     return false
   }
   for (;;) {
-    const next = await actions.next()
+    const outcome = await Promise.race([
+      actions.next().then(next => ({ kind: 'action' as const, next })),
+      pumpFailure.then(({ error }) => ({ kind: 'pump-error' as const, error })),
+    ])
+    if (outcome.kind === 'pump-error') throw outcome.error
+    const next = outcome.next
     if (next.done === true) break
     const action = next.value
     if (action.kind === 'interrupt') {
       if (interrupt()) {
-        stopping = true
-        await terminal.close()
-        await pump
+        forceExit?.(131)
         return 131
       }
       continue
@@ -297,7 +309,6 @@ async function runInteractive(
       }
       const control = parseControl(line)
       if (control !== undefined) {
-        if (control.command === 'exit') stopping = true
         await terminal.runControl(control)
         if (control.command === 'exit') break
       } else {
@@ -307,7 +318,6 @@ async function runInteractive(
       surface.writeDiagnostic({ kind: 'runtime', error })
     }
   }
-  stopping = true
   await terminal.close()
   await pump
   return 0
@@ -327,7 +337,7 @@ async function runTask(
     (error: unknown) => {
       if (lifecycle.closing) return 0
       renderer.writeDiagnostic({ kind: 'runtime', error })
-      return 5
+      return exitCodeFor(error)
     },
   )
   let resolveExit!: (code: number) => void
@@ -574,4 +584,8 @@ class ActionQueue<T> implements AsyncIterable<T> {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+function containCleanup(cleanup: () => Promise<void> | undefined): void {
+  void Promise.resolve().then(cleanup).catch(() => {})
 }

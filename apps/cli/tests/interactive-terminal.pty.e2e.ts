@@ -8,7 +8,7 @@ import * as pty from 'node-pty'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveExampleLaunch, resolveExampleMode } from '@harness-desktop/dsh-loader-smoke'
 import { createRuntimeConnector } from '@harness-desktop/dsh-host-local-runtime'
-import type { RuntimeClient } from '@harness-desktop/dsh-host-local-runtime'
+import type { RuntimeClient, TerminalConnection } from '@harness-desktop/dsh-host-local-runtime'
 import {
   cleanupRuntimeProcess,
   mintBrowserCookie,
@@ -26,12 +26,19 @@ let runtime: RuntimeProcess | undefined
 let replayRoot: string | undefined
 let livePty: pty.IPty | undefined
 let runtimeProbe: RuntimeClient | undefined
+let busyClient: RuntimeClient | undefined
+let busyTerminal: TerminalConnection | undefined
 
 afterEach(async () => {
   livePty?.kill()
   livePty = undefined
   await runtimeProbe?.close()
   runtimeProbe = undefined
+  await busyTerminal?.cancel()
+  await busyTerminal?.close()
+  busyTerminal = undefined
+  await busyClient?.close()
+  busyClient = undefined
   await cleanupRuntimeProcess(runtime)
   runtime = undefined
   if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
@@ -66,7 +73,11 @@ function approvalToolCall(): object {
 
 async function startRuntimeWithReplay(
   entries: readonly object[],
-  options: { readonly legacySession?: boolean } = {},
+  options: {
+    readonly legacySession?: boolean
+    readonly terminalUnavailable?: boolean
+    readonly fixedTerminalSessionId?: string
+  } = {},
 ): Promise<RuntimeProcess> {
   replayRoot = await mkdtemp(join(tmpdir(), 'harness-cli-pty-replay-'))
   const override = join(replayRoot, 'replay.override.json')
@@ -79,6 +90,10 @@ async function startRuntimeWithReplay(
     return await startRuntimeProcess({
       mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true, terminalApprovalPreset: true,
       ...(options.legacySession === true ? { legacySession: true } : {}),
+      ...(options.terminalUnavailable === true ? { terminalUnavailable: true } : {}),
+      ...(options.fixedTerminalSessionId === undefined
+        ? {}
+        : { fixedTerminalSessionId: options.fixedTerminalSessionId }),
     })
   } finally {
     if (previousFile === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_FILE
@@ -200,6 +215,9 @@ describe('interactive terminal real PTY', () => {
     expect(run.output()).toContain('Tool: runtime_approval')
     expect(run.output()).toContain('PTY_APPROVED')
     expect(run.output()).toContain('Model: deepseek-v4-flash')
+    for (const command of ['PLAN', 'COMPACT', 'DIFF', 'TERMINAL', 'DOCTOR']) {
+      expect(run.output()).toContain(`RUNTIME_CONTROL_${command}`)
+    }
     expect(run.output()).not.toContain('The local Harness Runtime is not running.')
     expect(run.output()).not.toMatch(/\u001b\[\?(?:47|1047|1049)[hl]/u)
     expect(run.output()).not.toMatch(/\u001b\[(?:3[0-7]|9[0-7])m/u)
@@ -280,6 +298,40 @@ describe('interactive terminal real PTY', () => {
 
     expect(outcome.exitCode).toBe(0)
     expect(await readFile(join(runtime.legacyHome, 'sessions', 'legacy.jsonl'), 'utf8')).toBe('{"legacy":true}\n')
+    livePty = undefined
+  }, 120_000)
+
+  it('returns code 3 when the real Runtime terminal owner is unavailable', async () => {
+    runtime = await startRuntimeWithReplay([], { terminalUnavailable: true })
+    await waitForEndpoint(runtime)
+    const run = startCliPty(runtime, ['run', 'unavailable Runtime operation', '--json'])
+
+    const outcome = await waitForExit(run)
+
+    expect(outcome.exitCode).toBe(3)
+    expect(run.output()).toContain('runtime-unavailable')
+    livePty = undefined
+  }, 120_000)
+
+  it('returns code 4 when a real connector owns the fixed Runtime session', async () => {
+    const fixedSessionId = 'fixed-terminal-busy-session'
+    runtime = await startRuntimeWithReplay([{ kind: 'hang' }], { fixedTerminalSessionId: fixedSessionId })
+    await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    busyClient = await connector.connect({ start: false })
+    busyTerminal = await busyClient.openTerminal({
+      workspace: runtime.cwd,
+      initialTask: 'hold the fixed session writer',
+    })
+    expect((await busyClient.observeActiveWork()).ownUiWork).toHaveLength(1)
+    const run = startCliPty(runtime, ['run', 'must be rejected as busy', '--json'])
+
+    const outcome = await waitForExit(run)
+
+    expect(outcome.exitCode).toBe(4)
+    expect(run.output()).toContain('Another client is already writing this session.')
     livePty = undefined
   }, 120_000)
 })

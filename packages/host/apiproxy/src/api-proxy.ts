@@ -21,7 +21,7 @@ import type { SessionPersistence } from '@harness-desktop/dsh-session-persistenc
 import { SessionQueryError, type SessionSearchCursor } from '@harness-desktop/dsh-session-query'
 import { SubagentError } from '@harness-desktop/dsh-subagent'
 import type { SubagentListEntry as CatalogSubagentListEntry } from '@harness-desktop/dsh-subagent'
-import { isSkillName, isUserInvocable } from '@harness-desktop/dsh-skill'
+import { isSkillName, isUserInvocable, type UserSkillInvocationLease } from '@harness-desktop/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@harness-desktop/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
@@ -1818,7 +1818,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   /** Classify an unregistered command-like line against the exact Agent's consumer and skill catalog. */
-  async function resolveSkillGesture(agent: Agent, line: string): Promise<'user-skill' | 'unknown' | 'unavailable'> {
+  async function resolveSkillGesture(
+    agent: Agent,
+    line: string,
+  ): Promise<{ readonly kind: 'user-skill'; readonly lease: UserSkillInvocationLease } | 'unknown' | 'unavailable'> {
     const name = leadingSkillName(line)
     if (name === undefined) return 'unknown'
     const presets = ctx.get('agentPresets')
@@ -1829,9 +1832,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       const snapshot = await skills.snapshot({ cwd: agent.session.header.cwd, scope: agent })
       if (!snapshot.complete) return 'unavailable'
       if (!skills.hasUserInvocationConsumer(agent)) return 'unknown'
-      return snapshot.skills.some(skill => skill.name === name && isUserInvocable(skill))
-        ? 'user-skill'
-        : 'unknown'
+      if (!snapshot.skills.some(skill => skill.name === name && isUserInvocable(skill))) return 'unknown'
+      const lease = await skills.acquireUserInvocation(name, {
+        cwd: agent.session.header.cwd,
+        scope: agent,
+      })
+      return lease === undefined ? 'unknown' : { kind: 'user-skill', lease }
     } catch {
       return 'unavailable'
     }
@@ -2509,6 +2515,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
         const commandLine = commandCandidate(content)
+        let skillAdmission: UserSkillInvocationLease | undefined
         if (commandLine !== undefined) {
           const commands = ctx.get('commands')
           let execution: Awaited<ReturnType<NonNullable<typeof commands>['execute']>> = undefined
@@ -2538,6 +2545,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               const token = separator === -1 ? commandLine : commandLine.slice(0, separator)
               return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
             }
+            skillAdmission = skill.lease
           } else {
             if (execution.result.kind === 'error') {
               return err(request, { code: 'command-error', message: execution.result.text, details: {} })
@@ -2573,9 +2581,22 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             const durable = await durablePromptContent(ctx, content)
             const message: UserMessage = createUserMessage({ content: durable, source })
+            if (skillAdmission !== undefined && !skillAdmission.bind(message)) {
+              skillAdmission.release()
+              const token = commandLine?.split(/\s/u, 1)[0] ?? '/'
+              return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
+            }
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
+            if (skillAdmission !== undefined) await Promise.resolve()
+            if (skillAdmission !== undefined && !skillAdmission.isValid()) {
+              agent.inbox.remove(message.id)
+              skillAdmission.release()
+              const token = commandLine?.split(/\s/u, 1)[0] ?? '/'
+              return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
+            }
           } catch (error: unknown) {
+            skillAdmission?.release()
             if (error instanceof AttachmentError) {
               return err(request, {
                 code: 'attachment-error',

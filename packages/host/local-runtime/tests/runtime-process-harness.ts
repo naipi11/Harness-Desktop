@@ -74,6 +74,10 @@ export interface StartRuntimeProcessOptions {
   readonly racingSkillConsumerPreset?: boolean
   /** Seed one supported legacy session so first-start migration needs an explicit decision. */
   readonly legacySession?: boolean
+  /** Force the composed session-create owner to reject terminal opens. */
+  readonly terminalUnavailable?: boolean
+  /** Rewrite every terminal open to one fixed session for real busy-process coverage. */
+  readonly fixedTerminalSessionId?: string
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -134,6 +138,10 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
     HARNESS_RUNTIME_TEST_MODE: 'stdin-lifetime',
     HARNESS_RUNTIME_TEST_TRACE: tracePath,
     ...(options.legacySession === true ? { DSH_RUNTIME_TEST_ENABLE_LEGACY_MIGRATION: '1' } : {}),
+    ...(options.terminalUnavailable === true ? { DSH_RUNTIME_TEST_TERMINAL_UNAVAILABLE: '1' } : {}),
+    ...(options.fixedTerminalSessionId === undefined
+      ? {}
+      : { DSH_RUNTIME_TEST_FIXED_TERMINAL_SESSION: options.fixedTerminalSessionId }),
     ...(options.denyWorkspaceLib === true ? { HARNESS_RUNTIME_TEST_DENY_WORKSPACE_LIB_ROOT: repoRoot } : {}),
     ...(options.observeWorkspaceModules === true ? { HARNESS_RUNTIME_TEST_OBSERVE_WORKSPACE_ROOT: repoRoot } : {}),
     ...(options.failImport === undefined ? {} : { HARNESS_RUNTIME_TEST_FAIL_IMPORT: options.failImport }),

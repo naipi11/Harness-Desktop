@@ -22,7 +22,7 @@ import TypertRegistry from '@harness-desktop/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@harness-desktop/dsh-llm'
 import type { Agent } from '@harness-desktop/dsh-agent'
 import UserQuestionService from '@harness-desktop/dsh-user-questions'
-import type { SessionEvent, SessionHeader, SessionId } from '@harness-desktop/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@harness-desktop/dsh-session'
 import {
   PersistenceCoordinator,
   SessionPersistenceRevision,
@@ -864,6 +864,55 @@ describe('sessions.prompt synchronous rejection', () => {
       error: { code: 'unknown-command', message: 'unknown command: /raced-skill', details: {} },
     })
     expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('revokes skill admission when the exact consumer disposes inside followup', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const consumer = await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-skill-followup-race'))
+    let disposed: Promise<void> | undefined
+    let followed: UserMessage | undefined
+    const remove = vi.fn(() => true)
+    const followup = vi.fn((message: UserMessage) => {
+      followed = message
+      ;(agent.inbox.nextTurn as UserMessage[]).push(message)
+      disposed = consumer.dispose()
+    })
+    const agent = {
+      id: session.id,
+      session,
+      status: 'idle',
+      ctx,
+      options: {},
+      inbox: { nextTurn: [], nextStep: [], remove },
+      followup,
+      steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.skills.register({
+      name: 'followup-raced-skill', description: 'Consumer disposal race.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/followup-raced-skill' }],
+    }))
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /followup-raced-skill', details: {} },
+    })
+    expect(followup).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith(followed?.id)
+    await disposed
   })
 
   it('does not classify an incomplete skill catalog as an unknown command', async () => {

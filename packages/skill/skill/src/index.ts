@@ -12,6 +12,7 @@
  */
 
 import { Context, Service } from '@harness-desktop/cordis'
+import type { Agent, PreStepDecision } from '@harness-desktop/dsh-agent'
 import { assertNever } from '@harness-desktop/dsh-llm'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@harness-desktop/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@harness-desktop/dsh-scope'
@@ -119,6 +120,26 @@ export interface SkillViewOptions extends SkillLookupOptions {
   /** Viewing scope (the calling agent); omitted reads the global layer alone. */
   readonly scope?: ScopeKey | undefined
 }
+
+/** One exact consumer-generation admission carried from Host lookup to pre-step injection. */
+export interface UserSkillInvocationLease {
+  /**
+   * Bind this admission once to the exact user message entering the Agent inbox.
+   * @param message - identified same-process user message object.
+   * @returns whether the originating consumer generation still serves the Agent.
+   */
+  bind(message: object): boolean
+  /** @returns whether this admission remains valid or already completed injection. */
+  isValid(): boolean
+  /** Release an admission that did not enter the Agent inbox. */
+  release(): void
+}
+
+/** Result of claiming a bound Host admission from the pre-step consumer. */
+export type UserSkillInvocationClaim =
+  | { readonly kind: 'admitted'; readonly skill: SkillDefinition }
+  | { readonly kind: 'revoked' }
+  | { readonly kind: 'none' }
 
 /**
  * Return whether a skill may be advertised to and loaded by a model.
@@ -332,7 +353,7 @@ class SkillLayer implements ScopeLayer {
   /** Runtime skills registered through contexts carrying this scope. */
   readonly runtime = new Map<string, SkillDefinition>()
   /** Pre-step consumers that can turn a direct user gesture into injected instructions. */
-  readonly userInvocationConsumers = new AnonymousEntries<symbol>()
+  readonly userInvocationConsumers = new AnonymousEntries<UserInvocationConsumer>()
 
   constructor(scope: ScopeKey | undefined) {
     this.providers = new NamedEntries(name => new Error(scope === undefined
@@ -344,6 +365,20 @@ class SkillLayer implements ScopeLayer {
   isEmpty(): boolean {
     return this.providers.isEmpty() && this.runtime.size === 0 && this.userInvocationConsumers.isEmpty()
   }
+}
+
+interface UserInvocationConsumer {
+  active: boolean
+}
+
+interface UserInvocationAdmission {
+  readonly consumer: UserInvocationConsumer
+  readonly scope: ScopeKey
+  readonly name: string
+  readonly skill: SkillDefinition
+  message?: object
+  claimed: boolean
+  settled?: 'injected' | 'revoked' | 'released'
 }
 
 /**
@@ -374,11 +409,35 @@ export class SkillRegistry extends Service {
   /** Stable identities for cache keys; scope keys are opaque identity-compared objects. */
   private readonly scopeIds = new WeakMap<ScopeKey, number>()
   private nextScopeId = 1
+  private readonly userInvocationAdmissions = new WeakMap<object, UserInvocationAdmission>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'skills')
     this.collectCacheMaxEntries = config.collectCacheMaxEntries ?? DEFAULT_COLLECT_CACHE_ENTRIES
     assertPositiveInteger('collectCacheMaxEntries', this.collectCacheMaxEntries)
+    ctx.on('agent/pre-step', async ({ agent, messages }, next): Promise<PreStepDecision> => {
+      const admissions = this.admissionsFor(agent, messages)
+      if (admissions.length === 0) return next()
+      if (admissions.some(admission => !this.admissionActive(admission))) {
+        for (const admission of admissions) this.settleAdmission(admission, 'revoked')
+        return { kind: 'reject' }
+      }
+      let decision: PreStepDecision
+      try {
+        decision = await next()
+      } catch (error) {
+        for (const admission of admissions) this.settleAdmission(admission, 'released')
+        throw error
+      }
+      const admitted = decision.kind === 'enter'
+        && admissions.every(admission => admission.claimed && this.admissionActive(admission))
+      for (const admission of admissions) this.settleAdmission(admission, admitted ? 'injected' : 'revoked')
+      return admitted ? decision : { kind: 'reject' }
+    }, { prepend: true })
+    ctx.on('agent/inbox/discarded', ({ agent, message }) => {
+      const admission = this.userInvocationAdmissions.get(message)
+      if (admission?.scope === agent) this.settleAdmission(admission, 'released')
+    })
   }
 
   /**
@@ -471,10 +530,16 @@ export class SkillRegistry extends Service {
    * @returns the exact Cordis effect disposer that detaches this consumer.
    */
   attachUserInvocationConsumer(): () => void {
-    const token = Symbol('user-invocation-consumer')
+    const consumer: UserInvocationConsumer = { active: true }
     return this.layers.effect(
       this.ctx,
-      layer => layer.userInvocationConsumers.append(token),
+      (layer) => {
+        const undo = layer.userInvocationConsumers.append(consumer)
+        return () => {
+          consumer.active = false
+          undo()
+        }
+      },
       { label: 'skills.attachUserInvocationConsumer()', notify: false },
     )
   }
@@ -487,9 +552,101 @@ export class SkillRegistry extends Service {
    * @returns whether a reachable user-invocation consumer is attached.
    */
   hasUserInvocationConsumer(scope: ScopeKey): boolean {
-    if (!this.layers.global.userInvocationConsumers.isEmpty()) return true
+    return this.userInvocationConsumer(scope) !== undefined
+  }
+
+  /**
+   * Load one user-invocable definition under the exact reachable consumer generation.
+   * @param name - catalog-confirmed skill name.
+   * @param options - exact Agent scope plus cwd/cancellation lookup fields.
+   * @returns a one-shot admission lease, or undefined when the definition or consumer changed.
+   */
+  async acquireUserInvocation(
+    name: string,
+    options: SkillViewOptions & { readonly scope: ScopeKey },
+  ): Promise<UserSkillInvocationLease | undefined> {
+    const consumer = this.userInvocationConsumer(options.scope)
+    if (consumer === undefined) return undefined
+    const skill = await this.get(name, options)
+    if (skill === undefined || !isUserInvocable(skill)
+      || !this.userInvocationConsumerReachable(options.scope, consumer)) return undefined
+    const admission: UserInvocationAdmission = {
+      consumer,
+      scope: options.scope,
+      name,
+      skill,
+      claimed: false,
+    }
+    return {
+      bind: (message) => {
+        if (admission.message !== undefined || !this.admissionActive(admission)) return false
+        admission.message = message
+        this.userInvocationAdmissions.set(message, admission)
+        return true
+      },
+      isValid: () => admission.settled === 'injected'
+        || (admission.settled === undefined && this.admissionActive(admission)),
+      release: () => { this.settleAdmission(admission, 'released') },
+    }
+  }
+
+  /**
+   * Claim the exact Host-bound definition for one pre-step gesture.
+   * @param scope - Agent proposing the step.
+   * @param message - claimed user message object.
+   * @param name - gesture name found in that message.
+   * @returns captured definition, explicit revocation, or no Host admission for direct Agent input.
+   */
+  claimUserInvocation(scope: ScopeKey, message: object, name: string): UserSkillInvocationClaim {
+    const admission = this.userInvocationAdmissions.get(message)
+    if (admission === undefined || admission.name !== name) return { kind: 'none' }
+    if (admission.scope !== scope || !this.admissionActive(admission)) return { kind: 'revoked' }
+    admission.claimed = true
+    return { kind: 'admitted', skill: admission.skill }
+  }
+
+  private userInvocationConsumer(scope: ScopeKey): UserInvocationConsumer | undefined {
+    const layers = this.layers.chainLayers(scope)
+    for (let index = layers.length - 1; index >= 0; index -= 1) {
+      const layer = layers[index]
+      if (layer === undefined) continue
+      const consumer = [...layer.userInvocationConsumers.values()].find(candidate => candidate.active)
+      if (consumer !== undefined) return consumer
+    }
+    return [...this.layers.global.userInvocationConsumers.values()].find(consumer => consumer.active)
+  }
+
+  private userInvocationConsumerReachable(scope: ScopeKey, expected: UserInvocationConsumer): boolean {
+    if (!expected.active) return false
+    if ([...this.layers.global.userInvocationConsumers.values()].includes(expected)) return true
     return this.layers.chainLayers(scope)
-      .some(layer => !layer.userInvocationConsumers.isEmpty())
+      .some(layer => [...layer.userInvocationConsumers.values()].includes(expected))
+  }
+
+  private admissionActive(admission: UserInvocationAdmission): boolean {
+    return admission.settled === undefined
+      && this.userInvocationConsumerReachable(admission.scope, admission.consumer)
+  }
+
+  private admissionsFor(agent: Agent, messages: readonly object[]): UserInvocationAdmission[] {
+    const admissions = new Set<UserInvocationAdmission>()
+    for (const message of messages) {
+      const admission = this.userInvocationAdmissions.get(message)
+      if (admission !== undefined) {
+        if (admission.scope !== agent) admission.settled = 'revoked'
+        admissions.add(admission)
+      }
+    }
+    return [...admissions]
+  }
+
+  private settleAdmission(
+    admission: UserInvocationAdmission,
+    outcome: NonNullable<UserInvocationAdmission['settled']>,
+  ): void {
+    if (admission.settled !== undefined) return
+    admission.settled = outcome
+    if (admission.message !== undefined) this.userInvocationAdmissions.delete(admission.message)
   }
 
   /**

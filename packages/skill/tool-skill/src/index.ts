@@ -183,13 +183,17 @@ export function apply(ctx: Context, config: Config = {}): void {
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    const names = invokedSkillNames(messages)
-    if (names.length === 0) return decision
+    const gestures = invokedSkillGestures(messages)
+    if (gestures.length === 0) return decision
     signal.throwIfAborted()
     const lookup = { cwd: agent.session.header.cwd, signal, scope: agent }
     const injections: UserMessage[] = []
-    for (const name of names) {
-      const skill = await ctx.skills.get(name, lookup)
+    for (const { message, name } of gestures) {
+      const claim = ctx.skills.claimUserInvocation(agent, message, name)
+      if (claim.kind === 'revoked') return { kind: 'reject' }
+      const skill = claim.kind === 'admitted'
+        ? claim.skill
+        : await ctx.skills.get(name, lookup)
       signal.throwIfAborted()
       // Unknown names and user-disabled skills stay plain prose: the
       // gesture was never a claim this boundary recognizes. The check sits
@@ -423,17 +427,17 @@ const SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g
  * @param messages - the step's claimed batch.
  * @returns candidate skill names, unvalidated against the registry.
  */
-function invokedSkillNames(messages: readonly UserMessage[]): string[] {
-  const names: string[] = []
+function invokedSkillGestures(messages: readonly UserMessage[]): Array<{ readonly message: UserMessage; readonly name: string }> {
+  const gestures: Array<{ readonly message: UserMessage; readonly name: string }> = []
   for (const message of messages) {
     if ((message.source as { kind?: unknown }).kind !== 'user') continue
     for (const block of message.content) {
       if (block.type !== 'text') continue
       for (const match of block.text.matchAll(SKILL_GESTURE)) {
         const name = match[2]
-        if (name !== undefined && !names.includes(name)) names.push(name)
+        if (name !== undefined && !gestures.some(gesture => gesture.name === name)) gestures.push({ message, name })
       }
     }
   }
-  return names
+  return gestures
 }
