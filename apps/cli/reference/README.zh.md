@@ -24,7 +24,7 @@
 
 | Profile | 参数 |
 |---|---|
-| `web` | CLI：`--daemon` 或 `--background`；Web 应用：`--host`、`--port`、可重复的 `--trusted-host` |
+| `web` | `--open`、`--no-open`、`--daemon`、`--background`、`--status` 或 `--stop` |
 | `headless` | 任务文本，作为位置参数 |
 
 一次性任务（`harness --profile headless "run the tests"`）通过核心注册表创建一个全新的持久化 Agent（智能体），提交任务、等待完全停稳并对会话执行 flush，再从其持久化事件区间中推导最后一个非空 assistant 文本与最终 `turn/end` 原因。它在 stdout 打印文本，并在原因为 `completed` 时以 0 退出，否则以 1 退出。没有任务的调用是该应用的用法错误。随附 headless profile 不挂载 ApiProxy、Host、HTTP 服务器、Web 运行时或浏览器客户端；成功运行不会向 stderr 写入任何内容，也不会打开监听端口。
@@ -52,22 +52,21 @@ harness --profile tui
 
 ## Web 别名
 
-`harness web` 是 `--profile web` 的硬编码别名。`--daemon` 与 `--background` 是等价且仅用于 Web 进程生命周期的别名：CLI 会在把清理后的参数交给 Web 应用前消费其中任一个。普通 `web-startup` 提供方仍持有 `--host`、`--port`、可重复的 `--trusted-host` 和 `--help`。`--host` 和 `--port` 覆盖承载它们的那些行的组合取值，可重复的 `--trusted-host` 通过 `ctx.webRuntime.trustedHosts` 提供本次调用的 authority（部署表达式会拼接自己的 authority），客户端插件 HMR（热模块替换）接收器始终挂载，在单独运行的 `pnpm run dev:web` watcher 重建客户端 bundle 之前保持空闲。
+`harness web` 会启动或连接共享的本地 Runtime。默认会调起浏览器；`--no-open` 可禁止调起，`--open` 则显式表达默认行为。`--daemon` 与 `--background` 是请求由 Runtime 持有的具名 `web` lease 的等价写法。CLI 在完成请求的连接或 lease 操作后退出；HTTP 服务器、会话与活动工作由 Runtime 持有。
 
 ```sh
 harness web
-harness web --daemon
-harness web --background
-harness web --patch ./extra.cordis.yml
-harness web --dump-config
-harness web --help
+harness web --no-open
+harness web --background --no-open
+harness web --status
+harness web --stop
 ```
 
-使用任一后台别名时，父进程会输出子进程 PID 和私有 `$HARNESS_HOME/logs/.../server.log` 路径，然后退出。该成功只表示已创建子进程，不表示 HTTP 已就绪。调用方使用平台进程工具管理该 PID。在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程。在 Windows 上，`taskkill /PID <pid> /T /F` 会强制终止，不能证明已优雅 dispose。子进程将 URL 和每项启动失败写入私有日志，诊断启动失败必须查看该日志。`harness web --help` 不会创建子进程，不带后台别名的 `harness web` 仍在前台运行。
+调起浏览器时，Runtime 会签发一次性 handoff，并返回不含凭据的回环 Dashboard origin 及其过期时间。CLI 只会把 handoff 写入仅当前用户可访问的临时 HTML 文档的 POST 正文，并调度不含 handoff 或 Runtime access token 的本地文件 URL。Runtime 客户端 API 不会向 CLI 报告交换完成状态，因此 CLI 会在调度失败、handoff 过期或 CLI 进程自然退出时删除该文档。
 
-没有就绪轮询、`status` 或 `stop` 服务管理器、远程 bind 或登录自启。生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。默认服务地址是 `http://127.0.0.1:3080`。CLI 目前有意不支持 `--host 0.0.0.0`，并会以用法错误退出；`--trusted-host` 可添加 `/api` 浏览器信任围栏接受的具名 authority。
+`harness web --status` 只连接已有 Runtime，并输出其 Runtime 标识、Dashboard origin 与具名 Web lease 状态；Runtime 不存在时会返回非零状态，且不会创建 `$HARNESS_HOME`。`harness web --stop` 会幂等地仅释放具名 Web lease，不会终止 Runtime、关闭其他客户端或取消活动工作。
 
-进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
+Web 命令不会创建分离的逐命令 Web 子进程、PID 记录或子进程日志。Runtime 仅监听回环地址；产品命令不接受 host、port、trusted-host、远程 bind 或登录自启选项。生产 Web 使用需要已构建的包和前端产物（`pnpm run build`）。
 
 所有模式都将运行命令时所在的目录作为默认 workspace 根目录，以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。
 
@@ -85,4 +84,4 @@ harness web --help
 
 ## 源码执行
 
-请在仓库根目录中，于全新 checkout 之后及产物需要更新时单独运行 `pnpm run build`，然后使用 `pnpm harness <args...>`。`package.json` 中的脚本不会构建，而是通过 `node --import tsx/esm` 启动 `apps/cli/src/bin.ts`，并转发所有参数。`pnpm harness web --daemon` 支持相同的后台启动，并会为其子进程保留这些运行时参数。Typert Host 产物缺失时，profile 启动会因不含构建指引的模块解析错误而失败。这些 Host 产物存在后，如果前端或 Client plugin 组合包缺失，启动会失败并提示运行 `pnpm run build`。启动器不会检查产物是否为最新，因此已有的陈旧组合包可能继续运行旧版浏览器代码，直至重新构建。该进程会继承启动环境；当支持环境代理的 Node 版本必须遵循 `HTTP_PROXY` 和 `HTTPS_PROXY` 时，请设置 `NODE_USE_ENV_PROXY=1`。安装形式会直接启动构建后的 `apps/cli/lib/bin.js`，不会重新构建仓库。
+请在仓库根目录中，于全新 checkout 之后及产物需要更新时单独运行 `pnpm run build`，然后使用 `pnpm harness <args...>`。`package.json` 中的脚本不会构建，而是通过 `node --import tsx/esm` 启动 `apps/cli/src/bin.ts`，并转发所有参数。`pnpm harness web --daemon` 与构建后命令使用相同的共享 Runtime 连接和具名 lease 路径，不会创建分离的逐命令 Web 子进程。Typert Host 产物缺失时，profile 启动会因不含构建指引的模块解析错误而失败。这些 Host 产物存在后，如果前端或 Client plugin 组合包缺失，启动会失败并提示运行 `pnpm run build`。启动器不会检查产物是否为最新，因此已有的陈旧组合包可能继续运行旧版浏览器代码，直至重新构建。该进程会继承启动环境；当支持环境代理的 Node 版本必须遵循 `HTTP_PROXY` 和 `HTTPS_PROXY` 时，请设置 `NODE_USE_ENV_PROXY=1`。安装形式会直接启动构建后的 `apps/cli/lib/bin.js`，不会重新构建仓库。

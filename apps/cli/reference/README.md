@@ -24,7 +24,7 @@ The shipped apps own these command lines:
 
 | Profile | Arguments |
 |---|---|
-| `web` | CLI: `--daemon` or `--background`; Web app: `--host`, `--port`, repeatable `--trusted-host` |
+| `web` | `--open`, `--no-open`, `--daemon`, `--background`, `--status`, or `--stop` |
 | `headless` | the task text, as the positional argument |
 
 A one-shot task (`harness --profile headless "run the tests"`) creates one fresh persisted Agent through the core registry, submits the task, waits for quiescence, and flushes the Session before deriving the last non-empty assistant text and final `turn/end` reason from its durable interval. It prints the text on stdout and exits 0 for `completed`, else 1. An invocation with no task is a usage error from that app. The shipped headless profile mounts no ApiProxy, Host, HTTP server, Web runtime, or browser client; a successful run writes nothing to stderr and opens no listening port.
@@ -52,22 +52,21 @@ Git-hosted plugins that ship sources build during install through their `prepare
 
 ## Web alias
 
-`harness web` is a hardcoded alias for `--profile web`. `--daemon` and `--background` are equivalent Web-only process-lifetime aliases: the CLI consumes either before passing cleaned arguments to the Web app. The ordinary `web-startup` provider still owns `--host`, `--port`, repeatable `--trusted-host`, and `--help`. `--host` and `--port` override the composed values of the rows that carry them, and repeatable `--trusted-host` contributes invocation authorities through `ctx.webRuntime.trustedHosts` (a deployment expression concatenates its own authorities). The client-plugin HMR receiver is always mounted and stays idle until a separate `pnpm run dev:web` watcher rebuilds client bundles.
+`harness web` starts or attaches to the shared local Runtime. Browser opening is the default; `--no-open` suppresses it and `--open` states the default explicitly. `--daemon` and `--background` are equivalent requests for the Runtime-owned named `web` lease. The CLI exits after the requested attachment or lease operation; the Runtime owns the HTTP server, sessions, and active work.
 
 ```sh
 harness web
-harness web --daemon
-harness web --background
-harness web --patch ./extra.cordis.yml
-harness web --dump-config
-harness web --help
+harness web --no-open
+harness web --background --no-open
+harness web --status
+harness web --stop
 ```
 
-For either background alias, the parent prints the child PID and private `$HARNESS_HOME/logs/.../server.log` path, then exits. That success means the child was created, not that HTTP is ready. The caller manages the PID with platform process tools. On POSIX, `SIGTERM` reaches the existing graceful profile shutdown. On Windows, `taskkill /PID <pid> /T /F` forces termination and does not prove graceful disposal. The child writes its URL and every startup failure to the private log, which is required to diagnose a failed launch. `harness web --help` creates no child, and `harness web` without a background alias remains foreground.
+For a browser open, the Runtime mints a one-time handoff and returns a clean loopback Dashboard origin plus its expiry. The CLI writes the handoff only into the POST body of an owner-only temporary HTML document and dispatches a local file URL that contains no handoff or Runtime access token. The Runtime client API does not report exchange settlement to the CLI, so the CLI removes the document on dispatch failure, handoff expiry, or natural CLI process exit.
 
-There is no readiness polling, `status` or `stop` service manager, remote bind, or login autostart. The production Web runner needs built package and frontend artifacts (`pnpm run build`). It serves `http://127.0.0.1:3080` by default. The CLI intentionally does not support `--host 0.0.0.0` yet and exits with a usage error; `--trusted-host` adds named authorities accepted by the `/api` browser-trust fence.
+`harness web --status` connects only to an existing Runtime and prints its Runtime identity, Dashboard origin, and named Web lease state; absence is a nonzero result and does not create `$HARNESS_HOME`. `harness web --stop` idempotently releases only the named Web lease. It does not terminate the Runtime, close other clients, or cancel active work.
 
-Process shutdown gives the plugin tree up to five seconds to dispose. The first `SIGINT`/`SIGTERM` starts that graceful drain — `SIGTERM` is a supervisor's ordinary stop request and exits 0 on every surface, `SIGINT` reports 130; a second signal forces immediate exit. If one-shot normal completion is already stuck in disposal, the first `Ctrl+C` is the escalation and exits immediately instead of being swallowed.
+Web commands create no detached per-command Web child, PID record, or child log. The Runtime remains loopback-only; the product command accepts no host, port, trusted-host, remote-bind, or login-autostart option. Production Web use requires built package and frontend artifacts (`pnpm run build`).
 
 All modes treat the invoking directory as the default workspace root, load applicable `AGENTS.md` or `CLAUDE.md` instructions with a 65,536-byte render budget, and use an in-memory SQLite session content index. Every profile boot watches valid edits of both `cordis.patch.yml` layers (profile and home) and reapplies them transactionally; a one-shot surface exits through its bounded shutdown, which disposes the watchers.
 
@@ -85,4 +84,4 @@ Install external plugin bundles through `harness plugin --profile <name> add <pa
 
 ## Source execution
 
-From the repository root, run `pnpm run build` separately after a fresh checkout and whenever artifacts need updating, then use `pnpm harness <args...>`. The `package.json` script launches `apps/cli/src/bin.ts` with `node --import tsx/esm` without building and forwards every argument. `pnpm harness web --daemon` supports the same background launch and preserves those runtime arguments for its child. Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend or client-plugin bundles fail at startup with an instruction to run `pnpm run build`. The launcher does not check freshness, so existing stale bundles can run older browser code until rebuilt. The process inherits the launch environment; set `NODE_USE_ENV_PROXY=1` when a supporting Node version must honor `HTTP_PROXY` and `HTTPS_PROXY`. The installed form launches the built `apps/cli/lib/bin.js` without rebuilding the repository.
+From the repository root, run `pnpm run build` separately after a fresh checkout and whenever artifacts need updating, then use `pnpm harness <args...>`. The `package.json` script launches `apps/cli/src/bin.ts` with `node --import tsx/esm` without building and forwards every argument. `pnpm harness web --daemon` uses the same shared-Runtime attachment and named-lease path as the built command; it creates no detached per-command Web child. Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend or client-plugin bundles fail at startup with an instruction to run `pnpm run build`. The launcher does not check freshness, so existing stale bundles can run older browser code until rebuilt. The process inherits the launch environment; set `NODE_USE_ENV_PROXY=1` when a supporting Node version must honor `HTTP_PROXY` and `HTTPS_PROXY`. The installed form launches the built `apps/cli/lib/bin.js` without rebuilding the repository.

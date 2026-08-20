@@ -10,13 +10,13 @@
 |---|---|
 | `harness --profile <name>` | 启动位于 `$HARNESS_HOME/profiles/<name>` 的指定 profile。 |
 | `harness --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
-| `harness web` | `--profile web` 的别名；`--daemon` 和 `--background` 仅将 Web 放到后台启动。 |
+| `harness web` | 连接共享 Runtime 并打开其 Dashboard；也可保留具名 Web lease。 |
 | `harness plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
 | `dsh <args...>` | 兼容别名，保持相同的 profile 和数据行为。 |
 
 运行命令时所在的目录将作为默认 workspace 根目录。`web` 和 `headless` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `harness plugin` 创建。
 
-`harness web --daemon` 与 `harness web --background` 是等价且仅用于 Web 的别名。父进程会输出子进程 PID 和私有日志路径，然后退出；成功只表示已创建子进程，不表示 HTTP 已就绪。调用方使用平台进程工具管理该 PID：在 POSIX 上，`SIGTERM` 会进入现有的 profile 优雅关闭流程；在 Windows 上，`taskkill /F` 会强制终止，不能证明已优雅 dispose。子进程会把 URL 和启动失败写入私有日志，`--help` 不会创建子进程。不带这些别名的 `harness web` 保持前台行为；操作细节见 [CLI（命令行界面）行为参考](reference/README.md)。
+`harness web` 会启动或连接共享的本地 Runtime，并通过一次性、仅位于请求正文中的浏览器 handoff 打开 Dashboard；`--no-open` 会执行 Runtime 操作，但不调起浏览器。`--daemon` 与 `--background` 是请求由 Runtime 持有的具名 Web lease 的等价写法，而不是启动分离的 Web 子进程：CLI 输出 lease 状态后退出，没有需要管理的逐命令子进程 PID 或私有子进程日志。`--status` 在不启动 Runtime 的情况下检查已有 Runtime，`--stop` 仅释放该 Web lease，并保留 Runtime 与活动工作。操作细节见 [CLI（命令行界面）行为参考](reference/README.md)。
 
 ## 应用参数
 

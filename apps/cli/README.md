@@ -10,13 +10,13 @@ English | [中文](README.zh.md)
 |---|---|
 | `harness --profile <name>` | Boot the named profile under `$HARNESS_HOME/profiles/<name>`. |
 | `harness --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
-| `harness web` | Alias of `--profile web`; `--daemon` and `--background` launch only Web in the background. |
+| `harness web` | Attach to the shared Runtime and open its Dashboard; optionally retain the named Web lease. |
 | `harness plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 | `dsh <args...>` | Compatibility alias with the same profile and data behavior. |
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `harness plugin`.
 
-`harness web --daemon` and `harness web --background` are equivalent Web-only aliases. The parent prints the child PID and private log path, then exits; that success reports child creation rather than HTTP readiness. The caller manages the PID with platform process tools: POSIX `SIGTERM` reaches the existing graceful profile shutdown, while Windows `taskkill /F` forces termination and does not prove graceful disposal. The child records its URL and startup failures in its private log, and `--help` creates no child. `harness web` without either alias keeps its foreground behavior; the [CLI behavior reference](reference/README.md) owns the operational details.
+`harness web` starts or attaches to the shared local Runtime and opens the Dashboard through a one-use body-only browser handoff; `--no-open` performs the Runtime operation without dispatching a browser. `--daemon` and `--background` are equivalent requests for the Runtime-owned named Web lease, not detached Web-child launches: the CLI prints the lease state and exits, with no per-command child PID or private child log to manage. `--status` inspects an existing Runtime without starting one, and `--stop` releases only that Web lease while preserving the Runtime and active work. The [CLI behavior reference](reference/README.md) owns the operational details.
 
 ## App arguments
 

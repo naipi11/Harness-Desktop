@@ -291,6 +291,45 @@ describe('browser handoff transport', () => {
     expect(failedRemove).toHaveBeenCalledOnce()
   })
 
+  it('owns successful-dispatch cleanup through normal process exit', async () => {
+    let beforeExit: (() => void) | undefined
+    let expire: (() => void) | undefined
+    let markRemoved: (() => void) | undefined
+    const removed = new Promise<void>((resolve) => { markRemoved = resolve })
+    const remove = vi.fn(async (path: string) => {
+      await rm(dirname(path), { recursive: true, force: true })
+      markRemoved?.()
+    })
+    const detach = vi.fn()
+    const fakeTimer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>
+    const options = {
+      parent: tmpdir(),
+      now: () => 0,
+      dispatch: vi.fn(async () => {}),
+      remove,
+      setTimer: vi.fn((callback: () => void) => {
+        expire = callback
+        return fakeTimer
+      }),
+      clearTimer: vi.fn(),
+      lifecycle: {
+        addBeforeExitListener(listener: () => void) { beforeExit = listener },
+        removeBeforeExitListener: detach,
+      },
+    }
+    const transport = createBrowserHandoffTransport(options)
+
+    await transport.open(navigation)
+    expect(beforeExit).toBeTypeOf('function')
+    beforeExit?.()
+    expire?.()
+    await removed
+
+    expect(remove).toHaveBeenCalledOnce()
+    expect(detach).toHaveBeenCalledWith(beforeExit)
+    expect(options.clearTimer).toHaveBeenCalledWith(fakeTimer)
+  })
+
   it('expires and cleans a document whose dispatch never settles', async () => {
     vi.useFakeTimers()
     const remove = vi.fn(async (path: string) => { await rm(dirname(path), { recursive: true, force: true }) })

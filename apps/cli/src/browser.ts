@@ -25,6 +25,14 @@ export interface BrowserBootstrapAccess {
   verifyFile(path: string): Promise<void>
 }
 
+/** Process lifecycle owner for a dispatched bootstrap awaiting expiry. */
+export interface BrowserBootstrapLifecycle {
+  /** Register cleanup for a natural Node process exit. */
+  addBeforeExitListener(listener: () => void): void
+  /** Detach a cleanup listener after another settlement path wins. */
+  removeBeforeExitListener(listener: () => void): void
+}
+
 /** Injectable operating-system boundaries for the production browser transport. */
 export interface BrowserHandoffTransportOptions {
   /** Existing directory beneath which a fresh private directory is created. */
@@ -41,6 +49,8 @@ export interface BrowserHandoffTransportOptions {
   readonly clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
   /** Remove only the owned document and its now-empty directory. */
   readonly remove?: (documentPath: string) => Promise<void>
+  /** Own successful-dispatch cleanup until expiry or natural process exit. */
+  readonly lifecycle?: BrowserBootstrapLifecycle
 }
 
 /** Production owner-only access policy for transient browser bootstrap paths. */
@@ -75,8 +85,15 @@ export const browserBootstrapAccess: BrowserBootstrapAccess = {
   },
 }
 
+const browserBootstrapLifecycle: BrowserBootstrapLifecycle = {
+  addBeforeExitListener(listener) { process.on('beforeExit', listener) },
+  removeBeforeExitListener(listener) { process.off('beforeExit', listener) },
+}
+
 /**
  * Create the launcher-owned local-file browser transport.
+ * The Runtime API exposes no handoff-exchange settlement to this client, so
+ * successful dispatch remains owned until handoff expiry or natural process exit.
  * @param options - injectable private-path, dispatch, clock, and cleanup boundaries.
  * @returns a transport that never puts a handoff in its dispatched URL.
  */
@@ -90,6 +107,7 @@ export function createBrowserHandoffTransport(
   const setTimer = options.setTimer ?? setTimeout
   const clearTimer = options.clearTimer ?? clearTimeout
   const remove = options.remove ?? removeOwnedBootstrap
+  const lifecycle = options.lifecycle ?? browserBootstrapLifecycle
   return {
     async open(navigation) {
       validateNavigation(navigation, now())
@@ -111,18 +129,33 @@ export function createBrowserHandoffTransport(
       }
 
       let cleanup: Promise<void> | undefined
+      let listenerAttached = false
+      const beforeExit = (): void => { observeCleanup() }
+      const detach = (): void => {
+        clearTimer(timer)
+        if (!listenerAttached) return
+        listenerAttached = false
+        lifecycle.removeBeforeExitListener(beforeExit)
+      }
       const clean = (): Promise<void> => {
-        cleanup ??= remove(documentPath)
+        if (cleanup === undefined) {
+          detach()
+          cleanup = remove(documentPath)
+        }
         return cleanup
       }
-      const timer = setTimer(() => {
-        void clean()
-      }, Math.max(0, navigation.handoff.expiresAt - now()))
+      function observeCleanup(): void {
+        void clean().catch(() => {
+          // Timer and process-exit cleanup have no caller to receive a removal failure.
+        })
+      }
+      const timer = setTimer(observeCleanup, Math.max(0, navigation.handoff.expiresAt - now()))
       timer.unref()
+      lifecycle.addBeforeExitListener(beforeExit)
+      listenerAttached = true
       try {
         await dispatch(pathToFileURL(documentPath).href)
       } catch (error) {
-        clearTimer(timer)
         try {
           await clean()
         } catch (cleanupError) {
