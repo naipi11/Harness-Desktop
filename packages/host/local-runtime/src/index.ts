@@ -22,9 +22,11 @@ export type { ProcessIdentity } from './process-identity.ts'
 export type { RedactedRuntimeStatus, RuntimeId } from './endpoint-record.ts'
 
 export {
+  startCanonicalRuntime,
   startRuntime,
   type BackgroundLease,
   type BackgroundLeaseId,
+  type CanonicalRuntimeConfig,
   type RuntimeAttachment,
   type RuntimeBoot,
   type RuntimeClientId,

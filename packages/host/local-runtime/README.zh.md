@@ -12,7 +12,7 @@ endpoint 记录包含协议版本、Runtime 身份、端口、进程身份和私
 
 Runtime 本地路由只在精确的 `127.0.0.1` authority 上，以私有 endpoint bearer token 接受原生控制。原生调用方会签发一个 60 秒、单次使用的不透明 handoff；`POST /_harness/handoff` 只从一个 URL 编码表单正文消费该值，不发送 CORS permission，并在设置不带 expiry 的 `HttpOnly; SameSite=Strict; Path=/` session cookie 后执行干净重定向。内存认证器要求 Dashboard API 与 event carrier 同时具有该精确 Runtime Origin 和 cookie；启动器拥有的 cleanup controller 在 dispatch、exchange settlement 或 expiry 后只清理一次其 bootstrap document 与 owner directory。token、handoff 和 session 值不会进入公开导出、诊断、URL 或浏览器脚本存储。
 
-Runtime owner 会在启动一个应用组合前取得锁，要求该组合公开一个健康的 `127.0.0.1` WebServer 和操作系统分配的端口，然后才发布私有 endpoint。它向该组合共享同一个注入的 `HarnessHomeProvider`，计数实际客户端附加、agent work 与显式 background lease，并且只在三者均不存在时开始配置的空闲关闭。关闭按顺序刷新组合中的持久化服务、移除 endpoint、释放锁，再 dispose Cordis 根。`startRuntime()` 及其 handle 是编排内部实现；连接与控制 API 留给 Runtime client 层。
+Runtime owner 会在启动已发货的 base 与 Web 组合前取得锁，其中包括 API、静态 Dashboard、session、settings、workspace、storage 和 credential-reference provider。它要求该组合公开一个健康的 `127.0.0.1` WebServer 和操作系统分配的端口，在发布私有 endpoint 前挂载私有已认证控制，并向每个 writer 共享同一个注入的 `HarnessHomeProvider`。它计数实际客户端附加、agent work 与显式 background lease，并且只在三者均不存在时开始配置的空闲关闭。关闭按顺序刷新组合中的持久化服务、移除 endpoint、释放锁，再 dispose Cordis 根。`startRuntime()` 及其 handle 是编排内部实现；连接与控制 API 留给 Runtime client 层。
 
 ## 模型体验
 

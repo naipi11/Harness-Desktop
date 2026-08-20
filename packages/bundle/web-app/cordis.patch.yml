@@ -154,7 +154,7 @@
     # webserver under /api; browser half is the fetch/SSE client.
     - id: connection
       name: '@harness-desktop/dsh-client-connection'
-      inject: [webRuntime]
+      disabled: true
       config:
         # LAN literals derived from the active bind plus --trusted-host extras.
         # A deployment adding authorities keeps this expression and concatenates

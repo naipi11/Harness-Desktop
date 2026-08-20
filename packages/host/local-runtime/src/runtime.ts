@@ -1,10 +1,13 @@
 /** Canonical local Runtime composition, ownership accounting, and ordered teardown. */
 
 import { randomBytes } from 'node:crypto'
+import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import type { WebServer } from '@harness-desktop/dsh-host-webserver'
 import type { HarnessHomeProvider } from './harness-home-provider.ts'
+import { mountPrivateRuntimeControl } from './runtime-control.ts'
 import {
   redactRuntimeStatus,
   removePrivateEndpointRecord,
@@ -58,7 +61,14 @@ export interface StartRuntimeConfig {
   readonly cancelIdle?: (handle: ReturnType<typeof setTimeout>) => void
   /** Flush composed durable providers before endpoint retirement. */
   readonly flush?: (ctx: Context) => Promise<void>
+  /** Mount private native control and authenticated Dashboard routes before endpoint publication. */
+  readonly mountPrivateControl?: boolean
+  /** Native bootstrap dispatcher retained by the Runtime process. */
+  readonly openBootstrap?: (url: string) => Promise<void>
 }
+
+/** Inputs for the shipped base-and-Web Runtime composition. */
+export interface CanonicalRuntimeConfig extends Omit<StartRuntimeConfig, 'boot' | 'mountPrivateControl'> {}
 
 /** Runtime process handle kept behind the future connection and control layers. */
 export interface RuntimeHandle {
@@ -105,6 +115,26 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       process: acquisition.lock.process,
       accessToken: randomBytes(32).toString('base64url'),
     }
+    if (config.mountPrivateControl === true) {
+      const connectionModule = await import(pathToFileURL(createRequire(import.meta.url).resolve('@harness-desktop/dsh-client-connection')).href) as {
+        apply: (
+          context: Context,
+          config: { trustedHosts: readonly string[] },
+          authentication: { authorize(request: unknown): boolean },
+        ) => void
+      }
+      mountPrivateRuntimeControl(ctx, {
+        accessToken: record.accessToken,
+        origin: `http://127.0.0.1:${String(record.port)}`,
+        bootstrapParent: config.harnessHome.path('runtime-bootstrap'),
+        openBootstrap: config.openBootstrap ?? (async () => {}),
+        mountAuthenticatedDashboard(auth) {
+          connectionModule.apply(ctx, { trustedHosts: ['127.0.0.1'] }, {
+            authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
+          })
+        },
+      })
+    }
     await writePrivateEndpointRecord(config.harnessHome.home, record)
     return createRuntimeHandle(config, acquisition.lock, ctx, record)
   } catch (error) {
@@ -112,6 +142,63 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
     if (cleanup !== undefined) throw new AggregateError([error, cleanup], 'host-local-runtime: Runtime startup and cleanup both failed')
     throw error
   }
+}
+
+/**
+ * Start the one shipped base-plus-Web composition with private local control.
+ * @param config - resolved Runtime ownership and idle-lifecycle inputs.
+ * @returns the canonical local Runtime owner.
+ */
+export async function startCanonicalRuntime(config: CanonicalRuntimeConfig): Promise<RuntimeHandle> {
+  return startRuntime({ ...config, mountPrivateControl: true, boot: bootCanonicalComposition })
+}
+
+/** Boot the shipped base and Web patch layers over the package-owned empty root. */
+async function bootCanonicalComposition(harnessHome: HarnessHomeProvider): Promise<Context> {
+  const require = createRequire(import.meta.url)
+  const appBoot = await import(pathToFileURL(require.resolve('@harness-desktop/dsh-app-boot')).href) as {
+    boot: (
+      binName: string,
+      configPath: string,
+      patches: unknown[],
+      prepare: (ctx: Context) => void,
+      bareModuleBaseUrl: undefined,
+      provider: HarnessHomeProvider,
+    ) => Promise<Context>
+    loadOverlayPatches: (binName: string, path: string) => unknown[]
+  }
+  const cmdline = await import(pathToFileURL(require.resolve('@harness-desktop/dsh-cmdline')).href) as {
+    provideCmdline: (ctx: Context, host: { args: readonly string[]; exit: (code: number) => void }) => void
+  }
+  const baseRequire = createRequire(require.resolve('@harness-desktop/dsh-base/package.json'))
+  const webRequire = createRequire(require.resolve('@harness-desktop/dsh-web-app/package.json'))
+  const patches = [
+    ...resolvePatchModules(
+      appBoot.loadOverlayPatches('harness-runtime', require.resolve('@harness-desktop/dsh-base/cordis.patch.yml')),
+      baseRequire,
+    ),
+    ...resolvePatchModules(
+      appBoot.loadOverlayPatches('harness-runtime', require.resolve('@harness-desktop/dsh-web-app/cordis.patch.yml')),
+      webRequire,
+    ),
+  ]
+  return appBoot.boot('harness-runtime', fileURLToPath(new URL('../runtime.cordis.yml', import.meta.url)), patches, (ctx) => {
+    cmdline.provideCmdline(ctx, { args: [], exit: () => {} })
+  }, undefined, harnessHome)
+}
+
+/** Resolve shipped bundle entry modules from the bundle that declares each dependency. */
+function resolvePatchModules(patches: readonly unknown[], require: NodeRequire): unknown[] {
+  return structuredClone(patches).map((patch) => {
+    if (typeof patch !== 'object' || patch === null || !('insert' in patch) || !Array.isArray(patch.insert)) return patch
+    return {
+      ...patch,
+      insert: patch.insert.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string' || entry.name.startsWith('cordis:')) return entry
+        return { ...entry, name: pathToFileURL(require.resolve(entry.name)).href }
+      }),
+    }
+  })
 }
 
 /** Build the local handle after the endpoint is durably visible to attachers. */
