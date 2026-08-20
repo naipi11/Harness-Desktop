@@ -137,19 +137,26 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
         await replyControl(response, async () => {
           switch (body.operation) {
             case 'attach-client':
+              if (body.attachmentId !== clientId) throw new Error('host-local-runtime: base attachment owner mismatch')
               await controlService.attachClient(body.attachmentId)
               return undefined
+            case 'attach-dashboard':
+              await controlService.attachDashboard(clientId, body.attachmentId)
+              return undefined
             case 'release-client':
-              await controlService.releaseClient(body.attachmentId)
+              await controlService.releaseClient(clientId, body.attachmentId)
               return undefined
             case 'open-terminal':
               return controlService.openTerminal(clientId, body.terminalId, body.request)
             case 'submit-terminal':
-              return controlService.submitTerminal(body.terminalId, body.input)
+              return controlService.submitTerminal(clientId, body.terminalId, body.input)
             case 'cancel-terminal':
-              return controlService.cancelTerminal(body.terminalId)
+              return controlService.cancelTerminal(clientId, body.terminalId)
             case 'run-terminal-control':
+              await controlService.runTerminalControl(clientId, body.terminalId, body.command)
               return { kind: 'accepted' }
+            case 'read-terminal-events':
+              return controlService.readTerminalEvents(clientId, body.terminalId, body.cursor)
           }
         })
       },
@@ -183,11 +190,12 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
 }
 
 type InternalControlRequest =
-  | { readonly operation: 'attach-client' | 'release-client'; readonly attachmentId: RuntimeClientId }
+  | { readonly operation: 'attach-client' | 'attach-dashboard' | 'release-client'; readonly attachmentId: RuntimeClientId }
   | { readonly operation: 'open-terminal'; readonly terminalId: RuntimeClientId; readonly request: TerminalOpenRequest }
   | { readonly operation: 'submit-terminal'; readonly terminalId: RuntimeClientId; readonly input: TerminalInput }
   | { readonly operation: 'run-terminal-control'; readonly terminalId: RuntimeClientId; readonly command: TerminalControlCommand }
   | { readonly operation: 'cancel-terminal'; readonly terminalId: RuntimeClientId }
+  | { readonly operation: 'read-terminal-events'; readonly terminalId: RuntimeClientId; readonly cursor: number }
 
 /** Parse one bounded JSON object without reflecting parser details. */
 async function jsonBody(request: IncomingMessage): Promise<unknown> {
@@ -238,6 +246,7 @@ function isInternalControlRequest(value: unknown): value is InternalControlReque
   if (!plainRecord(value) || typeof value.operation !== 'string') return false
   switch (value.operation) {
     case 'attach-client':
+    case 'attach-dashboard':
     case 'release-client':
       return typeof value.attachmentId === 'string' && value.attachmentId.length > 0
     case 'open-terminal':
@@ -248,6 +257,9 @@ function isInternalControlRequest(value: unknown): value is InternalControlReque
       return typeof value.terminalId === 'string' && value.terminalId.length > 0 && isTerminalControlCommand(value.command)
     case 'cancel-terminal':
       return typeof value.terminalId === 'string' && value.terminalId.length > 0
+    case 'read-terminal-events':
+      return typeof value.terminalId === 'string' && value.terminalId.length > 0
+        && typeof value.cursor === 'number' && Number.isSafeInteger(value.cursor) && value.cursor >= 0
     default:
       return false
   }

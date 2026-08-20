@@ -7,9 +7,7 @@
  */
 
 import { Context, Service } from '@harness-desktop/cordis'
-import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
-import type { Branded } from '@harness-desktop/dsh-brand'
 import { deepFreeze } from '@harness-desktop/dsh-llm'
 import { scopeOf, scopeTarget } from '@harness-desktop/dsh-scope'
 import type { Scoped } from '@harness-desktop/dsh-scope'
@@ -761,57 +759,6 @@ export class Session {
 
 /** A fork source: either the live session object or its live store id. */
 export type SessionForkSource = Session | SessionId
-
-/** Identifies one admitted session-writing operation. */
-export type SessionWriteLeaseId = Branded<'SessionWriteLeaseId'>
-
-/** Exclusive write admission for one session. */
-export interface SessionWriteLease {
-  /** Unique identity used for exact-owner release. */
-  readonly id: SessionWriteLeaseId
-  /** Session whose model-visible log may be written by this operation. */
-  readonly sessionId: SessionId
-}
-
-/** Result of attempting to admit one session-writing operation. */
-export type SessionWriteAdmission =
-  | { readonly kind: 'admitted'; readonly lease: SessionWriteLease }
-  | { readonly kind: 'busy'; readonly sessionId: SessionId }
-
-/**
- * Serializes write-type operations by session id without restricting reads or
- * observation. Release accepts only the exact lease currently owning the id,
- * so a stale completion cannot clear a later writer.
- */
-export class SessionWriteCoordinator {
-  private readonly active = new Map<SessionId, SessionWriteLease>()
-
-  /**
-   * Attempt to acquire the sole write admission for a session.
-   * @param sessionId - session the operation will write.
-   * @returns an exclusive lease or a typed busy result.
-   */
-  tryAcquire(sessionId: SessionId): SessionWriteAdmission {
-    if (this.active.has(sessionId)) return { kind: 'busy', sessionId }
-    const lease = Object.freeze({
-      id: randomUUID() as SessionWriteLeaseId,
-      sessionId,
-    })
-    this.active.set(sessionId, lease)
-    return { kind: 'admitted', lease }
-  }
-
-  /**
-   * Release the exact current admission; stale and duplicate releases are safe.
-   * @param lease - admission returned by {@link tryAcquire}.
-   * @returns whether this call released the current writer.
-   */
-  release(lease: SessionWriteLease): boolean {
-    if (this.active.get(lease.sessionId)?.id !== lease.id) return false
-    this.active.delete(lease.sessionId)
-    return true
-  }
-}
 
 /**
  * Rejection codes for session forking: the fork source id is unknown to the

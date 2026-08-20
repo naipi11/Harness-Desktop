@@ -1,6 +1,6 @@
-/** Keyless real-process transcript for redacted Runtime status and busy recovery. */
+/** Keyless real-Agent transcript for Runtime terminal output, busy recovery, and cancellation. */
 
-import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createRuntimeConnector,
@@ -8,11 +8,13 @@ import {
   RuntimeBusyError,
   type RuntimeClient,
   type TerminalConnection,
+  type TerminalProtocolEvent,
 } from '../src/runtime-client.ts'
-import type { SessionId } from '../src/index.ts'
 import {
   cleanupRuntimeProcess,
+  mintBrowserCookie,
   releaseRuntime,
+  runtimeRpc,
   startRuntimeProcess,
   waitForEndpoint,
   type RuntimeProcess,
@@ -21,12 +23,13 @@ import {
 let runtime: RuntimeProcess | undefined
 let firstClient: RuntimeClient | undefined
 let secondClient: RuntimeClient | undefined
-let firstTerminal: TerminalConnection | undefined
+let terminal: TerminalConnection | undefined
+const replayOverride = fileURLToPath(new URL('./fixtures/runtime-control-replay.override.json', import.meta.url))
 
 afterEach(async () => {
-  await firstTerminal?.cancel()
-  await firstTerminal?.close()
-  firstTerminal = undefined
+  await terminal?.cancel()
+  await terminal?.close()
+  terminal = undefined
   await firstClient?.close()
   firstClient = undefined
   await secondClient?.close()
@@ -35,47 +38,99 @@ afterEach(async () => {
   runtime = undefined
 })
 
-describe('Runtime control transcript', () => {
-  it('shows status and same-session recovery without private endpoint values', async () => {
-    runtime = await startRuntimeProcess({ mode: 'src' })
+async function nextKind(iterator: AsyncIterator<TerminalProtocolEvent>, kind: TerminalProtocolEvent['kind']): Promise<TerminalProtocolEvent> {
+  for (;;) {
+    const event = await Promise.race([
+      iterator.next(),
+      new Promise<never>((_resolve, reject) => setTimeout(() => { reject(new Error(`timed out waiting for ${kind}`)) }, 5_000)),
+    ])
+    if (event.done === true) throw new Error(`terminal closed before ${kind}`)
+    if (event.value.kind === kind) return event.value
+  }
+}
+
+function normalizeProtocol(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value, (key, item: unknown) => {
+    if (key === 'sessionId') return '<session-id>'
+    if (key === 'diagnosticId') return '<diagnostic-id>'
+    return item
+  })) as unknown
+}
+
+describe('Runtime real control transcript', () => {
+  it('streams a logged task, reports exact busy recovery, and cancels a real operation', async () => {
+    const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+    const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+    process.env.DSH_RUNTIME_TEST_REPLAY_FILE = `${replayOverride}.missing`
+    process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = replayOverride
+    try {
+      runtime = await startRuntimeProcess({
+        mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true,
+      })
+    } finally {
+      if (previousFile === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_FILE = previousFile
+      if (previousOverride === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = previousOverride
+    }
     const endpoint = await waitForEndpoint(runtime)
     const connector = createRuntimeConnector({
       input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
     })
     firstClient = await connector.connect({ start: false })
     secondClient = await connector.connect({ start: false })
-    const sessionId = 'snapshot-shared-session' as SessionId
-    firstTerminal = await firstClient.openTerminal({
-      workspace: join(runtime.cwd, 'workspace'),
-      sessionId,
-      initialTask: 'hold the write admission',
+    terminal = await firstClient.openTerminal({
+      workspace: runtime.cwd,
+      initialTask: 'snapshot a real Runtime task',
     })
+    const iterator = terminal.events()[Symbol.asyncIterator]()
+    const opened = await nextKind(iterator, 'session-opened')
+    if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
+    const completedOutput = await nextKind(iterator, 'output')
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await firstClient.observeActiveWork()).ownUiWork.length === 0) break
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+
+    await terminal.submit({ kind: 'task', text: 'snapshot exact cancellation' })
+    const partialOutput = await nextKind(iterator, 'output')
     let busy: unknown
     try {
       await secondClient.openTerminal({
-        workspace: join(runtime.cwd, 'workspace'),
-        sessionId,
-        initialTask: 'race the existing writer',
+        workspace: runtime.cwd,
+        sessionId: opened.sessionId,
+        initialTask: 'must be rejected as busy',
       })
     } catch (error) {
       expect(error).toBeInstanceOf(RuntimeBusyError)
       busy = normalizeRecoveryDiagnostic(error)
     }
-    const status = await firstClient.status()
-    const transcript = {
-      status: {
-        state: status.state,
-        runtimeId: '<runtime-id>',
-        dashboardOrigin: status.dashboardOrigin.replace(/:\d+$/, ':<port>'),
-        backgroundLease: status.backgroundLease,
-      },
-      busy: busy === undefined ? undefined : { ...busy as object, diagnosticId: '<diagnostic-id>' },
-    }
+    const cancelled = await terminal.cancel()
+    const active = await firstClient.observeActiveWork()
+    const cookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const history = await runtimeRpc<{ events: Array<{ event: { type: string; data: unknown } }> }>(
+      endpoint.port, cookie, 'session.history', { sessionId: opened.sessionId },
+    )
+    const durableTypes = history.events.map(entry => entry.event.type)
+    expect(durableTypes).toContain('user/message')
+    expect(durableTypes).toContain('assistant/message')
+    expect(durableTypes.filter(type => type === 'turn/end')).toHaveLength(2)
 
+    const transcript = normalizeProtocol({
+      events: [opened, completedOutput, partialOutput],
+      busy,
+      cancelled,
+      active,
+      durableTypes: durableTypes.filter(type =>
+        type === 'user/message' || type === 'assistant/message' || type === 'turn/end'),
+    })
     expect(JSON.stringify(transcript)).not.toContain(endpoint.accessToken)
     expect(JSON.stringify(transcript)).not.toContain(runtime.harnessHome)
     expect(transcript).toMatchInlineSnapshot(`
       {
+        "active": {
+          "ownUiWork": [],
+        },
         "busy": {
           "code": "runtime-unavailable",
           "correction": "Observe the active session, open a new session, or wait for the current operation to finish.",
@@ -83,21 +138,36 @@ describe('Runtime control transcript', () => {
           "message": "Another client is already writing this session.",
           "subject": "Runtime",
         },
-        "status": {
-          "backgroundLease": {
-            "id": "web",
-            "state": "absent",
-          },
-          "dashboardOrigin": "http://127.0.0.1:<port>",
-          "runtimeId": "<runtime-id>",
-          "state": "running",
+        "cancelled": {
+          "kind": "cancelled",
         },
+        "durableTypes": [
+          "user/message",
+          "user/message",
+          "assistant/message",
+          "turn/end",
+          "user/message",
+          "turn/end",
+        ],
+        "events": [
+          {
+            "kind": "session-opened",
+            "sessionId": "<session-id>",
+          },
+          {
+            "kind": "output",
+            "text": "REAL_RUNTIME_OUTPUT",
+          },
+          {
+            "kind": "output",
+            "text": "partial",
+          },
+        ],
       }
     `)
 
-    await firstTerminal.cancel()
-    await firstTerminal.close()
-    firstTerminal = undefined
+    await terminal.close()
+    terminal = undefined
     await firstClient.close()
     firstClient = undefined
     await secondClient.close()

@@ -71,15 +71,33 @@ export type TerminalControlCommand =
 
 /** Independently retained terminal attachment; closing it never stops other clients or work. */
 export interface TerminalConnection {
-  /** @returns this attachment's ordered protocol events until close. */
+  /**
+   * @returns real session/Agent protocol events in Runtime order until close.
+   * @throws {@link RuntimeProtocolError} when a wire page is malformed and
+   *   {@link RuntimeUnavailableError} when the Runtime cannot be reached.
+   */
   events(): AsyncIterable<TerminalProtocolEvent>
-  /** @param input - task or approval submitted through the Runtime. @returns settlement after admission. */
+  /**
+   * @param input - task or approval submitted through the Runtime.
+   * @returns settlement after the real Agent/API or approval owner accepts it;
+   *   Agent completion remains observable through events and active-work state.
+   * @throws {@link RuntimeBusyError} when an exact session operation is active,
+   *   or a redacted Runtime error for wrong-owner, unavailable, or rejected input.
+   */
   submit(input: TerminalInput): Promise<void>
   /** @param command - terminal control command. @returns settlement after dispatch. */
   runControl(command: TerminalControlCommand): Promise<void>
-  /** @returns whether this attachment had active work to cancel. */
+  /**
+   * Cancel only this terminal's exact Agent operation and wait for whole-Agent
+   * idle before its work lease is released.
+   * @returns whether an active operation was cancelled.
+   */
   cancel(): Promise<{ readonly kind: 'cancelled' | 'idle' }>
-  /** Release only this terminal attachment; active work continues unless cancelled separately. */
+  /**
+   * Release only this terminal attachment; active work continues unless
+   * cancelled separately. Closed commits only after release succeeds, so a
+   * transient rejection may be retried and concurrent closes share one flight.
+   */
   close(): Promise<void>
 }
 
@@ -103,7 +121,10 @@ export interface DashboardNavigation {
 export interface DashboardAttachment {
   /** @returns a fresh one-time body-only browser navigation. */
   createBrowserHandoff(): Promise<DashboardNavigation>
-  /** Release only this Dashboard attachment. */
+  /**
+   * Release only this Dashboard attachment. Closed commits only after the
+   * authenticated release succeeds; a transient rejection may be retried.
+   */
   close(): Promise<void>
 }
 
@@ -207,7 +228,14 @@ export type RuntimeControlResult =
 
 /** Attached Node client; each child attachment owns its own independent release. */
 export interface RuntimeClient {
-  /** @param request - workspace, optional task, and optional shared session. @returns an independently retained terminal connection. */
+  /**
+   * Create or resume through the composed Agent API, independently attach the
+   * terminal, and admit `initialTask` as a real turn when supplied.
+   * @param request - workspace, optional task, and optional shared session.
+   * @returns an independently retained terminal connection after admission.
+   * @throws {@link RuntimeBusyError} without retaining the attempted child when
+   *   another operation owns the session.
+   */
   openTerminal(request: TerminalOpenRequest): Promise<TerminalConnection>
   /** @returns an independently retained Dashboard attachment. */
   attachDashboard(): Promise<DashboardAttachment>
@@ -219,17 +247,24 @@ export interface RuntimeClient {
   releaseBackgroundLease(): Promise<RuntimeLeaseStatus>
   /** @returns the shared durable legacy-import state. */
   getLegacyMigration(): Promise<LegacyMigrationState>
-  /** @returns the durable result after explicitly accepting import. */
+  /**
+   * Copy supported non-secret legacy roots once and durably record the result.
+   * Concurrent accepts replay a committed success; collisions/failures retain
+   * both roots and return redacted retry guidance.
+   */
   acceptLegacyMigration(): Promise<LegacyMigrationState>
-  /** @returns the durable declined state. */
+  /** @returns the durable declined state, or an already committed import that decline cannot overwrite. */
   declineLegacyMigration(): Promise<LegacyMigrationState>
-  /** @returns the durable result after retrying a retryable import. */
+  /** @returns the durable result after retrying only an exact retryable collision/failure state. */
   retryLegacyMigration(): Promise<LegacyMigrationState>
   /** @returns active work owned by this UI client only. */
   observeActiveWork(): Promise<ActiveWorkStatus>
-  /** @returns settlement after stopping this UI client's work only. */
+  /** @returns settlement after cancelling this UI client's exact Agents and waiting for their idle states only. */
   stopOwnUiWork(): Promise<OwnUiWorkStopResult>
-  /** Release only this client attachment. */
+  /**
+   * Release only this client attachment. Closed commits after release succeeds;
+   * a transient rejection may be retried and concurrent closes share one flight.
+   */
   close(): Promise<void>
 }
 
@@ -244,7 +279,7 @@ export interface RuntimeConnector {
 }
 
 /** Injectable connector construction inputs; endpoint parsing remains private to the implementation. */
-export interface RuntimeConnectorOptions {
+interface RuntimeConnectorOptions {
   /** Harness-home resolution inputs evaluated without writing. */
   readonly input?: HarnessHomeInput
   /** Process starter used after absence; production launches the matching source or built Runtime bin. */
@@ -399,23 +434,25 @@ export async function probeRuntimeStatus(options: Pick<RuntimeConnectorOptions, 
 
 class RuntimeClientConnection implements RuntimeClient {
   private closed = false
+  private closing: Promise<void> | undefined
 
   constructor(private readonly wire: RuntimeWire, private readonly clientId: RuntimeClientId) {}
 
   async openTerminal(request: TerminalOpenRequest): Promise<TerminalConnection> {
     this.ensureOpen()
     const terminalId = randomUUID() as RuntimeClientId
-    const opened = await this.wire.internal<{ readonly kind: 'opened'; readonly sessionId: SessionId }>(this.clientId, {
+    await this.wire.internal<{ readonly kind: 'opened'; readonly sessionId: SessionId }>(this.clientId, {
       operation: 'open-terminal', terminalId, request,
     })
-    return new TerminalConnectionImpl(this.wire, this.clientId, terminalId, opened.sessionId)
+    return new TerminalConnectionImpl(this.wire, this.clientId, terminalId)
   }
 
   async attachDashboard(): Promise<DashboardAttachment> {
     this.ensureOpen()
     const attachmentId = randomUUID() as RuntimeClientId
-    await this.wire.internal(this.clientId, { operation: 'attach-client', attachmentId })
+    await this.wire.internal(this.clientId, { operation: 'attach-dashboard', attachmentId })
     let closed = false
+    let closing: Promise<void> | undefined
     return {
       createBrowserHandoff: async () => {
         if (closed) throw new RuntimeProtocolError('runtime-start-failed')
@@ -423,8 +460,11 @@ class RuntimeClientConnection implements RuntimeClient {
       },
       close: async () => {
         if (closed) return
-        closed = true
-        await this.wire.internal(this.clientId, { operation: 'release-client', attachmentId })
+        closing ??= this.wire.internal(this.clientId, { operation: 'release-client', attachmentId }).then(
+          () => { closed = true },
+          (error: unknown) => { closing = undefined; throw error },
+        )
+        await closing
       },
     }
   }
@@ -476,8 +516,13 @@ class RuntimeClientConnection implements RuntimeClient {
 
   async close(): Promise<void> {
     if (this.closed) return
-    this.closed = true
-    await this.wire.internal(this.clientId, { operation: 'release-client', attachmentId: this.clientId })
+    this.closing ??= this.wire.internal(this.clientId, {
+      operation: 'release-client', attachmentId: this.clientId,
+    }).then(
+      () => { this.closed = true },
+      (error: unknown) => { this.closing = undefined; throw error },
+    )
+    await this.closing
   }
 
   private ensureOpen(): void {
@@ -487,18 +532,25 @@ class RuntimeClientConnection implements RuntimeClient {
 
 class TerminalConnectionImpl implements TerminalConnection {
   private closed = false
-  private readonly closure = Promise.withResolvers<void>()
+  private closing: Promise<void> | undefined
 
   constructor(
     private readonly wire: RuntimeWire,
     private readonly owner: RuntimeClientId,
     private readonly terminalId: RuntimeClientId,
-    private readonly sessionId: SessionId,
   ) {}
 
   async * events(): AsyncIterable<TerminalProtocolEvent> {
-    yield { kind: 'session-opened', sessionId: this.sessionId }
-    await this.closure.promise
+    let cursor = 0
+    while (!this.closed) {
+      const page = await this.wire.internal<{
+        readonly events: readonly TerminalProtocolEvent[]
+        readonly nextCursor: number
+      }>(this.owner, { operation: 'read-terminal-events', terminalId: this.terminalId, cursor })
+      cursor = page.nextCursor
+      for (const event of page.events) yield event
+      if (page.events.length === 0) await new Promise(resolve => setTimeout(resolve, 25))
+    }
   }
 
   async submit(input: TerminalInput): Promise<void> {
@@ -509,6 +561,7 @@ class TerminalConnectionImpl implements TerminalConnection {
   async runControl(command: TerminalControlCommand): Promise<void> {
     this.ensureOpen()
     await this.wire.internal(this.owner, { operation: 'run-terminal-control', terminalId: this.terminalId, command })
+    if (command.command === 'exit') await this.close()
   }
 
   cancel(): Promise<{ readonly kind: 'cancelled' | 'idle' }> {
@@ -518,9 +571,13 @@ class TerminalConnectionImpl implements TerminalConnection {
 
   async close(): Promise<void> {
     if (this.closed) return
-    this.closed = true
-    this.closure.resolve()
-    await this.wire.internal(this.owner, { operation: 'release-client', attachmentId: this.terminalId })
+    this.closing ??= this.wire.internal(this.owner, {
+      operation: 'release-client', attachmentId: this.terminalId,
+    }).then(
+      () => { this.closed = true },
+      (error: unknown) => { this.closing = undefined; throw error },
+    )
+    await this.closing
   }
 
   private ensureOpen(): void {
@@ -529,17 +586,12 @@ class TerminalConnectionImpl implements TerminalConnection {
 }
 
 type InternalControlRequest =
-  | { readonly operation: 'attach-client' | 'release-client'; readonly attachmentId: RuntimeClientId }
+  | { readonly operation: 'attach-client' | 'attach-dashboard' | 'release-client'; readonly attachmentId: RuntimeClientId }
   | { readonly operation: 'open-terminal'; readonly terminalId: RuntimeClientId; readonly request: TerminalOpenRequest }
   | { readonly operation: 'submit-terminal'; readonly terminalId: RuntimeClientId; readonly input: TerminalInput }
   | { readonly operation: 'run-terminal-control'; readonly terminalId: RuntimeClientId; readonly command: TerminalControlCommand }
   | { readonly operation: 'cancel-terminal'; readonly terminalId: RuntimeClientId }
-
-interface WireResponse<T> {
-  readonly ok: boolean
-  readonly value?: T
-  readonly result?: RuntimeControlResult
-}
+  | { readonly operation: 'read-terminal-events'; readonly terminalId: RuntimeClientId; readonly cursor: number }
 
 class RuntimeWire {
   private readonly origin: string
@@ -549,11 +601,11 @@ class RuntimeWire {
   }
 
   control<T>(clientId: RuntimeClientId, request: RuntimeControlRequest): Promise<T> {
-    return this.request<T>(CONTROL_PATH, clientId, request)
+    return this.request(CONTROL_PATH, clientId, request, value => parseControlSuccess(request, value)) as Promise<T>
   }
 
   internal<T = undefined>(clientId: RuntimeClientId, request: InternalControlRequest): Promise<T> {
-    return this.request<T>(INTERNAL_CONTROL_PATH, clientId, request)
+    return this.request(INTERNAL_CONTROL_PATH, clientId, request, value => parseInternalSuccess(request, value)) as Promise<T>
   }
 
   async browserHandoff(): Promise<DashboardNavigation> {
@@ -566,15 +618,21 @@ class RuntimeWire {
       throw new RuntimeUnavailableError()
     }
     if (!response.ok) throw new RuntimeUnavailableError()
-    const value = await response.json() as Record<string, unknown>
-    if (typeof value.id !== 'string' || !Number.isSafeInteger(value.expiresAt)) throw new RuntimeProtocolError()
+    const value = await readResponseJson(response)
+    if (!isRecord(value) || !hasExactKeys(value, ['id', 'expiresAt'])
+      || !isOpaqueId(value.id, 32) || !isSafeTimestamp(value.expiresAt)) throw new RuntimeProtocolError()
     return {
       origin: this.origin as DashboardOrigin,
-      handoff: { id: value.id as BrowserHandoffId, expiresAt: value.expiresAt as number },
+      handoff: { id: value.id as BrowserHandoffId, expiresAt: value.expiresAt },
     }
   }
 
-  private async request<T>(path: string, clientId: RuntimeClientId, body: RuntimeControlRequest | InternalControlRequest): Promise<T> {
+  private async request(
+    path: string,
+    clientId: RuntimeClientId,
+    body: RuntimeControlRequest | InternalControlRequest,
+    parseSuccess: (value: unknown) => unknown,
+  ): Promise<unknown> {
     let response: Response
     try {
       response = await fetch(`${this.origin}${path}`, {
@@ -590,13 +648,269 @@ class RuntimeWire {
       throw new RuntimeUnavailableError()
     }
     if (!response.ok) throw new RuntimeUnavailableError()
-    const envelope = await response.json() as WireResponse<T>
-    if (envelope.ok && 'value' in envelope) return envelope.value
-    if (envelope.ok) return envelope.value as T
-    if (envelope.result?.kind === 'session-busy') throw new RuntimeBusyError(envelope.result.sessionId)
-    if (envelope.result?.kind === 'version-mismatch') throw new RuntimeProtocolError()
+    const envelope = parseWireEnvelope(await readResponseJson(response))
+    if (envelope.ok) return parseSuccess(envelope.value)
+    const result = parseRuntimeControlResult(envelope.result)
+    if (result.kind === 'session-busy') throw new RuntimeBusyError(result.sessionId)
+    if (result.kind === 'version-mismatch') throw new RuntimeProtocolError()
     throw new RuntimeUnavailableError()
   }
+}
+
+type ParsedWireEnvelope =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly result: unknown }
+
+function parseWireEnvelope(value: unknown): ParsedWireEnvelope {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') throw new RuntimeProtocolError()
+  if (value.ok) {
+    if (hasExactKeys(value, ['ok'])) return { ok: true, value: undefined }
+    if (hasExactKeys(value, ['ok', 'value'])) return { ok: true, value: value.value }
+    throw new RuntimeProtocolError()
+  }
+  if (!hasExactKeys(value, ['ok', 'result'])) throw new RuntimeProtocolError()
+  return { ok: false, result: value.result }
+}
+
+function parseControlSuccess(request: RuntimeControlRequest, value: unknown): unknown {
+  switch (request.operation) {
+    case 'status': return parseRuntimeStatus(value)
+    case 'acquire-background-lease': return parseRuntimeLease(value)
+    case 'release-background-lease': return parseRuntimeLeaseStatus(value)
+    case 'get-legacy-migration':
+    case 'accept-legacy-migration':
+    case 'decline-legacy-migration':
+    case 'retry-legacy-migration':
+      return parseLegacyMigrationState(value)
+    case 'observe-active-work': return parseActiveWorkStatus(value)
+    case 'stop-own-ui-work': return parseOwnUiWorkStopResult(value)
+  }
+}
+
+function parseInternalSuccess(request: InternalControlRequest, value: unknown): unknown {
+  switch (request.operation) {
+    case 'attach-client':
+    case 'attach-dashboard':
+    case 'release-client':
+      if (value !== undefined) throw new RuntimeProtocolError()
+      return undefined
+    case 'open-terminal':
+      if (!isRecord(value) || !hasExactKeys(value, ['kind', 'sessionId'])
+        || value.kind !== 'opened' || !isSessionId(value.sessionId)) throw new RuntimeProtocolError()
+      return { kind: 'opened', sessionId: value.sessionId as SessionId }
+    case 'submit-terminal':
+    case 'run-terminal-control':
+      if (!isRecord(value) || !hasExactKeys(value, ['kind']) || value.kind !== 'accepted') {
+        throw new RuntimeProtocolError()
+      }
+      return { kind: 'accepted' }
+    case 'cancel-terminal':
+      if (!isRecord(value) || !hasExactKeys(value, ['kind'])
+        || (value.kind !== 'cancelled' && value.kind !== 'idle')) throw new RuntimeProtocolError()
+      return { kind: value.kind }
+    case 'read-terminal-events': return parseTerminalEventPage(value)
+  }
+}
+
+function parseRuntimeStatus(value: unknown): RuntimeStatus {
+  if (!isRecord(value) || !hasExactKeys(value, ['state', 'runtimeId', 'dashboardOrigin', 'backgroundLease'])
+    || (value.state !== 'running' && value.state !== 'stopping')
+    || !isOpaqueId(value.runtimeId, 8)
+    || !isLoopbackOrigin(value.dashboardOrigin)) throw new RuntimeProtocolError()
+  return {
+    state: value.state,
+    runtimeId: value.runtimeId as RuntimeId,
+    dashboardOrigin: value.dashboardOrigin as DashboardOrigin,
+    backgroundLease: parseRuntimeLeaseStatus(value.backgroundLease),
+  }
+}
+
+function parseRuntimeLease(value: unknown): RuntimeLease {
+  if (!isRecord(value) || !hasExactKeys(value, ['id']) || value.id !== 'web') throw new RuntimeProtocolError()
+  return { id: value.id as BackgroundLeaseId }
+}
+
+function parseRuntimeLeaseStatus(value: unknown): RuntimeLeaseStatus {
+  if (!isRecord(value) || !hasExactKeys(value, ['id', 'state']) || value.id !== 'web'
+    || (value.state !== 'present' && value.state !== 'absent')) throw new RuntimeProtocolError()
+  return { id: value.id as BackgroundLeaseId, state: value.state }
+}
+
+function parseLegacyMigrationState(value: unknown): LegacyMigrationState {
+  if (!isRecord(value) || typeof value.kind !== 'string') throw new RuntimeProtocolError()
+  switch (value.kind) {
+    case 'not-needed':
+    case 'declined':
+      if (!hasExactKeys(value, ['kind'])) throw new RuntimeProtocolError()
+      return { kind: value.kind }
+    case 'decision-required':
+      if (!hasExactKeys(value, ['kind', 'sourceLabel', 'retryable'])
+        || value.sourceLabel !== 'DSH_HOME' || typeof value.retryable !== 'boolean') throw new RuntimeProtocolError()
+      return { kind: value.kind, sourceLabel: 'DSH_HOME', retryable: value.retryable }
+    case 'imported':
+      if (!hasExactKeys(value, ['kind', 'copied']) || !isRootList(value.copied)) throw new RuntimeProtocolError()
+      return { kind: value.kind, copied: value.copied }
+    case 'target-not-empty':
+    case 'failed':
+      if (!hasExactKeys(value, ['kind', 'retryable', 'diagnostic']) || value.retryable !== true) {
+        throw new RuntimeProtocolError()
+      }
+      return { kind: value.kind, retryable: true, diagnostic: parseDiagnostic(value.diagnostic) }
+    default: throw new RuntimeProtocolError()
+  }
+}
+
+function parseActiveWorkStatus(value: unknown): ActiveWorkStatus {
+  if (!isRecord(value) || !hasExactKeys(value, ['ownUiWork']) || !Array.isArray(value.ownUiWork)
+    || value.ownUiWork.some(id => !isUuid(id))) throw new RuntimeProtocolError()
+  return { ownUiWork: value.ownUiWork as ActiveWorkId[] }
+}
+
+function parseOwnUiWorkStopResult(value: unknown): OwnUiWorkStopResult {
+  if (!isRecord(value) || typeof value.kind !== 'string') throw new RuntimeProtocolError()
+  if (value.kind === 'none-active' && hasExactKeys(value, ['kind'])) return { kind: 'none-active' }
+  if (value.kind === 'stopped' && hasExactKeys(value, ['kind', 'work']) && Array.isArray(value.work)
+    && value.work.every(isUuid)) return { kind: 'stopped', work: value.work as ActiveWorkId[] }
+  if (value.kind === 'failed' && hasExactKeys(value, ['kind', 'diagnostic'])) {
+    return { kind: 'failed', diagnostic: parseDiagnostic(value.diagnostic) }
+  }
+  throw new RuntimeProtocolError()
+}
+
+function parseRuntimeControlResult(value: unknown): RuntimeControlResult {
+  if (!isRecord(value) || typeof value.kind !== 'string') throw new RuntimeProtocolError()
+  switch (value.kind) {
+    case 'not-running':
+      if (!hasExactKeys(value, ['kind'])) throw new RuntimeProtocolError()
+      return { kind: 'not-running' }
+    case 'version-mismatch':
+    case 'unavailable':
+      if (!hasExactKeys(value, ['kind', 'diagnostic'])) throw new RuntimeProtocolError()
+      return { kind: value.kind, diagnostic: parseDiagnostic(value.diagnostic) }
+    case 'owned-by-live-runtime':
+      if (!hasExactKeys(value, ['kind', 'runtimeId']) || !isOpaqueId(value.runtimeId, 8)) throw new RuntimeProtocolError()
+      return { kind: value.kind, runtimeId: value.runtimeId as RuntimeId }
+    case 'session-busy':
+      if (!hasExactKeys(value, ['kind', 'sessionId', 'options']) || !isSessionId(value.sessionId)
+        || !Array.isArray(value.options) || value.options.length !== 3
+        || value.options[0] !== 'observe' || value.options[1] !== 'new-session' || value.options[2] !== 'wait') {
+        throw new RuntimeProtocolError()
+      }
+      return { kind: value.kind, sessionId: value.sessionId as SessionId, options: ['observe', 'new-session', 'wait'] }
+    default: throw new RuntimeProtocolError()
+  }
+}
+
+function parseDiagnostic(value: unknown): RedactedRuntimeDiagnostic {
+  if (!isRecord(value) || !hasExactKeys(value, ['code', 'subject', 'message', 'correction', 'diagnosticId'])
+    || !['runtime-unavailable', 'runtime-version-mismatch', 'runtime-start-failed', 'dashboard-unavailable'].includes(String(value.code))
+    || (value.subject !== 'Runtime' && value.subject !== 'Dashboard')
+    || !isSafeDiagnosticText(value.message) || !isSafeDiagnosticText(value.correction)
+    || !isUuid(value.diagnosticId)) throw new RuntimeProtocolError()
+  return value as unknown as RedactedRuntimeDiagnostic
+}
+
+function parseTerminalEventPage(value: unknown): { readonly events: readonly TerminalProtocolEvent[]; readonly nextCursor: number } {
+  if (!isRecord(value) || !hasExactKeys(value, ['events', 'nextCursor']) || !Array.isArray(value.events)
+    || !Number.isSafeInteger(value.nextCursor) || (value.nextCursor as number) < value.events.length) throw new RuntimeProtocolError()
+  return { events: value.events.map(parseTerminalEvent), nextCursor: value.nextCursor as number }
+}
+
+function parseTerminalEvent(value: unknown): TerminalProtocolEvent {
+  if (!isRecord(value) || typeof value.kind !== 'string') throw new RuntimeProtocolError()
+  switch (value.kind) {
+    case 'session-opened':
+      if (!hasExactKeys(value, ['kind', 'sessionId']) || !isSessionId(value.sessionId)) throw new RuntimeProtocolError()
+      return { kind: value.kind, sessionId: value.sessionId as SessionId }
+    case 'output':
+      if (!hasExactKeys(value, ['kind', 'text']) || typeof value.text !== 'string') throw new RuntimeProtocolError()
+      return { kind: value.kind, text: value.text }
+    case 'tool-activity':
+      if (!hasExactKeys(value, ['kind', 'title']) || typeof value.title !== 'string') throw new RuntimeProtocolError()
+      return { kind: value.kind, title: value.title }
+    case 'approval-requested':
+      if (!hasExactKeys(value, ['kind', 'approvalId', 'prompt']) || !isUuid(value.approvalId)
+        || typeof value.prompt !== 'string') throw new RuntimeProtocolError()
+      return { kind: value.kind, approvalId: value.approvalId as ApprovalId, prompt: value.prompt }
+    case 'model-changed':
+      if (!hasExactKeys(value, ['kind', 'model']) || typeof value.model !== 'string' || value.model.length === 0) {
+        throw new RuntimeProtocolError()
+      }
+      return { kind: value.kind, model: value.model }
+    case 'permission-changed':
+      if (!hasExactKeys(value, ['kind', 'permission']) || typeof value.permission !== 'string'
+        || value.permission.length === 0) throw new RuntimeProtocolError()
+      return { kind: value.kind, permission: value.permission }
+    case 'diagnostic':
+      if (!hasExactKeys(value, ['kind', 'diagnostic'])) throw new RuntimeProtocolError()
+      return { kind: value.kind, diagnostic: parseDiagnostic(value.diagnostic) }
+    default: throw new RuntimeProtocolError()
+  }
+}
+
+async function readResponseJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json() as unknown
+  } catch {
+    throw new RuntimeProtocolError()
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+}
+
+function isOpaqueId(value: unknown, minimum: number): value is string {
+  return typeof value === 'string' && value.length >= minimum && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value)
+}
+
+function isSessionId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256
+    && !value.includes('/') && !value.includes('\\')
+    && !hasControlOrSpace(value)
+    && !/(?:access.?token|credential|secret)/i.test(value)
+}
+
+function hasControlOrSpace(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) <= 32) return true
+  }
+  return false
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function isSafeTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isLoopbackOrigin(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const origin = new URL(value)
+    return origin.protocol === 'http:' && origin.hostname === '127.0.0.1'
+      && origin.port.length > 0 && origin.origin === value && origin.username === '' && origin.password === ''
+      && origin.search === '' && origin.hash === ''
+  } catch {
+    return false
+  }
+}
+
+function isRootList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(root => root === 'sessions' || root === 'settings.yaml' || root === 'projects')
+    && new Set(value).size === value.length
+}
+
+function isSafeDiagnosticText(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 1024
+    && !/(?:access.?token|bearer|credential|secret|runtime-endpoint|[a-z]:\\|\/(?:Users|home|tmp)\/)/i.test(value)
 }
 
 async function discoverEndpoint(home: Branded<'HarnessHome'>): Promise<PrivateEndpointRecord | undefined> {

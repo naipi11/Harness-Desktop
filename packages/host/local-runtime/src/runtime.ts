@@ -6,9 +6,12 @@ import { sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
-import { SessionWriteCoordinator, type SessionWriteLease } from '@harness-desktop/dsh-session'
 import type { HarnessHomeProvider } from './harness-home-provider.ts'
-import { createRuntimeControlService, type RuntimeControlService } from './control-service.ts'
+import {
+  createRuntimeControlService,
+  type RuntimeControlService,
+  type RuntimeControlServiceOptions,
+} from './control-service.ts'
 import { mountPrivateRuntimeControl } from './runtime-control.ts'
 import {
   redactRuntimeStatus,
@@ -148,9 +151,17 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
         ) => void
       }
       const sessions = ctx.get('sessions') as RuntimeControlService['sessions']
+      const api = ctx.get('apiProxy') as unknown as RuntimeControlServiceOptions['api']
+      const agents = ctx.get('agents')
+      const commands = ctx.get('commands')
+      const permissionPresets = ctx.get('permissionPresets')
       const controlService = createRuntimeControlService({
         runtime: handle,
         ...(sessions === undefined ? {} : { sessions }),
+        ...(api === undefined ? {} : { api }),
+        ...(agents === undefined ? {} : { agents }),
+        ...(commands === undefined ? {} : { commands }),
+        ...(permissionPresets === undefined ? {} : { permissionPresets }),
         resolution: {
           path: config.harnessHome.home,
           source: 'environment',
@@ -159,10 +170,18 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       })
       const logger = ctx.logger
       ctx.on('session/event', (session, event) => {
-        void controlService.handleSessionEvent(session.id, event.type).catch(() => {
+        void controlService.handleSessionEvent(session, event).catch(() => {
           logger.warn('host-local-runtime: session work settlement failed')
         })
       })
+      ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+        controlService.handleAgentInboxClaimed(agent, message, turn)
+      })
+      ctx.on(
+        'approval/request',
+        (request, next) => controlService.handleApprovalRequest(request, next),
+        { prepend: true },
+      )
       await ctx.plugin({
         inject: ['webServer'],
         apply(controlCtx) {
@@ -301,8 +320,7 @@ function createRuntimeHandle(
   record: { readonly runtimeId: RuntimeId; readonly port: number },
 ): RuntimeHandle {
   const clients = new Set<RuntimeClientId>()
-  const admissions = new SessionWriteCoordinator()
-  const work = new Map<RuntimeWorkLeaseId, { readonly session: SessionId; readonly admission: SessionWriteLease }>()
+  const work = new Map<RuntimeWorkLeaseId, SessionId>()
   const backgrounds = new Set<BackgroundLeaseId>()
   let state: RedactedRuntimeStatus['state'] = 'running'
   let disposal: Promise<void> | undefined
@@ -347,19 +365,14 @@ function createRuntimeHandle(
     },
     beginAgentWork(session) {
       ensureRunning(state)
-      const admission = admissions.tryAcquire(session)
-      if (admission.kind === 'busy') throw new RuntimeSessionBusyError(session)
+      if ([...work.values()].includes(session)) throw new RuntimeSessionBusyError(session)
       const id = randomId('RuntimeWorkLeaseId')
-      work.set(id, { session, admission: admission.lease })
+      work.set(id, session)
       reconcile()
       return Promise.resolve(Object.freeze({ id, session }))
     },
     endAgentWork(lease) {
-      const active = work.get(lease.id)
-      if (active !== undefined) {
-        work.delete(lease.id)
-        admissions.release(active.admission)
-      }
+      work.delete(lease.id)
       reconcile()
       return Promise.resolve()
     },

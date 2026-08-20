@@ -15,6 +15,7 @@ const ARTIFACT_ONLY_PACKAGES = new Set([
   '@harness-desktop/dsh-typert-loader',
 ])
 const WRITABLE_CREDENTIAL_PROVIDER = new URL('./runtime-writable-credentials.ts', import.meta.url).href
+const REPLAY_PROVIDER = import.meta.resolve('@harness-desktop/dsh-llm-replay')
 
 /** Apply the real patch while explicitly excluding rows whose only runtime is build-generated. */
 function sourceBackendPatches(patches: readonly PatchOptions[]): PatchOptions[] {
@@ -58,6 +59,18 @@ const runtime = await startRuntime({
       ...loadOverlayPatches('runtime-source-backend', basePatch),
       ...loadOverlayPatches('runtime-source-backend', webPatch),
     ])
+    const replayOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+    const replayFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+    if (replayOverride !== undefined && replayFile !== undefined) {
+      patches.push({ id: 'session-title-llm', disabled: true })
+      patches.push({
+        insert: [{
+          id: 'runtime-test-llm-replay',
+          name: REPLAY_PROVIDER,
+          config: { file: replayFile, overrideFile: replayOverride },
+        }],
+      })
+    }
     return boot('runtime-source-backend', runtimeConfig, patches, (ctx) => {
       installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))
       provideCmdline(ctx, { args: [], exit: () => {} })

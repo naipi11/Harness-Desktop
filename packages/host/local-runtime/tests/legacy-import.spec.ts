@@ -7,6 +7,7 @@ import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
 import {
   detectLegacyImport,
   importLegacyDshHome,
+  LEGACY_MIGRATION_FILENAME,
   recordLegacyImportDecision,
   type HarnessHome,
   type HarnessHomeResolution,
@@ -16,6 +17,24 @@ import {
 vi.mock('@harness-desktop/dsh-atomic-write', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@harness-desktop/dsh-atomic-write')>()
   return { ...actual, writeFileAtomic: vi.fn(actual.writeFileAtomic) }
+})
+
+describe('durable legacy migration record validation', () => {
+  it.each([
+    { kind: 'declined', accessToken: 'private-token' },
+    { kind: 'imported', copied: ['C:\\Users\\person\\secret-token.txt'] },
+    { kind: 'failed', retained: [], retryable: true, diagnosticId: 'not-a-runtime-diagnostic-id' },
+  ])('rejects corrupt or secret-bearing state without reflecting its value: %#', async (state) => {
+    const target = await tempDir('harness-legacy-corrupt-target-')
+    const legacy = await tempDir('harness-legacy-corrupt-source-')
+    await writeFile(join(target, LEGACY_MIGRATION_FILENAME), JSON.stringify(state) + '\n')
+
+    const error = await detectLegacyImport(resolution(target, legacy))
+      .then(() => undefined, (reason: unknown) => reason)
+    expect(error).toBeInstanceOf(Error)
+    expect(String(error)).toContain('legacy-migration.json')
+    expect(String(error)).not.toMatch(/private-token|C:\\Users|secret-token|not-a-runtime/)
+  })
 })
 
 /** One non-secret legacy data root; .credentials.yaml is never a candidate. */

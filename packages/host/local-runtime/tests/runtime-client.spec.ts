@@ -12,6 +12,7 @@ import {
   createRuntimeConnector,
   normalizeRecoveryDiagnostic,
   probeRuntimeStatus,
+  RuntimeProtocolError,
   RuntimeUnavailableError,
   type DashboardAttachment,
   type RuntimeClient,
@@ -191,6 +192,63 @@ describe('public Runtime connector', () => {
       expect(JSON.stringify(diagnostic)).not.toMatch(/private|C:\\Users|runtime-endpoint|token=/)
       expect(diagnostic.subject).toBe('Runtime')
       expect(diagnostic.diagnosticId).toEqual(expect.any(String))
+    }
+  })
+
+  it('rejects hostile public status and migration wire values before projection', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-hostile-wire-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+    const originalFetch = globalThis.fetch
+    let hostile: unknown = {
+      state: 'running', runtimeId: 'runtime-id', dashboardOrigin: 'http://evil.invalid',
+      backgroundLease: { id: 'web', state: 'absent' }, accessToken: 'private-token',
+    }
+    globalThis.fetch = async (input, init) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { operation?: string } : undefined
+      if (body?.operation === 'status' || body?.operation === 'get-legacy-migration') {
+        return new Response(JSON.stringify({ ok: true, value: hostile }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        })
+      }
+      return originalFetch(input, init)
+    }
+    try {
+      await expect(client.status()).rejects.toBeInstanceOf(RuntimeProtocolError)
+      hostile = { kind: 'imported', copied: ['C:\\Users\\person\\secret-token.txt'] }
+      await expect(client.getLegacyMigration()).rejects.toBeInstanceOf(RuntimeProtocolError)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('rejects a path-bearing busy response instead of exposing its session id', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-hostile-busy-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { operation?: string } : undefined
+      if (body?.operation === 'open-terminal') {
+        return new Response(JSON.stringify({
+          ok: false,
+          result: {
+            kind: 'session-busy',
+            sessionId: 'C:\\Users\\person\\secret-token.txt',
+            options: ['observe', 'new-session', 'wait'],
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return originalFetch(input, init)
+    }
+    try {
+      await expect(client.openTerminal({ workspace: root })).rejects.toBeInstanceOf(RuntimeProtocolError)
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
 })

@@ -44,7 +44,6 @@ export {
   type RuntimeClient,
   type RuntimeClientId,
   type RuntimeConnector,
-  type RuntimeConnectorOptions,
   type RuntimeControlRequest,
   type RuntimeControlResult,
   type RuntimeDiagnosticId,

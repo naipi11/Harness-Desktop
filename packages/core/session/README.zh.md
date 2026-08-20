@@ -18,8 +18,6 @@
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
 
-`SessionWriteCoordinator` 是供宿主在多个客户端中公开同一个 session 时使用的进程内准入原语。`tryAcquire(sessionId)` 返回一个精确 owner lease 或类型化 busy 结果；读取不受限制，重复或陈旧的 `release(lease)` 调用无法清除后来的 writer。它不会创建、恢复或持久化 session。
-
 #### 高级：有序清理生命周期原语
 
 仅在清理必须与另一项资源排序时使用拆分生命周期：

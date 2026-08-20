@@ -42,12 +42,15 @@
   "license": "MIT",
   "dependencies": {
     "@harness-desktop/dsh-app-boot": "workspace:^",
+    "@harness-desktop/dsh-agent": "workspace:^",
     "@harness-desktop/dsh-base": "workspace:^",
     "@harness-desktop/dsh-client-connection": "workspace:^",
     "@harness-desktop/dsh-client-ui-directory-picker-native": "workspace:^",
     "@harness-desktop/dsh-cmdline": "workspace:^",
+    "@harness-desktop/dsh-commands": "workspace:^",
     "@harness-desktop/dsh-host-directory-picker-native": "workspace:^",
     "@harness-desktop/dsh-host-webserver": "workspace:^",
+    "@harness-desktop/dsh-permission-presets": "workspace:^",
     "@harness-desktop/dsh-session": "workspace:^",
     "@harness-desktop/dsh-web-app": "workspace:^",
     "proper-lockfile": "4.1.2"
@@ -65,6 +68,7 @@
     "@harness-desktop/cordis": "workspace:^",
     "@harness-desktop/dsh-brand": "workspace:^",
     "@harness-desktop/dsh-home-paths": "workspace:^",
-    "@harness-desktop/dsh-invariants": "workspace:^"
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm-replay": "workspace:^"
   }
 }

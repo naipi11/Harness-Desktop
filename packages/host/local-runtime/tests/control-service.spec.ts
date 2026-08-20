@@ -1,5 +1,6 @@
 /** Runtime control ownership, durable migration, and session-write admission. */
 
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,8 +8,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import SessionStore, { SessionId as makeSessionId } from '@harness-desktop/dsh-session'
+import type { Agent } from '@harness-desktop/dsh-agent'
 import WebServer from '@harness-desktop/dsh-host-webserver'
-import { createRuntimeControlService, type RuntimeControlService } from '../src/control-service.ts'
+import {
+  createRuntimeControlService,
+  type RuntimeControlService,
+  type RuntimeControlServiceOptions,
+} from '../src/control-service.ts'
 import { createLocalRuntimePlugin, resolveHarnessHome } from '../src/data-root.ts'
 import { startRuntime, type RuntimeHandle } from '../src/runtime.ts'
 
@@ -29,7 +35,10 @@ function client(id: string): Branded<'RuntimeClientId'> {
   return id as Branded<'RuntimeClientId'>
 }
 
-async function start(legacyDshHome?: string): Promise<{ sessions: SessionStore; home: string }> {
+async function start(
+  legacyDshHome?: string,
+  overrides: Partial<RuntimeControlServiceOptions> = {},
+): Promise<{ sessions: SessionStore; home: string; agents: Map<string, Agent> }> {
   root ??= await mkdtemp(join(tmpdir(), 'harness-runtime-control-service-'))
   const home = join(root, 'home')
   const provider = createLocalRuntimePlugin({ env: { HARNESS_HOME: home }, homeDir: root })
@@ -45,15 +54,66 @@ async function start(legacyDshHome?: string): Promise<{ sessions: SessionStore; 
       return ctx
     },
   })
+  const fakeAgents = new Map<string, Agent>()
+  const fakeApi: NonNullable<RuntimeControlServiceOptions['api']> = {
+    sessions: {
+      async create(request) {
+        let session = sessions.get(request.payload.sessionId)
+        if (session === undefined) session = sessions.create(request.payload.sessionId, { meta: { cwd: request.payload.cwd } })
+        if (!fakeAgents.has(session.id)) {
+          fakeAgents.set(session.id, {
+            id: session.id,
+            session,
+            status: 'running',
+            options: {},
+            inbox: {} as never,
+            ctx: {} as never,
+            cancel() {},
+            whenIdle: () => Promise.resolve(),
+            runMaintenance: () => Promise.reject(new Error('not used')),
+            send() {},
+            followup() {},
+            steer() {},
+            inject() {},
+          })
+        }
+        return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId: session.id } } }
+      },
+      async prompt(request) {
+        return { rpcId: request.rpcId, result: { ok: true as const, value: { accepted: true as const } } }
+      },
+      async models(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true as const, value: { current: { provider: 'test', model: 'test' } } },
+        }
+      },
+      async selectModel(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true as const,
+            value: { selected: { provider: request.payload.provider, model: request.payload.model } },
+          },
+        }
+      },
+    },
+  }
+  const fakeAgentRegistry: NonNullable<RuntimeControlServiceOptions['agents']> = {
+    get: id => fakeAgents.get(id),
+  }
   control = createRuntimeControlService({
     runtime,
     sessions,
+    api: fakeApi,
+    agents: fakeAgentRegistry,
     resolution: {
       ...resolveHarnessHome({ env: { HARNESS_HOME: home, DSH_HOME: legacyDshHome }, homeDir: root }),
       legacyDshHome,
     },
+    ...overrides,
   })
-  return { sessions, home }
+  return { sessions, home, agents: fakeAgents }
 }
 
 describe('Runtime control service', () => {
@@ -62,32 +122,37 @@ describe('Runtime control service', () => {
     const first = client('first-client')
     const second = client('second-client')
     const sessionId = makeSessionId('shared-session')
-    sessions.create(sessionId)
     await control!.attachClient(first)
     await control!.attachClient(second)
+    const firstTerminal = client('first-terminal')
+    const secondTerminal = client('second-terminal')
+    const admitted = await control!.openTerminal(first, firstTerminal, {
+      workspace: root!, sessionId, initialTask: 'first task',
+    })
+    const busy = await control!.openTerminal(second, secondTerminal, {
+      workspace: root!, sessionId, initialTask: 'second task',
+    })
 
-    const admitted = await control!.beginOwnUiWork(first, sessionId)
-    const busy = await control!.beginOwnUiWork(second, sessionId)
-
-    expect(admitted.kind).toBe('started')
+    expect(admitted).toEqual({ kind: 'opened', sessionId })
     expect(busy).toEqual({
       kind: 'session-busy',
       sessionId,
       options: ['observe', 'new-session', 'wait'],
     })
+    await expect(control!.releaseClient(second, secondTerminal)).rejects.toThrow('attachment owner')
     expect(sessions.list().map(session => session.id)).toEqual([sessionId])
   })
 
   it('keeps one named Web lease while preserving clients and active work on idempotent release', async () => {
-    const { sessions } = await start()
+    await start()
     const first = client('lease-first')
     const second = client('lease-second')
     const sessionId = makeSessionId('lease-session')
-    sessions.create(sessionId)
     await control!.attachClient(first)
     await control!.attachClient(second)
-    const work = await control!.beginOwnUiWork(first, sessionId)
-    expect(work.kind).toBe('started')
+    await control!.openTerminal(first, client('lease-terminal'), {
+      workspace: root!, sessionId, initialTask: 'retained work',
+    })
 
     const [firstLease, secondLease] = await Promise.all([
       control!.handleNative(first, { operation: 'acquire-background-lease', lease: 'web' }),
@@ -101,44 +166,167 @@ describe('Runtime control service', () => {
     expect(runtime!.status().backgroundLeaseCount).toBe(0)
     expect(await control!.handleNative(second, { operation: 'release-background-lease', lease: 'web' }))
       .toEqual({ id: 'web', state: 'absent' })
-    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [work.kind === 'started' ? work.workId : ''] })
+    expect((await control!.observeActiveWork(first)).ownUiWork).toHaveLength(1)
     expect(runtime!.status().state).toBe('running')
   })
 
   it('observes and stops only the requesting client UI work', async () => {
-    const { sessions } = await start()
+    await start()
     const first = client('ui-first')
     const second = client('ui-second')
     const firstSession = makeSessionId('ui-first-session')
     const secondSession = makeSessionId('ui-second-session')
-    sessions.create(firstSession)
-    sessions.create(secondSession)
     await control!.attachClient(first)
     await control!.attachClient(second)
-    const firstWork = await control!.beginOwnUiWork(first, firstSession)
-    const secondWork = await control!.beginOwnUiWork(second, secondSession)
-    if (firstWork.kind !== 'started' || secondWork.kind !== 'started') throw new Error('expected distinct work admissions')
+    await control!.openTerminal(first, client('ui-first-terminal'), {
+      workspace: root!, sessionId: firstSession, initialTask: 'first work',
+    })
+    await control!.openTerminal(second, client('ui-second-terminal'), {
+      workspace: root!, sessionId: secondSession, initialTask: 'second work',
+    })
+    const [firstWork] = (await control!.observeActiveWork(first)).ownUiWork
+    const [secondWork] = (await control!.observeActiveWork(second)).ownUiWork
+    if (firstWork === undefined || secondWork === undefined) throw new Error('expected distinct work admissions')
 
-    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [firstWork.workId] })
-    expect(await control!.stopOwnUiWork(first)).toEqual({ kind: 'stopped', work: [firstWork.workId] })
+    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [firstWork] })
+    expect(await control!.stopOwnUiWork(first)).toEqual({ kind: 'stopped', work: [firstWork] })
     expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [] })
-    expect(await control!.observeActiveWork(second)).toEqual({ ownUiWork: [secondWork.workId] })
+    expect(await control!.observeActiveWork(second)).toEqual({ ownUiWork: [secondWork] })
   })
 
-  it('releases one session writer when its durable turn ends', async () => {
-    const { sessions } = await start()
-    const first = client('event-first')
-    const second = client('event-second')
-    const sessionId = makeSessionId('event-session')
-    sessions.create(sessionId)
-    await control!.attachClient(first)
-    await control!.attachClient(second)
-    expect((await control!.beginOwnUiWork(first, sessionId)).kind).toBe('started')
+  it('rejects cross-owner child attachment operations without releasing the victim', async () => {
+    await start()
+    const owner = client('attachment-owner')
+    const attacker = client('attachment-attacker')
+    const dashboard = client('owned-dashboard')
+    const terminal = client('owned-terminal')
+    await control!.attachClient(owner)
+    await control!.attachClient(attacker)
+    await control!.attachDashboard(owner, dashboard)
+    await control!.openTerminal(owner, terminal, { workspace: root! })
 
-    await control!.handleSessionEvent(sessionId, 'turn/end')
+    await expect(control!.releaseClient(attacker, dashboard)).rejects.toThrow('attachment owner')
+    await expect(control!.releaseClient(attacker, terminal)).rejects.toThrow('attachment owner')
+    await expect(control!.submitTerminal(attacker, terminal, { kind: 'task', text: 'hijack' }))
+      .rejects.toThrow('attachment owner')
+    await expect(control!.cancelTerminal(attacker, terminal)).rejects.toThrow('attachment owner')
 
-    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [] })
-    expect((await control!.beginOwnUiWork(second, sessionId)).kind).toBe('started')
+    await control!.releaseClient(owner, dashboard)
+    await control!.releaseClient(owner, terminal)
+  })
+
+  it('routes approval only to the terminal that owns the exact active Agent operation', async () => {
+    const { agents } = await start()
+    const owner = client('approval-owner')
+    const attacker = client('approval-attacker')
+    const terminal = client('approval-terminal')
+    const sessionId = makeSessionId('approval-session')
+    await control!.attachClient(owner)
+    await control!.attachClient(attacker)
+    await control!.openTerminal(owner, terminal, {
+      workspace: root!, sessionId, initialTask: 'operation that asks approval',
+    })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected live approval Agent')
+
+    let delegated = 0
+    const outcome = control!.handleApprovalRequest({
+      agent, toolName: 'write', reason: 'approve exact write',
+    }, () => { delegated += 1; return Promise.resolve('unavailable') })
+    const page = await control!.readTerminalEvents(owner, terminal, 0)
+    const approval = page.events.find(event => event.kind === 'approval-requested')
+    if (approval?.kind !== 'approval-requested') throw new Error('expected approval request event')
+    await expect(control!.submitTerminal(attacker, terminal, {
+      kind: 'approval', approvalId: approval.approvalId, decision: 'approve',
+    })).rejects.toThrow('attachment owner')
+    await control!.submitTerminal(owner, terminal, {
+      kind: 'approval', approvalId: approval.approvalId, decision: 'approve',
+    })
+
+    await expect(outcome).resolves.toBe('allowed-once')
+    expect(delegated).toBe(0)
+  })
+
+  it('ignores a stale prior turn completion after a replacement operation is admitted', async () => {
+    const firstIdle = Promise.withResolvers<undefined>()
+    const secondIdle = Promise.withResolvers<undefined>()
+    const idle = [firstIdle, secondIdle]
+    let idleIndex = 0
+    let capturedRpcId: string | undefined
+    const liveAgent: { current: Agent | undefined } = { current: undefined }
+    const api: NonNullable<RuntimeControlServiceOptions['api']> = {
+      sessions: {
+        async create(request) {
+          return { rpcId: request.rpcId, result: { ok: true as const, value: { sessionId: request.payload.sessionId } } }
+        },
+        async prompt(request) {
+          capturedRpcId = request.rpcId
+          return { rpcId: request.rpcId, result: { ok: true as const, value: { accepted: true as const } } }
+        },
+        async models(request) {
+          return {
+            rpcId: request.rpcId,
+            result: { ok: true as const, value: { current: { provider: 'test', model: 'test' } } },
+          }
+        },
+        async selectModel(request) {
+          return {
+            rpcId: request.rpcId,
+            result: {
+              ok: true as const,
+              value: { selected: { provider: request.payload.provider, model: request.payload.model } },
+            },
+          }
+        },
+      },
+    }
+    const agents: NonNullable<RuntimeControlServiceOptions['agents']> = { get: () => liveAgent.current }
+    const started = await start(undefined, { api, agents })
+    const session = started.sessions.create(makeSessionId('correlated-session'), { meta: { cwd: root! } })
+    liveAgent.current = {
+      id: session.id,
+      session,
+      status: 'running',
+      options: {},
+      inbox: {} as never,
+      ctx: {} as never,
+      cancel() {},
+      whenIdle: () => idle[idleIndex++]!.promise,
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send() {},
+      followup() {},
+      steer() {},
+      inject() {},
+    }
+    const owner = client('correlation-owner')
+    const terminal = client('correlation-terminal')
+    await control!.attachClient(owner)
+    await control!.openTerminal(owner, terminal, {
+      workspace: root!, sessionId: session.id, initialTask: 'first exact operation',
+    })
+    expect(capturedRpcId).toBeDefined()
+    control!.handleAgentInboxClaimed(liveAgent.current, {
+      source: { kind: 'user', rpcId: capturedRpcId! },
+    } as never, 1)
+    const firstEnd = control!.handleSessionEvent(session, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
+    } as never)
+    firstIdle.resolve(undefined)
+    await firstEnd
+    expect(await control!.observeActiveWork(owner)).toEqual({ ownUiWork: [] })
+
+    capturedRpcId = undefined
+    await control!.submitTerminal(owner, terminal, { kind: 'task', text: 'replacement exact operation' })
+    expect(capturedRpcId).toBeDefined()
+    control!.handleAgentInboxClaimed(liveAgent.current, {
+      source: { kind: 'user', rpcId: capturedRpcId! },
+    } as never, 2)
+
+    await control!.handleSessionEvent(session, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
+    } as never)
+    expect((await control!.observeActiveWork(owner)).ownUiWork).toHaveLength(1)
+    secondIdle.resolve(undefined)
   })
 
   it('persists accepted, declined, collision, and corrected retry migration results without legacy paths', async () => {
@@ -187,6 +375,32 @@ describe('Runtime control service', () => {
     expect(await control!.handleDashboard({ operation: 'get-legacy-migration' })).toEqual({ kind: 'declined' })
   })
 
+  it('serializes concurrent native and Dashboard migration decisions onto one imported result', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-control-migration-race-'))
+    const legacy = join(root, 'legacy')
+    await mkdir(join(legacy, 'projects'), { recursive: true })
+    await writeFile(join(legacy, 'projects', 'one.json'), '{"source":true}\n')
+    const { home } = await start(legacy)
+    const owner = client('migration-race-client')
+    await control!.attachClient(owner)
+
+    const results = await Promise.all([
+      control!.handleNative(owner, { operation: 'accept-legacy-migration' }),
+      control!.handleDashboard({ operation: 'accept-legacy-migration' }),
+      control!.handleDashboard({ operation: 'decline-legacy-migration' }),
+    ])
+
+    expect(results).toEqual([
+      { kind: 'imported', copied: ['projects'] },
+      { kind: 'imported', copied: ['projects'] },
+      { kind: 'imported', copied: ['projects'] },
+    ])
+    expect(await control!.handleNative(owner, { operation: 'get-legacy-migration' }))
+      .toEqual({ kind: 'imported', copied: ['projects'] })
+    expect(await readFile(join(home, 'projects', 'one.json'), 'utf8')).toBe('{"source":true}\n')
+    expect(await readFile(join(legacy, 'projects', 'one.json'), 'utf8')).toBe('{"source":true}\n')
+  })
+
   it('projects a durable import failure and retries only after the retained state is corrected', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-control-failed-import-'))
     const legacy = join(root, 'legacy')
@@ -196,7 +410,7 @@ describe('Runtime control service', () => {
     const owner = client('failed-import-client')
     await control!.attachClient(owner)
     await writeFile(join(home, 'legacy-migration.json'), JSON.stringify({
-      kind: 'failed', retained: [], retryable: true, diagnosticId: 'failed-import-diagnostic',
+      kind: 'failed', retained: [], retryable: true, diagnosticId: randomUUID(),
     }) + '\n')
 
     const failed = await control!.handleDashboard({ operation: 'get-legacy-migration' })

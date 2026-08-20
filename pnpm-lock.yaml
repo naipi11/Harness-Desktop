@@ -4991,6 +4991,9 @@ importers:
 
   packages/host/local-runtime:
     dependencies:
+      '@harness-desktop/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
       '@harness-desktop/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
@@ -5006,12 +5009,18 @@ importers:
       '@harness-desktop/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
+      '@harness-desktop/dsh-commands':
+        specifier: workspace:^
+        version: link:../../interaction/commands
       '@harness-desktop/dsh-host-directory-picker-native':
         specifier: workspace:^
         version: link:../directory-picker-native
       '@harness-desktop/dsh-host-webserver':
         specifier: workspace:^
         version: link:../webserver
+      '@harness-desktop/dsh-permission-presets':
+        specifier: workspace:^
+        version: link:../../interaction/permission-presets
       '@harness-desktop/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -5037,6 +5046,9 @@ importers:
       '@harness-desktop/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@harness-desktop/dsh-llm-replay':
+        specifier: workspace:^
+        version: link:../../test-support/llm-replay
 
   packages/host/plugin-inventory:
     dependencies:

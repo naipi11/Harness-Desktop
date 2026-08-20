@@ -10,15 +10,19 @@ The owner lock records both PID and operating-system process-start identity. A s
 
 The endpoint record contains the protocol version, Runtime identity, port, process identity, and private access token. The internal writer protects a same-directory temporary file before its atomic rename; the internal reader verifies owner-only `0600` access on POSIX or a current-user-only Windows DACL before reading. Retirement atomically renames the current endpoint to a private tombstone and rechecks its Runtime identity there; a claimed replacement is restored without overwriting a newer endpoint. The package root exports only token-free status and ownership types, never the endpoint parser, writer, filename, or token-bearing record.
 
-`createRuntimeConnector()` is the only application entry that discovers the private endpoint and retains its token. `connect({ start: false })` reports typed absence without creating the selected home, lock, endpoint, or process; `connect({ start: true })` serializes racing process starts through the owner lock and attaches every successful caller to the same Runtime. Public success values and `normalizeRecoveryDiagnostic()` contain no endpoint fields, token, credential value, raw filesystem error, or absolute Harness home.
+`createRuntimeConnector()` is the only application entry that discovers the private endpoint and retains its token. `connect({ start: false })` reports typed absence without creating the selected home, lock, endpoint, or process; `connect({ start: true })` serializes racing process starts through the owner lock and waits for an authenticated healthy replacement before attaching every successful caller to the same Runtime. Every wire success/error is parsed with exact fields and branded-value validation before projection; malformed values reject as `RuntimeProtocolError`, and public status, migration, lease, busy, active-work, and diagnostic values contain no endpoint field, token, credential value, raw filesystem error, or absolute Harness home.
 
 Runtime-local routes accept native control only at the exact `127.0.0.1` authority with the private endpoint bearer token. A native caller mints a 60-second, single-use opaque handoff; `POST /_harness/handoff` consumes that value only from one URL-encoded form body, emits no CORS permission, and redirects cleanly after setting a session `HttpOnly; SameSite=Strict; Path=/` cookie with no expiry. The in-memory authenticator requires that exact Runtime Origin and cookie for Dashboard API and event carriers, while a launcher-owned cleanup controller removes only its bootstrap document and owner directory once after dispatch, exchange settlement, or expiry. Tokens, handoffs, and session values stay outside public exports, diagnostics, URLs, and browser script storage.
 
 The Runtime owner acquires the lock before it boots the shipped base and Web composition, including API, static Dashboard, session, settings, workspace, storage, and credential-reference providers. It requires the composition to expose a healthy `127.0.0.1` WebServer on an OS-assigned port, mounts private authenticated control before publishing the endpoint, and shares one injected `HarnessHomeProvider` with every writer. It counts actual client attachments, agent work, and explicit background leases, and begins configured idle shutdown only when all three are absent. Direct internal disposal has the same zero-retainer precondition and rejects without starting shutdown while any retainer remains. Ordered shutdown settles every durable flush, removes the endpoint, releases the lock, and disposes the Cordis root; independent failures are reported after every stage settles. `startRuntime()` and its handle remain orchestration internals; applications use `RuntimeConnector` and `RuntimeClient`.
 
-Each `RuntimeClient`, `TerminalConnection`, and `DashboardAttachment` owns one independent attachment and releases only that attachment through `close()`. The Runtime admits at most one write-type operation per session and returns the typed `observe`, `new-session`, and `wait` recovery choices to a competing client while leaving reads concurrent; the session's durable `turn/end` releases that admission. Active-work observation and safe stop are scoped to the requesting UI owner. The per-home Web background lease has the stable id `web`; repeated acquisition and release are serialized and idempotent across clients, and release does not cancel work or disconnect attachments.
+Each `RuntimeClient`, `TerminalConnection`, and `DashboardAttachment` owns one server-mapped attachment; an authenticated parent cannot release, submit through, cancel, or control another parent's child id. `close()` commits closed only after the idempotent server release succeeds, so a transient transport failure can retry the same release without issuing a duplicate after success. Closing an attachment does not cancel active work; `cancel()` and owner-scoped safe stop cancel the exact Agent operation and await whole-Agent idle before releasing its work lease.
 
-Legacy import decisions and results are stored under `HARNESS_HOME` and are shared by native and authenticated Dashboard control requests. Acceptance copies supported non-secret roots once into an otherwise empty target, decline persists, retry reuses only a recorded retryable result, and every source directory remains intact. Collision and failure results expose only a redacted diagnostic and correction.
+`openTerminal()` creates or resumes through the composed API owner and `submit()` enters a real Agent turn. The Runtime correlates the request's `rpcId` with the exact inbox claim, turn number, Agent instance, and `turn/end`, then waits for `agent.whenIdle()` before admitting a replacement; a stale turn or cancel completion cannot clear a later lease. Terminal events derive from the live session and approval mechanisms: streamed assistant text, tool activity, model/permission changes, and approval questions. Approval responses are accepted only from the terminal that owns the active Agent operation. Model selection, permission presets, and registered Host commands execute through their existing owners; unsupported controls reject instead of returning synthetic success.
+
+The per-home Web background lease has the stable id `web`; repeated acquisition and release are serialized and idempotent across clients, and release does not cancel work or disconnect attachments.
+
+Legacy import decisions and results are stored under `HARNESS_HOME` and are shared by native and authenticated Dashboard control requests through one Runtime-owned transaction queue. Acceptance copies supported non-secret roots once into an otherwise empty target; concurrent accepts replay the committed success, and a later decline cannot overwrite it. Decline persists before acceptance, retry runs only from an exact retryable collision/failure state, and every source directory remains intact. Durable records reject unknown, missing, extra, path-bearing, or invalid-branded fields before public projection; collision and failure results expose only a redacted diagnostic and correction.
 
 The declared `lib/bin.js` and direct `src/bin.ts` development entry both boot the complete shipped composition. Source entry execution requires `pnpm run build:lib` first because Typert contributions and browser bundles are build-generated artifacts; clean source-only integration fixtures must declare any backend-only overlay explicitly rather than changing the product composition.
 
@@ -36,7 +40,21 @@ None. Runtime access tokens remain in private control-plane files and never ente
 
 #### KV Cache effect
 
-None. This package neither assembles nor sends a provider request.
+None. These Runtime ownership and endpoint-record primitives neither assemble nor send a provider request.
+
+### Terminal Agent operations
+
+#### What the model sees
+
+A terminal task is admitted through the existing session API as the same durable user message and Agent turn used by the Dashboard. The Runtime adds no wrapper prompt or transport metadata to model-visible content. Controls that change model or permission state use their existing owners; registered slash commands retain their own logged behavior.
+
+#### Token effect
+
+The submitted task and resulting conversation consume their normal model input/output tokens. Runtime control, attachment ownership, status, leases, migration, busy results, and diagnostics add zero model tokens.
+
+#### KV Cache effect
+
+The task appends after the session's reusable prefix. Runtime control metadata does not change the request prefix; ordinary model-visible task or command effects have the same cache behavior as the existing Agent/session path.
 
 ## Known Limitations and Deferred Work
 

@@ -249,7 +249,12 @@ async function readMigrationState(home: HarnessHome): Promise<LegacyMigrationSta
  * fails loud rather than being treated as a fresh decision.
  */
 function parseMigrationState(text: string): LegacyMigrationState {
-  const value: unknown = JSON.parse(text)
+  let value: unknown
+  try {
+    value = JSON.parse(text) as unknown
+  } catch {
+    throw new Error('host-local-runtime: legacy-migration.json must contain valid JSON')
+  }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('host-local-runtime: legacy-migration.json must contain a migration state object')
   }
@@ -257,25 +262,38 @@ function parseMigrationState(text: string): LegacyMigrationState {
   const kind = state.kind
   switch (kind) {
     case 'not-needed':
+      requireExactStateKeys(state, ['kind'])
       return { kind: 'not-needed' }
     case 'declined':
+      requireExactStateKeys(state, ['kind'])
       return { kind: 'declined' }
     case 'imported':
-      return { kind: 'imported', copied: readStringArray(state.copied) }
+      requireExactStateKeys(state, ['kind', 'copied'])
+      return { kind: 'imported', copied: readRootArray(state.copied) }
     case 'target-not-empty':
-      return { kind: 'target-not-empty', retryable: true, diagnosticId: readDiagnosticId(state), retained: readStringArray(state.retained) }
+      requireExactStateKeys(state, ['kind', 'retryable', 'diagnosticId', 'retained'])
+      if (state.retryable !== true) throw new Error('host-local-runtime: legacy-migration.json has an invalid retryable flag')
+      return { kind: 'target-not-empty', retryable: true, diagnosticId: readDiagnosticId(state), retained: readRootArray(state.retained) }
     case 'failed':
-      return { kind: 'failed', retained: readStringArray(state.retained), retryable: true, diagnosticId: readDiagnosticId(state) }
+      requireExactStateKeys(state, ['kind', 'retained', 'retryable', 'diagnosticId'])
+      if (state.retryable !== true) throw new Error('host-local-runtime: legacy-migration.json has an invalid retryable flag')
+      return { kind: 'failed', retained: readRootArray(state.retained), retryable: true, diagnosticId: readDiagnosticId(state) }
     case 'decision-required':
+      requireExactStateKeys(state, ['kind', 'sourceLabel', 'retryable'])
+      if (state.sourceLabel !== 'DSH_HOME' || state.retryable !== false) {
+        throw new Error('host-local-runtime: legacy-migration.json has an invalid decision state')
+      }
       return { kind: 'decision-required', sourceLabel: 'DSH_HOME', retryable: false }
     default:
-      throw new Error(`host-local-runtime: unrecognized legacy-migration.json kind ${JSON.stringify(kind)}`)
+      throw new Error('host-local-runtime: legacy-migration.json contains an unrecognized state')
   }
 }
 
-/** Validate a stored string array without echoing secrets. */
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
+/** Validate a stored supported-root array without echoing hostile entries. */
+function readRootArray(value: unknown): string[] {
+  if (!Array.isArray(value)
+    || value.some(entry => typeof entry !== 'string' || !LEGACY_IMPORT_ROOTS.includes(entry as never))
+    || new Set(value).size !== value.length) {
     throw new Error('host-local-runtime: legacy-migration.json contains an invalid root list')
   }
   return value as string[]
@@ -283,10 +301,19 @@ function readStringArray(value: unknown): string[] {
 
 /** Validate a stored diagnostic id. */
 function readDiagnosticId(state: Record<string, unknown>): RuntimeDiagnosticId {
-  if (typeof state.diagnosticId !== 'string' || state.diagnosticId.length === 0) {
+  if (typeof state.diagnosticId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(state.diagnosticId)) {
     throw new Error('host-local-runtime: legacy-migration.json is missing its diagnosticId')
   }
   return state.diagnosticId as RuntimeDiagnosticId
+}
+
+/** Reject unknown or missing durable fields without reflecting their values. */
+function requireExactStateKeys(state: Record<string, unknown>, expected: readonly string[]): void {
+  const actual = Object.keys(state)
+  if (actual.length !== expected.length || expected.some(key => !Object.hasOwn(state, key))) {
+    throw new Error('host-local-runtime: legacy-migration.json contains invalid fields')
+  }
 }
 
 /** Atomically persist the state under the target home with owner-only access. */
