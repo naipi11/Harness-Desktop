@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-内部 profile 组合包是在 manifest（元数据清单）中声明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` 的 npm 包，因此可作为 Runtime／app-boot 组装的 patch 层（[profile 约定](../boot/app-boot/README.md#profiles)）。组合包的实体是它的 patch 列表；有些组合包还附带由其 patch 挂载的运行时粘合插件。公开 CLI 不提供 profile 安装或启动命令。
+内部 profile 组合包是在 manifest（元数据清单）中声明 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` 的 npm 包，因此可作为旧版／内部 app-boot 组装的 patch 层（[profile 约定](../boot/app-boot/README.md#profiles)）。组合包的实体是它的 patch 列表；有些组合包还附带由其 patch 挂载的运行时粘合插件。公开 CLI 与规范本地 Runtime 都不会加载 profile。
 
 | 包 | 职责 | ctx key |
 |---|---|---|

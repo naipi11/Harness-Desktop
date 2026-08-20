@@ -1,8 +1,8 @@
-# 第一个插件
+# 内部插件格式参考
 
 [English](index.md) | 中文
 
-本教程会创建一个最小的 Harness 插件，并将其加载到 Web UI 中。请从已完成[从源码运行路径](../../../../README.md#run-from-source)的仓库检出开始。
+这是内部 app-boot 格式参考，不是可运行的公开 Web 教程。它展示最小 Harness 插件的文件；产品 CLI 无法加载其中的任意 patch。请从已完成[从源码运行路径](../../../../README.md#run-from-source)的仓库检出开始。
 
 ## 创建本地项目
 
@@ -58,10 +58,10 @@ export function apply(ctx: Context) {
 由于产品 CLI 无法加载任意 overlay，公开教程到插件与 patch 文件为止。内部 app-boot 测试可以直接组装它：
 
 ```sh
-# Internal app-boot/test overlay; the public CLI rejects web --patch.
+pnpm exec vitest run --config vitest.artifact.config.ts packages/boot/app-boot/tests/app-boot.artifact.ts
 ```
 
-内部组装测试可以断言启动期间出现 `[hello-plugin] plugin loaded!`；这里不暗示存在公开 Web 命令。
+该验收测试会启动构建后的内部 app-boot 组装，并验证其中插入的 probe 与持久化产物。它不会加载这个 scratch 目录，也不暗示存在公开 Web 命令。
 
 ## 自动清理
 

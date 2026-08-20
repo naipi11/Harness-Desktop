@@ -4,14 +4,14 @@
 
 本页作为组合**包**与 **profile** 的内部格式参考保留。公开 `dsh` 产品语法没有插件安装、profile 启动、patch 或配置 dump 命令，因此原工作流不再是可执行的用户教程。当前插件编写指引见[插件配置](./config.md)。
 
-受支持的交互、run、Web 与 Desktop 命令见 [CLI（命令行界面）行为参考](../../../../apps/cli/reference/README.md#source-execution)。下列 manifest（元数据清单）仅描述内部 Runtime 组装与测试 fixture（测试前置数据）。
+受支持的交互、run、Web 与 Desktop 命令见 [CLI（命令行界面）行为参考](../../../../apps/cli/reference/README.md#source-execution)。下列 manifest（元数据清单）仅描述旧版／内部 app-boot 组装与测试 fixture（测试前置数据）；产品 Runtime 不会加载它们。
 
 ## 两个概念，两种 manifest
 
 安装机制建立在两个概念之上。二者都由一份 `package.json` 描述，但它们在 `dsh` 键下携带的 manifest（元数据清单）种类不同，回答的问题也不同：
 
 - **组合包**是附带一个配置层的 npm 包。它的 manifest 声明 `dsh.bundle`，回答的是"这个包贡献什么？"：一个插入或覆盖插件行的 patch 文件。
-- **profile** 是位于 `$HARNESS_HOME/profiles/<name>` 下、描述一份内部 Runtime 组装的目录。它的 manifest 声明 `dsh.profile`，回答的是"这套配置由哪些组合包按什么顺序组成？"。
+- **profile** 是位于 `$HARNESS_HOME/profiles/<name>` 下、描述一份内部 app-boot 组装的目录。它的 manifest 声明 `dsh.profile`，回答的是"这套配置由哪些组合包按什么顺序组成？"。
 
 组合包是可分发配置层；profile 是内部组装记录。公开 CLI 不按名称启动二者。
 

@@ -31,7 +31,7 @@ The former public profile, plugin-management, headless-profile, patch, and confi
 
 ## Profiles
 
-Profile records remain an internal Runtime-composition format used by app-boot and test fixtures. This heading preserves existing documentation links; it does not restore a public profile command.
+Profile records remain a legacy/internal app-boot format used by embedders and test fixtures. The shared product Runtime does not load them. This heading preserves existing documentation links; it does not restore a public profile command.
 
 ## Shared Runtime and Web
 

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Internal profile bundles are npm packages whose manifest declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`, making them patch layers for Runtime/app-boot compositions ([profile contract](../boot/app-boot/README.md#profiles)). A bundle's substance is its patch list; some also ship runtime glue plugins their patch mounts. The public CLI exposes no profile installation or boot command.
+Internal profile bundles are npm packages whose manifest declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`, making them patch layers for legacy/internal app-boot compositions ([profile contract](../boot/app-boot/README.md#profiles)). A bundle's substance is its patch list; some also ship runtime glue plugins their patch mounts. The public CLI and canonical local Runtime do not load profiles.
 
 | Package | Role | ctx key |
 |---|---|---|

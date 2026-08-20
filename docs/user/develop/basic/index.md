@@ -1,8 +1,8 @@
-# Your first plugin
+# Internal plugin format reference
 
 English | [中文](index.zh.md)
 
-This tutorial creates a minimal Harness plugin and loads it into the Web UI. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
+This is an internal app-boot format reference, not a runnable public Web tutorial. It shows the files for a minimal Harness plugin; the product CLI cannot load its arbitrary patch. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
 
 ## Create a local project
 
@@ -58,10 +58,10 @@ The plugin path must be absolute. A patch file contributes configuration but doe
 The public tutorial stops at the plugin and patch files because the product CLI cannot load an arbitrary overlay. Internal app-boot tests may compose it directly:
 
 ```sh
-# Internal app-boot/test overlay; the public CLI rejects web --patch.
+pnpm exec vitest run --config vitest.artifact.config.ts packages/boot/app-boot/tests/app-boot.artifact.ts
 ```
 
-An internal composition test can assert `[hello-plugin] plugin loaded!` during startup; no public Web command is implied here.
+That acceptance test boots a built internal app-boot composition and verifies its inserted probe plus durable artifacts. It does not load this scratch directory or imply a public Web command.
 
 ## Automatic cleanup
 

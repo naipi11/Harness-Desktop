@@ -16,7 +16,7 @@ There is no privileged core to patch: you extend dsh by mounting a plugin beside
 
 A running `dsh` is a plugin tree composed at boot from ordered layers.
 
-A **profile** is an internal named composition stored in the Harness home. It lists the bundles it stacks and retains its `cordis.patch.yml`; Runtime assembly and test fixtures consume these records, but the product CLI exposes no profile command. `web` and `headless` remain internal composition templates.
+A **profile** is a legacy/internal app-boot composition stored in the Harness home. It lists the bundles it stacks and retains its `cordis.patch.yml`; embedders and test fixtures may consume these records, but the product CLI and canonical local Runtime do not. `web` and `headless` remain internal app-boot templates.
 
 A **bundle** is a distribution format for Cordis config rows and the code they mount, so whatever it inserts stays patchable by the layers above it.
 
@@ -29,7 +29,7 @@ Layers apply to an empty entry list in this order: each bundle in the profile's 
 To see the tree your machine actually boots:
 
 ```sh
-# Profile patches are internal Runtime composition; the public CLI has no profile/config-dump command.
+# Profile patches are legacy/internal app-boot composition; the product Runtime does not load them.
 ```
 
 Any row it prints can be replaced by a patch of your own.

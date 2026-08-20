@@ -1,14 +1,14 @@
-# Third-party memory MCP examples
+# Internal third-party memory MCP format references
 
 English | [中文](README.zh.md)
 
-These three **default-off reference configurations** connect one memory system to DSH through [`@harness-desktop/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). Pick one, or copy the same generic MCP row for another server.
+These three **default-off internal app-boot configurations** describe connecting one memory system through [`@harness-desktop/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). This is not a runnable public product tutorial: the product CLI and Runtime do not load these overlays.
 
 These third-party configurations are provided as interoperability examples only. Their inclusion does not imply endorsement, recommendation, partnership, or ongoing support by DeepSeek.
 
 ## What DSH does
 
-DSH parses the selected Cordis overlay, starts a configured stdio command or connects to a configured Streamable HTTP URL, discovers MCP tools, and exposes them as `mcp__<serverName>__<tool>`. DSH does **not** download the server, initialize its database, choose its model or embedding provider, create a cloud account, migrate vendor data, or supervise a separate HTTP service. For stdio, the generic client launches and stops the child with the DSH plugin lifecycle; for HTTP, the upstream service must already be running.
+An internal app-boot fixture can parse a selected Cordis overlay, start a configured stdio command or connect to a configured Streamable HTTP URL, discover MCP tools, and expose them as `mcp__<serverName>__<tool>`. The generic MCP client does **not** download the server, initialize its database, choose its model or embedding provider, create a cloud account, migrate vendor data, or supervise a separate HTTP service.
 
 The stdio bridge deliberately removes ambient variables whose names usually identify credentials and all `DSH_*` variables before launching a child; other ambient variables remain inherited. Each example adds only the baseline override it needs. If an optional upstream feature needs another secret, add that variable to the row's `config.env` instead of putting the secret directly in YAML.
 
@@ -25,12 +25,12 @@ The stdio bridge deliberately removes ambient variables whose names usually iden
 These overlays are internal composition examples. The public CLI cannot attach one; an app-boot test harness may compose a selected file directly:
 
 ```sh
-# Internal app-boot/test overlay: examples/mcp-memory/memorix.cordis.yml
+pnpm run verify-cordis-config
 ```
 
-An internal harness may instead select `mcp-reference-memory.cordis.yml` or `engram.cordis.yml`. No memory server is present in the shipped product composition, so all three remain disabled by default.
+That gate validates the checked-in overlay references and configuration structure; it does not launch a third-party server. No memory server is present in the shipped product composition, so all three remain disabled.
 
-Internal deployment provisioning may keep a selection by merging the chosen file's single `insert` patch into its `$HARNESS_HOME` composition layer. The public CLI exposes no overlay or profile-edit command.
+A separate legacy/internal app-boot fixture may keep a selection by merging the chosen file's single `insert` patch into its own config. The public CLI and product Runtime expose no overlay/profile layer and do not load these files.
 
 ## Provider setup
 

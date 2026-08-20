@@ -16,7 +16,7 @@
 
 运行中的 `dsh` 是一棵插件树，由启动时按序叠加的各层组合而成。
 
-**profile** 是存放在 Harness home 中的内部具名组装。它列出自己叠放的组合包并保留自己的 `cordis.patch.yml`；Runtime 组装与测试 fixture（测试前置数据）会消费这些记录，但产品 CLI 不公开 profile 命令。`web` 和 `headless` 保留为内部组装模板。
+**profile** 是存放在 Harness home 中的旧版／内部 app-boot 组装。它列出自己叠放的组合包并保留自己的 `cordis.patch.yml`；嵌入方与测试 fixture（测试前置数据）可以消费这些记录，但产品 CLI 与规范本地 Runtime 都不会消费。`web` 和 `headless` 保留为内部 app-boot 模板。
 
 **组合包**是 Cordis 配置项及其挂载代码的分发格式，因此它插入的内容始终可被其上各层 patch。
 
@@ -29,7 +29,7 @@
 要查看你的机器实际启动的配置树：
 
 ```sh
-# Profile patches are internal Runtime composition; the public CLI has no profile/config-dump command.
+# Profile patches are legacy/internal app-boot composition; the product Runtime does not load them.
 ```
 
 它打印出的任何条目，都可以由你自己的 patch 替换。

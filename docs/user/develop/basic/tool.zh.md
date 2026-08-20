@@ -1,8 +1,8 @@
-# 开发一个工具
+# 内部工具格式参考
 
 [English](tool.md) | 中文
 
-本教程会在 Web UI 中添加一个 `greet` 工具。请先完成[第一个插件](./)，并保留其中的 `scratch-plugin` 目录。
+这是内部工具格式参考，不是可运行的公开 Web 教程。它扩展[内部插件格式参考](./)中的 scratch 插件；产品 CLI 无法加载该 overlay。
 
 ## 创建工具插件
 
@@ -40,10 +40,10 @@ export function apply(ctx: Context) {
 公开 CLI 无法重新启动这个 scratch overlay。请通过内部 app-boot 测试组装运行它：
 
 ```sh
-# Internal app-boot/test overlay; the public CLI rejects web --patch.
+pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"
 ```
 
-该内部组装可以提交 `Use the greet tool to greet Ada.`，并断言得到 `Hello, Ada!` 工具结果。
+该验收测试会验证工具注册、schema 与面向模型的提示词组装。它不会加载这个 scratch `greet` 实现，也不承诺公开 Web endpoint。
 
 ## 下一步
 

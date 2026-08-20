@@ -1,11 +1,12 @@
-# Session-local Schedule
+# Internal Session-local Schedule reference
 
 English | [中文](README.zh.md)
 
-This internal overlay adds Schedule reminders without changing the shipped default Web composition. Internal app-boot tests compose it directly; the public CLI cannot select it:
+This is an internal composition reference, not a runnable public overlay tutorial. The keyless Schedule acceptance and config gate below validate the underlying behavior and checked-in overlay; the public CLI cannot select it:
 
 ```sh
-# Internal app-boot/test overlay; the public CLI rejects web --patch.
+pnpm exec vitest run packages/schedule/schedule/tests/tools.spec.ts packages/schedule/schedule/tests/plugin.spec.ts
+pnpm run verify-cordis-config
 ```
 
 The current overlay supports reminders created with a positive whole-number `after_seconds`, an absolute `at` target, or a fixed-rate `every_seconds` interval of at least 300 seconds. The model manages them through `schedule_create`, `schedule_list`, and `schedule_delete`; every result identifies delivery as `session-local`.

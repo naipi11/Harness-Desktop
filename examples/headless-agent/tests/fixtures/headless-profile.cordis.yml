@@ -1,7 +1,18 @@
-- id: agent-default-model
+- id: agent-spine
   config:
-    provider: cli-mock
-    model: cli-mock
+    harnessHome: !!js harnessHome
+    agents:
+      - id: main
+        provider: cli-mock
+        model: cli-mock
+        cwd: !!js process.cwd()
+    workspaceContext:
+      maxBytes: 65536
+    persona: |
+      You are headless-agent, a coding assistant powered by the {{model}} model.
+
+      Verify your work by running the code or tests. Keep answers brief and
+      factual.
 
 - insert:
     - id: cli-mock-llm

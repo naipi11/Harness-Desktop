@@ -1,4 +1,4 @@
-/** Built-only regression for every Harness-home consumer in the shipped base profile. */
+/** Built-only regression for every Harness-home consumer in the shipped base composition. */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,9 @@ import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
-const builtDshBin = join(repository, 'apps/cli/lib/dsh-bin.js')
+const artifactFixture = fileURLToPath(new URL('./fixtures/app-boot-artifact.mjs', import.meta.url))
+const basePatch = join(repository, 'packages/bundle/base/cordis.patch.yml')
+const installAnchor = join(repository, 'apps/cli/package.json')
 const requiredBaseRows = [
   'timer',
   'settings',
@@ -23,6 +25,7 @@ const requiredBaseRows = [
 interface Evidence {
   readonly activeRows: string[]
   readonly attachmentRoot: string
+  readonly credentialConfigured: boolean
   readonly harnessHome: string
   readonly providerHome: string
   readonly sessionPath: string | undefined
@@ -39,17 +42,17 @@ function filesBelow(root: string): string[] {
     .map(entry => join(entry.parentPath, entry.name).slice(root.length + 1))
 }
 
-describe('built base-profile durable writers', () => {
+describe('built base-composition durable writers', () => {
   it('writes every durable artifact and reads every host-local source through one resolved Harness home', async () => {
-    expect(existsSync(builtDshBin), `missing built CLI ${builtDshBin}; run pnpm run build:lib:host`).toBe(true)
     const root = mkdtempSync(join(tmpdir(), 'dsh-base-artifact-'))
     const home = join(root, 'resolved-home')
-    const profileDir = join(home, 'profiles', 'artifact-root')
     const evidencePath = join(root, 'evidence.json')
     const failurePath = join(root, 'failure.txt')
-    const probePath = join(profileDir, 'base-root-probe.mjs')
+    const rootConfig = join(root, 'artifact-root.cordis.yml')
+    const probePath = join(home, 'profiles', 'base-root-probe.mjs')
+    const moduleAnchor = join(home, 'profiles', 'artifact-anchor.mjs')
+    const credentialProvider = join(home, 'profiles', 'artifact-writable-credentials.mjs')
     try {
-      mkdirSync(profileDir, { recursive: true })
       mkdirSync(join(home, 'skills', 'artifact-home-skill'), { recursive: true })
       writeFileSync(join(home, 'skills', 'artifact-home-skill', 'SKILL.md'), [
         '---',
@@ -59,16 +62,21 @@ describe('built base-profile durable writers', () => {
         'Artifact root evidence.',
         '',
       ].join('\n'))
-      writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
-        name: 'dsh-profile-artifact-root',
-        private: true,
-        dependencies: {},
-        dsh: { profile: { bundles: ['@harness-desktop/dsh-base'] } },
-      }, undefined, 2) + '\n')
-      writeFileSync(join(profileDir, 'cordis.patch.yml'), [
-        '- insert:',
-        '    - id: base-root-probe',
-        `      name: ${pathToFileURL(probePath).href}`,
+      writeFileSync(rootConfig, '[]\n')
+      mkdirSync(join(home, 'profiles'), { recursive: true })
+      writeFileSync(moduleAnchor, '')
+      writeFileSync(credentialProvider, [
+        "import PlatformCredentialProvider from '@harness-desktop/dsh-credentials-platform'",
+        'const values = new Map()',
+        'const adapter = {',
+        '  writable: true,',
+        "  async resolve(ref) { const value = values.get(ref); return value === undefined ? undefined : { value, source: 'platform' } },",
+        '  async set(ref, value) { values.set(ref, value) },',
+        '  async unset(ref) { values.delete(ref) },',
+        '}',
+        'export default class ArtifactCredentialProvider extends PlatformCredentialProvider {',
+        '  constructor(ctx, config) { super(ctx, { ...config, adapter }) }',
+        '}',
         '',
       ].join('\n'))
       writeFileSync(probePath, [
@@ -93,9 +101,11 @@ describe('built base-profile durable writers', () => {
         "      const { getOrCreateAnonymousUserId } = await import('@harness-desktop/dsh-anonymous-user-id')",
         '      getOrCreateAnonymousUserId(ctx.harnessHomeProvider.home)',
         '      const skills = await ctx.skills.list({ cwd: process.cwd() })',
+        "      const credentialConfigured = (await ctx.credentials.describe('HARNESS_ARTIFACT_TEST')).configured",
         '      const evidence = {',
         '        activeRows: [...ctx.loader.entries()].filter(entry => entry.fiber !== undefined).map(entry => entry.options.id),',
         '        attachmentRoot: ctx.attachments.root,',
+        '        credentialConfigured,',
         '        harnessHome: ctx.harnessHome,',
         '        providerHome: ctx.harnessHomeProvider.home,',
         '        sessionPath: ctx.sessionPersistence.locate(meta)?.path,',
@@ -124,12 +134,18 @@ describe('built base-profile durable writers', () => {
         DSH_TELEMETRY_DISABLED: '1',
         ARTIFACT_EVIDENCE: evidencePath,
         ARTIFACT_FAILURE: failurePath,
+        ARTIFACT_ROOT_CONFIG: rootConfig,
+        ARTIFACT_BASE_PATCH: basePatch,
+        ARTIFACT_PROBE: probePath,
+        ARTIFACT_CREDENTIAL_PROVIDER: credentialProvider,
+        ARTIFACT_INSTALL_ANCHOR: installAnchor,
+        ARTIFACT_BARE_MODULE_BASE: pathToFileURL(moduleAnchor).href,
         NODE_OPTIONS: '--disable-warning=ExperimentalWarning',
       }
       delete env.DSH_HOME
       delete env.DEEPSEEK_API_KEY
       delete env.DEEPSEEK_BASE_URL
-      const result = await execa(process.execPath, [builtDshBin, '--profile', 'artifact-root'], {
+      const result = await execa(process.execPath, [artifactFixture], {
         cwd: root,
         env,
         input: '',
@@ -142,6 +158,7 @@ describe('built base-profile durable writers', () => {
       const evidence = JSON.parse(readFileSync(evidencePath, 'utf8')) as Evidence
       expect(evidence.harnessHome).toBe(home)
       expect(evidence.providerHome).toBe(home)
+      expect(evidence.credentialConfigured).toBe(true)
       expect(evidence.shellEnvironment).toMatchObject({ HARNESS_HOME: home, DSH_SHELL: '1' })
       expect(evidence.shellEnvironment).not.toHaveProperty('DSH_HOME')
       expect(evidence.settingsPath).toBe(join(home, 'settings.yaml'))
@@ -151,7 +168,10 @@ describe('built base-profile durable writers', () => {
       expect(evidence.activeRows).toEqual(expect.arrayContaining(requiredBaseRows))
 
       expect(readFileSync(join(home, 'settings.yaml'), 'utf8')).toBe('')
-      expect(readFileSync(join(home, '.credentials.yaml'), 'utf8')).toContain('HARNESS_ARTIFACT_TEST: present')
+      const credentialReferences = readFileSync(join(home, '.credential-references.json'), 'utf8')
+      expect(credentialReferences).toContain('HARNESS_ARTIFACT_TEST')
+      expect(credentialReferences).not.toContain('present')
+      expect(existsSync(join(home, '.credentials.yaml'))).toBe(false)
       expect(filesBelow(join(home, 'attachments', 'v1')).some(path => /[0-9a-f]{64}$/u.test(path))).toBe(true)
       expect(filesBelow(join(home, 'sessions')).some(path => path.endsWith('.jsonl.zstd'))).toBe(true)
       expect(readFileSync(join(home, '.anonymous-user-id'), 'utf8').trim()).toMatch(/^[0-9a-f-]{36}$/u)

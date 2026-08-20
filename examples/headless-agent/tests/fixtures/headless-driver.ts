@@ -2,7 +2,7 @@
 /** Snapshot-only Loader driver: stream one fixture turn as canonical JSONL. */
 
 import type { Context } from '@harness-desktop/cordis'
-import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@harness-desktop/dsh-app-boot'
+import { boot, installFailLoud, loadEnv, loadOverlayPatches, resolveConfigPath } from '@harness-desktop/dsh-app-boot'
 import { runFixtureTurn } from '@harness-desktop/dsh-loader-smoke'
 import type { SessionEvent } from '@harness-desktop/dsh-session'
 
@@ -16,7 +16,9 @@ const uninstallFailLoud = installFailLoud(NAME)
 let ctx: Context | undefined
 try {
   loadEnv(NAME)
-  ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  const overlay = process.env.DSH_HEADLESS_TEST_OVERLAY
+  const patches = overlay === undefined ? [] : loadOverlayPatches(NAME, overlay)
+  ctx = await boot(NAME, resolveConfigPath(configPath, undefined), patches)
   const result = await runFixtureTurn(ctx, {
     task: taskParts.join(' '),
     onEvent: (sessionId: string, event: SessionEvent) => {

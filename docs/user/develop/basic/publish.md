@@ -4,14 +4,14 @@ English | [中文](publish.zh.md)
 
 This page is retained as an internal format reference for composition **bundles** and **profiles**. The public `dsh` product grammar has no plugin installation, profile boot, patch, or config-dump command, so the former workflow is not an executable user tutorial. Complete [plugin configuration](./config.md) for current plugin authoring guidance.
 
-For the supported interactive, run, Web, and Desktop commands, see the [CLI behavior reference](../../../../apps/cli/reference/README.md#source-execution). The manifests below describe internal Runtime composition and test fixtures only.
+For the supported interactive, run, Web, and Desktop commands, see the [CLI behavior reference](../../../../apps/cli/reference/README.md#source-execution). The manifests below describe legacy/internal app-boot composition and test fixtures only; the product Runtime does not load them.
 
 ## Two concepts, two manifests
 
 Installation is built on two concepts. Both are described by a `package.json`, but they carry different kinds of manifest under the `dsh` key, and they answer different questions:
 
 - A **bundle** is an npm package that ships a configuration layer. Its manifest declares `dsh.bundle`, answering "what does this package contribute?": a patch file that inserts or overrides plugin rows.
-- A **profile** is an internal directory under `$HARNESS_HOME/profiles/<name>` describing one Runtime composition. Its manifest declares `dsh.profile`, answering "which bundles compose this setup, in what order?".
+- A **profile** is an internal directory under `$HARNESS_HOME/profiles/<name>` describing one app-boot composition. Its manifest declares `dsh.profile`, answering "which bundles compose this setup, in what order?".
 
 A bundle is a distributable configuration layer; a profile is an internal composition record. The public CLI boots neither by name.
 

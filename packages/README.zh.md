@@ -39,7 +39,7 @@ npm scope 为 `@harness-desktop/dsh-*`；Cordis `Service` 子类和函数插件�
 | [`plan/`](plan/README.md) | Plan 协作状态，提供直接进入命令与经评审的退出 | 产品：稳定 API |
 | [`preset/`](preset/README.md) | 由 preset `cordis.yml` 按会话组装 agent | 产品：稳定 API |
 | [`guard/`](guard/README.md) | 循环卫生守卫：建议性重复调用提醒 + `tools/execute` 截止时间强制执行器 | 产品：稳定 API |
-| [`bundle/`](bundle/README.md) | 内部 Runtime 组装 patch 层 | 产品：稳定 API |
+| [`bundle/`](bundle/README.md) | 旧版／内部 app-boot 组装 patch 层 | 产品：稳定 API |
 | [`extensions/`](extensions/README.md) | agent 运行时自修改：实时插件／服务检查和模型所写插件挂载／卸载（[设计](../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md)） | 产品：稳定 API |
 | [`hooks/`](hooks/README.md) | 钩子桥接 + 共享的 Claude Code／Codex 线协议库 | 产品：稳定 API |
 | [`session/`](session/README.md) | 持久会话数据平面：持久化 seam + JSONL/SQLite 后端、投影 seam、基于日志的标题、会话上报 | 产品：稳定 API |

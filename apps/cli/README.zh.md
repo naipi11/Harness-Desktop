@@ -31,7 +31,7 @@ harness desktop
 
 ## Profiles
 
-profile 记录仍是供 app-boot 与测试 fixture（测试前置数据）使用的内部 Runtime 组装格式。本标题用于保持现有文档链接有效，并不恢复公开 profile 命令。
+profile 记录仍是供嵌入方与测试 fixture（测试前置数据）使用的旧版／内部 app-boot 格式。共享产品 Runtime 不会加载它们。本标题用于保持现有文档链接有效，并不恢复公开 profile 命令。
 
 ## 共享 Runtime 与 Web
 

@@ -1,14 +1,14 @@
-# 第三方记忆 MCP 示例
+# 内部第三方记忆 MCP 格式参考
 
 [English](README.md) | 中文
 
-这三份**默认关闭的参考配置**通过 [`@harness-desktop/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
+这三份**默认关闭的内部 app-boot 配置**描述如何通过 [`@harness-desktop/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md) 连接一个记忆系统。本页不是可运行的公开产品教程：产品 CLI 与 Runtime 不会加载这些 overlay。
 
 这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。
 
 ## DSH 负责什么
 
-DSH 解析选中的 Cordis overlay，启动已配置的 stdio 命令或连接已配置的 Streamable HTTP URL，发现 MCP 工具，并以 `mcp__<serverName>__<tool>` 的形式公开这些工具。DSH **不负责** 下载服务器、初始化其数据库、选择模型或 embedding 提供方、创建云端账户、迁移提供方数据，也不监管独立的 HTTP 服务。对于 stdio，通用客户端会随 DSH 插件生命周期启动和停止子进程；对于 HTTP，上游服务必须已经运行。
+内部 app-boot fixture 可以解析选中的 Cordis overlay，启动已配置的 stdio 命令或连接已配置的 Streamable HTTP URL，发现 MCP 工具，并以 `mcp__<serverName>__<tool>` 的形式公开这些工具。通用 MCP 客户端**不负责**下载服务器、初始化其数据库、选择模型或 embedding 提供方、创建云端账户、迁移提供方数据，也不监管独立的 HTTP 服务。
 
 stdio 桥接器在启动子进程前会主动移除环境中名称通常表示凭据的变量和所有 `DSH_*` 变量；其余环境变量仍会继承。每份示例仅添加其基线所需的覆盖项。如果某个可选的上游功能还需要其他密钥，请将该变量添加到配置项的 `config.env`，不要把密钥直接写进 YAML。
 
@@ -25,12 +25,12 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 这些 overlay 是内部组装示例。公开 CLI 无法附加它们；app-boot 测试 harness 可以直接组装所选文件：
 
 ```sh
-# Internal app-boot/test overlay: examples/mcp-memory/memorix.cordis.yml
+pnpm run verify-cordis-config
 ```
 
-内部 harness 也可以选择 `mcp-reference-memory.cordis.yml` 或 `engram.cordis.yml`。出厂产品组合不包含任何 memory server，所以三个方案默认都保持禁用。
+该门禁会验证已检入 overlay 的引用与配置结构；它不会启动第三方服务器。出厂产品组合不包含任何 memory server，所以三个方案都保持禁用。
 
-内部部署配置流程可以把所选文件中的单个 `insert` patch 合并到自身的 `$HARNESS_HOME` 组装层，以跨次运行保留选择。公开 CLI 不提供 overlay 或 profile 编辑命令。
+单独的旧版／内部 app-boot fixture 可以把所选文件中的单个 `insert` patch 合并到自身配置，以跨次运行保留选择。公开 CLI 与产品 Runtime 不提供 overlay／profile 层，也不会加载这些文件。
 
 ## 提供方设置
 

@@ -1,8 +1,8 @@
-# Build a tool
+# Internal tool format reference
 
 English | [中文](tool.zh.md)
 
-This tutorial adds a `greet` tool to the Web UI. Complete [Your first plugin](./) first and keep its `scratch-plugin` directory.
+This is an internal tool format reference, not a runnable public Web tutorial. It extends the scratch plugin from [the internal plugin format reference](./); the product CLI cannot load that overlay.
 
 ## Create the tool plugin
 
@@ -40,10 +40,10 @@ export function apply(ctx: Context) {
 The public CLI cannot restart this scratch overlay. Exercise it through an internal app-boot test composition:
 
 ```sh
-# Internal app-boot/test overlay; the public CLI rejects web --patch.
+pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"
 ```
 
-That internal composition can submit `Use the greet tool to greet Ada.` and assert the `Hello, Ada!` tool result.
+That acceptance test verifies tool registration, schemas, and model-facing prompt assembly. It does not load this scratch `greet` implementation or promise a public Web endpoint.
 
 ## Next steps
 
