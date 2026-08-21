@@ -19,6 +19,7 @@ test('launches the built Desktop shell through its sandboxed preload bridge', as
     await expect(page).toHaveTitle('Harness Desktop')
 
     expect(await page.evaluate(() => typeof Reflect.get(window, 'require'))).toBe('undefined')
+    expect(await page.evaluate(() => typeof Reflect.get(globalThis, 'process'))).toBe('undefined')
     expect(await page.evaluate(() => ({
       version: window.harnessDesktop.version,
       keys: Object.keys(window.harnessDesktop).sort(),
