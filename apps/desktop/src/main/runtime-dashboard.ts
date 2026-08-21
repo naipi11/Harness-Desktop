@@ -18,7 +18,10 @@ export type DesktopStartupResult =
   | { readonly kind: 'recovery'; readonly diagnostic: DesktopRecoveryDiagnostic }
 
 /** Window lifecycle used to release only its Dashboard attachment. */
-export interface DesktopDashboardWindow extends Pick<EventEmitter, 'once'> {}
+export interface DesktopDashboardWindow extends Pick<EventEmitter, 'once'> {
+  /** @returns whether Electron has already destroyed the native window. */
+  isDestroyed?(): boolean
+}
 
 /** Owns one Desktop client's current Dashboard attachment and startup flight. */
 export class RuntimeDashboardController {
@@ -29,6 +32,7 @@ export class RuntimeDashboardController {
   private retryFlight: Promise<DesktopStartupResult> | undefined
   private closeFlight: Promise<void> | undefined
   private readonly attachmentCloses = new WeakMap<DashboardAttachment, Promise<void>>()
+  private readonly closedWindows = new WeakSet<DesktopDashboardWindow>()
   private readonly observedWindows = new WeakSet<DesktopDashboardWindow>()
 
   /**
@@ -47,9 +51,7 @@ export class RuntimeDashboardController {
    */
   open(window: DesktopDashboardWindow): Promise<DesktopStartupResult> {
     this.observeWindow(window)
-    if (this.closeFlight !== undefined) {
-      return Promise.resolve({ kind: 'recovery', diagnostic: normalizeRecoveryDiagnostic(new Error('Desktop is closing.')) })
-    }
+    if (this.closeFlight !== undefined || this.isWindowClosed(window)) return Promise.resolve(closedWindowResult())
     if (this.startupResult !== undefined) return Promise.resolve(this.startupResult)
     this.startupFlight ??= this.start(window)
       .then((result) => {
@@ -69,6 +71,7 @@ export class RuntimeDashboardController {
    */
   retryAfterUserAction(window: DesktopDashboardWindow): Promise<DesktopStartupResult> {
     this.observeWindow(window)
+    if (this.closeFlight !== undefined || this.isWindowClosed(window)) return Promise.resolve(closedWindowResult())
     this.retryFlight ??= this.retry(window).finally(() => {
       this.retryFlight = undefined
     })
@@ -86,8 +89,20 @@ export class RuntimeDashboardController {
       const attachment = await this.client.attachDashboard()
       this.attachment = attachment
       this.attachmentWindow = window
+      if (this.isWindowClosed(window)) {
+        await this.closeCurrentAttachment()
+        return closedWindowResult()
+      }
       const navigation = await attachment.createBrowserHandoff()
+      if (this.isWindowClosed(window)) {
+        await this.closeCurrentAttachment()
+        return closedWindowResult()
+      }
       await this.transport.open(navigation)
+      if (this.isWindowClosed(window)) {
+        await this.closeCurrentAttachment()
+        return closedWindowResult()
+      }
       return { kind: 'dashboard-loaded' }
     } catch (error) {
       return { kind: 'recovery', diagnostic: normalizeRecoveryDiagnostic(error) }
@@ -98,6 +113,7 @@ export class RuntimeDashboardController {
     try {
       await this.startupFlight
       await this.closeCurrentAttachment()
+      if (this.isWindowClosed(window)) return closedWindowResult()
       this.startupResult = undefined
       return await this.open(window)
     } catch (error) {
@@ -114,10 +130,15 @@ export class RuntimeDashboardController {
     if (this.observedWindows.has(window)) return
     this.observedWindows.add(window)
     window.once('closed', () => {
+      this.closedWindows.add(window)
       void this.closeWindowAttachment(window).catch(() => {
         // Application shutdown still releases the base Runtime client after a failed child release.
       })
     })
+  }
+
+  private isWindowClosed(window: DesktopDashboardWindow): boolean {
+    return this.closedWindows.has(window) || window.isDestroyed?.() === true
   }
 
   private async closeWindowAttachment(window: DesktopDashboardWindow): Promise<void> {
@@ -159,5 +180,12 @@ export class RuntimeDashboardController {
       failures.push(error)
     }
     if (failures.length > 0) throw new AggregateError(failures, 'Desktop Runtime resources could not be closed.')
+  }
+}
+
+function closedWindowResult(): DesktopStartupResult {
+  return {
+    kind: 'recovery',
+    diagnostic: normalizeRecoveryDiagnostic(new Error('Desktop window is closed.')),
   }
 }

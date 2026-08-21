@@ -34,9 +34,18 @@ export const desktopReadyAcknowledgement: DesktopReadyAcknowledgement = {
 }
 
 const READY_RECORD = `${JSON.stringify(desktopReadyAcknowledgement)}\n`
-const READY_PROBE = 'document.querySelector(\'[data-harness-dashboard-ready="true"]\') !== null'
+const READY_PROBE = `new Promise(resolve => {
+  const ready = () => document.querySelector('[data-harness-dashboard-ready="true"]') !== null
+  if (ready()) { resolve(true); return }
+  const observer = new MutationObserver(() => {
+    if (!ready()) return
+    observer.disconnect()
+    resolve(true)
+  })
+  observer.observe(document.documentElement, { attributes: true, childList: true, subtree: true })
+})`
 
-/** Emits the constant process acknowledgement at most once. */
+/** Validates every Dashboard navigation and emits the constant process acknowledgement at most once. */
 export class DesktopReadiness {
   private acknowledged = false
 
@@ -48,10 +57,9 @@ export class DesktopReadiness {
    * @param window - Main-owned Dashboard window.
    * @param expectedOrigin - exact Runtime Dashboard origin.
    * @param signal - optional startup cancellation or expiry signal.
-   * @returns settlement after the marker is observed and acknowledgement written.
+   * @returns settlement after the marker is observed and the first acknowledgement is written.
    */
   wait(window: DashboardReadyWindow, expectedOrigin: string, signal?: AbortSignal): Promise<void> {
-    if (this.acknowledged) return Promise.resolve()
     const expectedUrl = `${expectedOrigin}/`
     return new Promise((resolve, reject) => {
       let settled = false
@@ -84,6 +92,7 @@ export class DesktopReadiness {
         void window.webContents.executeJavaScript(READY_PROBE).then(
           (ready) => {
             checking = false
+            if (settled) return
             if (ready !== true) {
               finish(new Error('Desktop Dashboard did not report authenticated readiness.'))
               return

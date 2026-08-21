@@ -10,11 +10,13 @@ class FakeWebContents extends EventEmitter {
   url = 'about:blank'
   marker: unknown = true
   markerFailure: Error | undefined
+  markerPromise: Promise<unknown> | undefined
 
   getURL(): string { return this.url }
 
   async executeJavaScript(): Promise<unknown> {
     if (this.markerFailure !== undefined) throw this.markerFailure
+    if (this.markerPromise !== undefined) return this.markerPromise
     return this.marker
   }
 }
@@ -40,9 +42,37 @@ describe('Desktop Dashboard readiness', () => {
     await expect(ready).resolves.toBeUndefined()
     expect(chunks).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
 
-    window.webContents.emit('did-finish-load')
-    await readiness.wait(window, ORIGIN)
+    const secondWindow = new FakeWindow()
+    const secondReady = readiness.wait(secondWindow, ORIGIN)
+    secondWindow.webContents.emit('did-finish-load')
+    await expect(secondReady).rejects.toThrow('unexpected Dashboard navigation')
+
+    const thirdWindow = new FakeWindow()
+    thirdWindow.webContents.url = `${ORIGIN}/`
+    const thirdReady = readiness.wait(thirdWindow, ORIGIN)
+    thirdWindow.webContents.emit('did-finish-load')
+    await expect(thirdReady).resolves.toBeUndefined()
     expect(chunks).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('does not acknowledge an aborted navigation whose marker probe settles later', async () => {
+    const chunks: string[] = []
+    const readiness = new DesktopReadiness({ write: chunk => chunks.push(chunk) })
+    const window = new FakeWindow()
+    const abort = new AbortController()
+    let resolveMarker!: (value: unknown) => void
+    window.webContents.markerPromise = new Promise((resolve) => { resolveMarker = resolve })
+    window.webContents.url = `${ORIGIN}/`
+    const ready = readiness.wait(window, ORIGIN, abort.signal)
+    const rejected = expect(ready).rejects.toThrow('startup entered recovery')
+
+    window.webContents.emit('did-finish-load')
+    abort.abort(new Error('startup entered recovery'))
+    resolveMarker(true)
+
+    await rejected
+    await Promise.resolve()
+    expect(chunks).toEqual([])
   })
 
   it('emits nothing for recovery or bootstrap-only state', async () => {

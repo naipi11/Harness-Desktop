@@ -2,9 +2,12 @@
 
 import { EventEmitter } from 'node:events'
 import { access, chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createServer, type IncomingHttpHeaders } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { chromium, type Page, type Request } from '@playwright/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardNavigation } from '@harness-desktop/dsh-host-local-runtime'
 import {
@@ -57,6 +60,41 @@ class FakeWindow implements DashboardBrowserWindow {
   }
 }
 
+class ChromiumWebContents extends EventEmitter {
+  constructor(private readonly page: Page) {
+    super()
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) this.emit('did-navigate', {}, frame.url(), 0, '')
+    })
+    page.on('load', () => { this.emit('did-finish-load') })
+    page.on('requestfailed', (request) => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        this.emit('did-fail-load', {}, -1, 'navigation failed', request.url(), true)
+      }
+    })
+  }
+
+  getURL(): string { return this.page.url() }
+
+  executeJavaScript(script: string): Promise<unknown> { return this.page.evaluate(script) }
+}
+
+class ChromiumWindow implements DashboardBrowserWindow {
+  readonly webContents: ChromiumWebContents
+  loadedPath = ''
+  bootstrapBody = ''
+
+  constructor(private readonly page: Page) {
+    this.webContents = new ChromiumWebContents(page)
+  }
+
+  async loadFile(path: string): Promise<void> {
+    this.loadedPath = path
+    this.bootstrapBody = await readFile(path, 'utf8')
+    await this.page.goto(pathToFileURL(path).href, { waitUntil: 'commit' })
+  }
+}
+
 const permissiveAccess: BrowserBootstrapAccess = {
   async protectDirectory() {},
   async protectFile() {},
@@ -70,6 +108,146 @@ afterEach(async () => {
 })
 
 describe('Electron browser handoff transport', () => {
+  it('executes one opaque-file form POST and follows the clean cookie-authenticated redirect in Chromium', async () => {
+    const handoff = 'real_chromium_handoff_value_12345678901234567890'
+    const session = 'real_chromium_session_value_12345678901234567890'
+    const parent = await mkdtemp(join(tmpdir(), 'harness-desktop-bootstrap-browser-test-'))
+    roots.push(parent)
+    const captures: Array<{
+      readonly method: string
+      readonly url: string
+      readonly headers: IncomingHttpHeaders
+      readonly body: string
+    }> = []
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk) => { chunks.push(Buffer.from(chunk as Uint8Array)) })
+      request.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8')
+        captures.push({
+          method: request.method ?? '',
+          url: request.url ?? '',
+          headers: request.headers,
+          body,
+        })
+        if (request.method === 'POST' && request.url === '/_harness/handoff') {
+          response.writeHead(303, {
+            location: '/',
+            'cache-control': 'no-store',
+            'set-cookie': `harness_session=${session}; HttpOnly; SameSite=Strict; Path=/`,
+          })
+          response.end()
+          return
+        }
+        if (request.method === 'GET' && request.url === '/') {
+          response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+          response.end(`<!doctype html><div id="root">Protected Dashboard</div><script>
+            fetch('/_harness/dashboard-control', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'content-type': 'application/json' },
+              body: '{"operation":"get-legacy-migration"}'
+            }).then(response => {
+              if (response.ok) document.getElementById('root').dataset.harnessDashboardReady = 'true'
+            })
+          </script>`)
+          return
+        }
+        if (request.method === 'POST' && request.url === '/_harness/dashboard-control') {
+          response.writeHead(
+            request.headers.cookie === `harness_session=${session}` ? 200 : 403,
+            { 'content-type': 'application/json; charset=utf-8' },
+          )
+          response.end('{"kind":"ready"}')
+          return
+        }
+        response.writeHead(404)
+        response.end('not found')
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const address = server.address() as AddressInfo
+    const origin = `http://127.0.0.1:${String(address.port)}`
+    const browser = await chromium.launch({ headless: true })
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    const requests: Request[] = []
+    const responses: import('@playwright/test').Response[] = []
+    const consoleOutput: string[] = []
+    page.on('request', (request) => { requests.push(request) })
+    page.on('response', (response) => { responses.push(response) })
+    page.on('console', (message) => { consoleOutput.push(message.text()) })
+    const output: string[] = []
+    const window = new ChromiumWindow(page)
+    try {
+      await createBrowserHandoffTransport(window, {
+        parent,
+        readiness: new DesktopReadiness({ write: chunk => output.push(chunk) }),
+      }).open(navigation({
+        origin,
+        id: handoff,
+        expiresAt: Date.now() + 60_000,
+      }))
+
+      const handoffPosts = captures.filter(capture => (
+        capture.method === 'POST' && capture.url === '/_harness/handoff'
+      ))
+      expect(handoffPosts).toHaveLength(1)
+      expect(handoffPosts[0]).toMatchObject({
+        url: '/_harness/handoff',
+        body: new URLSearchParams({ handoff }).toString(),
+      })
+      expect(handoffPosts[0]?.headers.origin).toBe('null')
+      expect(handoffPosts[0]?.headers.referer).toBeUndefined()
+      const rootRequest = captures.find(capture => capture.method === 'GET' && capture.url === '/')
+      expect(rootRequest?.headers.cookie).toBeUndefined()
+      expect(rootRequest?.headers.referer).toBeUndefined()
+      const authenticatedRequest = captures.find(capture => capture.url === '/_harness/dashboard-control')
+      expect(authenticatedRequest?.headers.cookie).toBe(`harness_session=${session}`)
+      expect(authenticatedRequest?.body).toBe('{"operation":"get-legacy-migration"}')
+      const exchange = responses.find(response => response.url() === `${origin}/_harness/handoff`)
+      expect(exchange?.status()).toBe(303)
+      expect(await exchange?.headerValue('access-control-allow-origin')).toBeNull()
+      expect(window.loadedPath).not.toContain(handoff)
+      expect(window.bootstrapBody.match(new RegExp(handoff, 'gu'))).toHaveLength(1)
+      expect(requests.every(request => !request.url().includes(handoff))).toBe(true)
+      const secretFreeHeaders = await Promise.all(requests.map(async (request) => {
+        const headers = await request.allHeaders()
+        delete headers.cookie
+        return JSON.stringify(headers)
+      }))
+      expect(secretFreeHeaders.join('\n')).not.toContain(handoff)
+      expect(await page.evaluate(() => ({
+        href: location.href,
+        referrer: document.referrer,
+        cookie: document.cookie,
+        localStorage: Object.fromEntries(Object.keys(localStorage).map(key => [key, localStorage.getItem(key)])),
+        sessionStorage: Object.fromEntries(Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)])),
+      }))).toEqual({
+        href: `${origin}/`,
+        referrer: '',
+        cookie: '',
+        localStorage: {},
+        sessionStorage: {},
+      })
+      expect(await page.content()).not.toContain(handoff)
+      expect(consoleOutput.join('\n')).not.toContain(handoff)
+      expect(output).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+    } finally {
+      await context.close()
+      await browser.close()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
+    }
+  }, 60_000)
+
   it('puts the handoff only in a verified private document and one opaque-origin POST body', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'harness-desktop-bootstrap-test-'))
     roots.push(parent)

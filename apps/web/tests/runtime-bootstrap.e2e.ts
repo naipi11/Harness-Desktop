@@ -210,6 +210,7 @@ describe('Runtime Dashboard bootstrap', () => {
       const beforeSettled = settledHandoffs
       const documentPath = await openBootstrap(navigation(handoff.id, handoff.expiresAt), page)
       await page.getByText('Protected Dashboard', { exact: true }).waitFor()
+      await expect.poll(() => page.locator('#root').getAttribute('data-harness-dashboard-ready')).toBe('true')
 
       const bootstrap = await readFile(documentPath, 'utf8')
       expect(bootstrap.match(new RegExp(handoff.id, 'gu'))).toHaveLength(1)

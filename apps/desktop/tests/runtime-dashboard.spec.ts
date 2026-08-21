@@ -24,7 +24,12 @@ const navigation: DashboardNavigation = {
 }
 
 class FakeWindow extends EventEmitter implements DesktopDashboardWindow {
+  closed = false
+
+  isDestroyed(): boolean { return this.closed }
+
   async closeWindow(): Promise<void> {
+    this.closed = true
     const listeners = this.listeners('closed') as Array<() => void | Promise<void>>
     this.removeAllListeners('closed')
     await Promise.all(listeners.map(listener => Promise.resolve(listener())))
@@ -165,6 +170,53 @@ describe('RuntimeDashboardController', () => {
     expect(JSON.stringify(result)).not.toContain('43123')
     expect(JSON.stringify(result)).not.toContain('handoff')
     expect(JSON.stringify(result)).not.toContain('secret')
+  })
+
+  it('does not publish a replacement attachment after the window closes during retry', async () => {
+    let releaseClose!: () => void
+    const firstClose = vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve }))
+    const secondClose = vi.fn(async () => {})
+    const attachments = [attachment(firstClose), attachment(secondClose)]
+    const attachDashboard = vi.fn(async () => attachments.shift()!)
+    const open = vi.fn(async () => {})
+    const controller = new RuntimeDashboardController(runtimeClient({
+      attachDashboard,
+      close: async () => {},
+    }), { open })
+    const window = new FakeWindow()
+
+    await controller.open(window)
+    await window.closeWindow()
+    const retry = controller.retryAfterUserAction(window)
+    releaseClose()
+
+    await expect(retry).resolves.toMatchObject({ kind: 'recovery' })
+    expect(firstClose).toHaveBeenCalledTimes(1)
+    expect(secondClose).not.toHaveBeenCalled()
+    expect(attachDashboard).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes an attachment published after its window closes without navigating', async () => {
+    let releaseAttach!: (value: DashboardAttachment) => void
+    const pendingAttach = new Promise<DashboardAttachment>((resolve) => { releaseAttach = resolve })
+    const closeAttachment = vi.fn(async () => {})
+    const attachDashboard = vi.fn(async () => pendingAttach)
+    const open = vi.fn(async () => {})
+    const controller = new RuntimeDashboardController(runtimeClient({
+      attachDashboard,
+      close: async () => {},
+    }), { open })
+    const window = new FakeWindow()
+
+    const startup = controller.open(window)
+    await vi.waitFor(() => { expect(attachDashboard).toHaveBeenCalledOnce() })
+    await window.closeWindow()
+    releaseAttach(attachment(closeAttachment))
+
+    await expect(startup).resolves.toMatchObject({ kind: 'recovery' })
+    expect(closeAttachment).toHaveBeenCalledOnce()
+    expect(open).not.toHaveBeenCalled()
   })
 
   it('closes the window attachment before the Runtime client during shutdown', async () => {

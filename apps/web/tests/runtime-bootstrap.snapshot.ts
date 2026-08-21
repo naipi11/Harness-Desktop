@@ -52,6 +52,7 @@ it('starts the protected Dashboard only after a clean cookie-authenticated reque
     headers: { 'content-type': 'application/json' },
     body: '{"operation":"get-legacy-migration"}',
   })
+  expect(root.dataset.harnessDashboardReady).toBe('true')
   expect(root.textContent).toMatchInlineSnapshot('"Protected Dashboard"')
 })
 
@@ -62,6 +63,7 @@ it('renders one reconnect instruction for a non-clean initial URL', async () => 
   const root = await importEntry()
 
   expect(run).not.toHaveBeenCalled()
+  expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
   expect(root.textContent).toMatchInlineSnapshot('"Dashboard connection expired. Run harness web to reconnect."')
 })
 
@@ -80,6 +82,7 @@ it('redacts a rejected cookie request from DOM, storage, console, and snapshot t
   })
 
   expect(run).not.toHaveBeenCalled()
+  expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
   expect(root.textContent).toMatchInlineSnapshot('"Dashboard connection expired. Run harness web to reconnect."')
   expect(evidence).not.toContain(raw)
   expect(evidence).not.toMatch(/handoff|session_value/u)
@@ -98,6 +101,8 @@ it.runIf(process.env.DSH_EXAMPLE_MODE === 'lib')('ships the reconnect-only failu
   const entry = /<script type="module" crossorigin src="([^"]+)"><\/script>/u.exec(index)?.[1]
   if (entry === undefined) throw new Error('built Web index has no module entry')
   const entryPath = join(dirname(distIndex), entry.slice(1))
+  const builtEntry = await readFile(entryPath, 'utf8')
+  expect(builtEntry).toContain('harnessDashboardReady')
 
   await import(pathToFileURL(entryPath).href)
   await vi.waitFor(() => {
@@ -110,4 +115,5 @@ it.runIf(process.env.DSH_EXAMPLE_MODE === 'lib')('ships the reconnect-only failu
   })
   expect(evidence).not.toContain(raw)
   expect(evidence).not.toMatch(/handoff|session_value/u)
+  expect(document.getElementById('root')?.hasAttribute('data-harness-dashboard-ready')).toBe(false)
 })

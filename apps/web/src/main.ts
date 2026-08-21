@@ -18,6 +18,7 @@ export class DashboardHandoffError extends Error {
  * @returns after the authenticated Dashboard has started.
  */
 export async function startDashboard(root: HTMLElement): Promise<void> {
+  root.removeAttribute('data-harness-dashboard-ready')
   if (location.href !== `${location.origin}/`) throw new DashboardHandoffError()
   let response: Response
   try {
@@ -33,6 +34,7 @@ export async function startDashboard(root: HTMLElement): Promise<void> {
   }
   if (!response.ok) throw new DashboardHandoffError()
   await new AppWebEntry(root).run()
+  root.dataset.harnessDashboardReady = 'true'
 }
 
 const el = document.getElementById('root')
