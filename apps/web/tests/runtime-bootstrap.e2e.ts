@@ -300,7 +300,7 @@ describe('Runtime Dashboard bootstrap', () => {
     }
   }, 60_000)
 
-  it('renders recovery without readiness when authenticated Web boot resolves false', async () => {
+  it('preserves the fail-loud report without readiness when authenticated Web boot resolves false', async () => {
     runtimeNow = Date.now()
     const handoff = auth.mintBrowserHandoff()
     const browserContext = await browser.newContext()
@@ -308,9 +308,10 @@ describe('Runtime Dashboard bootstrap', () => {
     await page.addInitScript(() => { (globalThis as Record<string, unknown>).__HARNESS_TEST_WEB_BOOT_FAIL__ = true })
     try {
       await openBootstrap(navigation(handoff.id, handoff.expiresAt), page)
-      await page.getByText(RECOVERY, { exact: true }).waitFor()
+      await page.getByText('Failed to load plugins', { exact: true }).waitFor()
       expect(await page.locator('#root').getAttribute('data-harness-dashboard-ready')).toBeNull()
       expect(await page.getByText('Protected Dashboard', { exact: true }).count()).toBe(0)
+      expect(await page.getByText(RECOVERY, { exact: true }).count()).toBe(0)
     } finally {
       await browserContext.close()
     }

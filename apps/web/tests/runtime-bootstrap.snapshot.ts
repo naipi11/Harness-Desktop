@@ -93,7 +93,7 @@ it('redacts a rejected cookie request from DOM, storage, console, and snapshot t
   consoleLog.mockRestore()
 })
 
-it('renders recovery without a ready marker when Web boot resolves as failed', async () => {
+it('preserves the boot failure report without a ready marker when Web boot resolves false', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { status: 200 })))
   bootResult = false
 
@@ -101,7 +101,7 @@ it('renders recovery without a ready marker when Web boot resolves as failed', a
 
   expect(run).toHaveBeenCalledOnce()
   expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
-  expect(root.textContent).toBe('Dashboard connection expired. Run harness web to reconnect.')
+  expect(root.textContent).toBe('Failed to load plugins')
 })
 
 it.runIf(process.env.DSH_EXAMPLE_MODE === 'lib')('ships the reconnect-only failure surface in the built Web entry', async () => {

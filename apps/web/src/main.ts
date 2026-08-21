@@ -34,7 +34,7 @@ export async function startDashboard(root: HTMLElement): Promise<void> {
   }
   if (!response.ok) throw new DashboardHandoffError()
   const booted = await new AppWebEntry(root).run()
-  if (!booted) throw new DashboardHandoffError()
+  if (!booted) return
   root.dataset.harnessDashboardReady = 'true'
 }
 
