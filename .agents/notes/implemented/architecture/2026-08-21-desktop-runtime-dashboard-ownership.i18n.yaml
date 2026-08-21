@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-desktop-runtime-dashboard-ownership.md
-2026-08-21-desktop-runtime-dashboard-ownership.md: d353b847be55a284e5a149b7662e4901e03dec87
-2026-08-21-desktop-runtime-dashboard-ownership.zh.md: a63f90c59d3919e7f339e04e1551876da441ed17
+2026-08-21-desktop-runtime-dashboard-ownership.md: a09823f830624df9257477a22a87f989e106d144
+2026-08-21-desktop-runtime-dashboard-ownership.zh.md: 8aee89a7f9655484aa200a40ae9350d9f47ae688

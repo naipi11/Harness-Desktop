@@ -178,6 +178,14 @@ function responseOwnerWindow(
 }
 
 async function retryDesktopWindow(window: BrowserWindow): Promise<ControllerStartupResult> {
+  if (runtimeOwners.retiring(window)) {
+    try {
+      await runtimeOwners.retire(window)
+    } catch (error) {
+      return await publishStartupResult(window, recoveryResult(error))
+    }
+    return await windowStartups.run(window)
+  }
   const controller = runtimeOwners.controller(window)
   if (controller === undefined) return await windowStartups.run(window)
   const client = runtimeOwners.client(window)

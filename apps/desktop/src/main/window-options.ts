@@ -160,10 +160,17 @@ export class WindowRuntimeOwners<
   private readonly clients = new WeakMap<Window, Client>()
   private readonly controllers = new WeakMap<Window, Controller>()
   private readonly origins = new WeakMap<Window, string>()
+  private readonly retirements = new WeakMap<Window, {
+    readonly controller: Controller
+    flight: Promise<void> | undefined
+  }>()
   private readonly activeControllers = new Set<Controller>()
 
   /** Publish one fully constructed window owner. */
   publish(window: Window, client: Client, controller: Controller, origin: string): void {
+    if (this.retirements.has(window)) {
+      throw new Error('Desktop window Runtime owner retirement is incomplete.')
+    }
     this.clients.set(window, client)
     this.controllers.set(window, controller)
     this.origins.set(window, origin)
@@ -185,17 +192,38 @@ export class WindowRuntimeOwners<
   /** @returns every controller still owned by the Desktop process. */
   active(): readonly Controller[] { return [...this.activeControllers] }
 
+  /** @returns whether retry must finish a prior owner retirement before reconnecting. */
+  retiring(window: Window): boolean { return this.retirements.has(window) }
+
   /**
    * Remove an owner from admission before closing it, so a replacement cannot be deleted by late settlement.
    * @param window - window whose unreachable owner is retired.
    */
   async retire(window: Window): Promise<void> {
-    const controller = this.controllers.get(window)
-    this.clients.delete(window)
-    this.controllers.delete(window)
-    this.origins.delete(window)
-    if (controller === undefined) return
-    await controller.close()
-    this.activeControllers.delete(controller)
+    let retirement = this.retirements.get(window)
+    if (retirement === undefined) {
+      const controller = this.controllers.get(window)
+      this.clients.delete(window)
+      this.controllers.delete(window)
+      this.origins.delete(window)
+      if (controller === undefined) return
+      retirement = { controller, flight: undefined }
+      this.retirements.set(window, retirement)
+    }
+    if (retirement.flight !== undefined) return retirement.flight
+    const current = retirement
+    const flight = current.controller.close().then(
+      () => {
+        if (this.retirements.get(window) !== current) return
+        this.retirements.delete(window)
+        this.activeControllers.delete(current.controller)
+      },
+      (error: unknown) => {
+        if (this.retirements.get(window) === current) current.flight = undefined
+        throw error
+      },
+    )
+    current.flight = flight
+    return flight
   }
 }

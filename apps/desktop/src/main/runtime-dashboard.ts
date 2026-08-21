@@ -78,9 +78,15 @@ export class RuntimeDashboardController {
     return this.retryFlight
   }
 
-  /** Release this controller's attachments, then its Runtime client, once. */
+  /** Release attachments before the Runtime client, sharing in-flight calls and retrying rejected releases. */
   close(): Promise<void> {
-    this.closeFlight ??= this.closeOwnedResources()
+    if (this.closeFlight === undefined) {
+      const flight = this.closeOwnedResources()
+      this.closeFlight = flight
+      void flight.catch(() => {
+        if (this.closeFlight === flight) this.closeFlight = undefined
+      })
+    }
     return this.closeFlight
   }
 
@@ -161,6 +167,9 @@ export class RuntimeDashboardController {
     if (existing !== undefined) return existing
     const closing = attachment.close()
     this.attachmentCloses.set(attachment, closing)
+    void closing.catch(() => {
+      if (this.attachmentCloses.get(attachment) === closing) this.attachmentCloses.delete(attachment)
+    })
     return closing
   }
 

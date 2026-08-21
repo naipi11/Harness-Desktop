@@ -240,4 +240,39 @@ describe('RuntimeDashboardController', () => {
     expect(order).toEqual(['attachment', 'client'])
     expect(closeClient).toHaveBeenCalledTimes(1)
   })
+
+  it('retries a rejected attachment release on the next controller close', async () => {
+    const failure = new Error('attachment release failed')
+    const closeAttachment = vi.fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(undefined)
+    const closeClient = vi.fn(async () => {})
+    const controller = new RuntimeDashboardController(runtimeClient({
+      attachDashboard: async () => attachment(closeAttachment),
+      close: closeClient,
+    }), { open: async () => {} })
+    await controller.open(new FakeWindow())
+
+    await expect(controller.close()).rejects.toThrow('Desktop Runtime resources could not be closed.')
+    await expect(controller.close()).resolves.toBeUndefined()
+    expect(closeAttachment).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a rejected Runtime client release on the next controller close', async () => {
+    const failure = new Error('client release failed')
+    const closeAttachment = vi.fn(async () => {})
+    const closeClient = vi.fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(undefined)
+    const controller = new RuntimeDashboardController(runtimeClient({
+      attachDashboard: async () => attachment(closeAttachment),
+      close: closeClient,
+    }), { open: async () => {} })
+    await controller.open(new FakeWindow())
+
+    await expect(controller.close()).rejects.toThrow('Desktop Runtime resources could not be closed.')
+    await expect(controller.close()).resolves.toBeUndefined()
+    expect(closeAttachment).toHaveBeenCalledOnce()
+    expect(closeClient).toHaveBeenCalledTimes(2)
+  })
 })

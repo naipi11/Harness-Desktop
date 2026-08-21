@@ -35,11 +35,12 @@ it('keeps a retiring owner visible to shutdown until close settles', async () =>
   expect(owners.origin(window)).toBeUndefined()
   expect(owners.active()).toEqual([original])
 
-  owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
-  expect(owners.active()).toEqual([original, replacement])
+  expect(() => { owners.publish(window, {}, replacement, 'http://127.0.0.1:41002') })
+    .toThrow('window Runtime owner retirement is incomplete')
   releaseClose()
   await retiring
   expect(close).toHaveBeenCalledOnce()
+  owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
   expect(owners.controller(window)).toBe(replacement)
   expect(owners.origin(window)).toBe('http://127.0.0.1:41002')
   expect(owners.active()).toEqual([replacement])
@@ -49,8 +50,11 @@ it('retains a failed retirement for shutdown retry and propagates the failure', 
   const owners = new WindowRuntimeOwners<object, object, { close(): Promise<void> }>()
   const window = {}
   const failure = new Error('client close failed')
-  const close = vi.fn(async () => { throw failure })
+  const close = vi.fn()
+    .mockRejectedValueOnce(failure)
+    .mockResolvedValueOnce(undefined)
   const original = { close }
+  const replacement = { close: vi.fn(async () => {}) }
   owners.publish(window, {}, original, 'http://127.0.0.1:41001')
 
   await expect(owners.retire(window)).rejects.toBe(failure)
@@ -58,10 +62,14 @@ it('retains a failed retirement for shutdown retry and propagates the failure', 
   expect(owners.client(window)).toBeUndefined()
   expect(owners.origin(window)).toBeUndefined()
   expect(owners.active()).toEqual([original])
+  expect(() => { owners.publish(window, {}, replacement, 'http://127.0.0.1:41002') })
+    .toThrow('window Runtime owner retirement is incomplete')
 
-  const shutdown = await Promise.allSettled(owners.active().map(controller => controller.close()))
-  expect(shutdown).toEqual([{ status: 'rejected', reason: failure }])
+  await expect(owners.retire(window)).resolves.toBeUndefined()
   expect(close).toHaveBeenCalledTimes(2)
+  expect(owners.active()).toEqual([])
+  owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
+  expect(owners.controller(window)).toBe(replacement)
 })
 
 it('registers a recovery flight before its operation can synchronously reenter', async () => {

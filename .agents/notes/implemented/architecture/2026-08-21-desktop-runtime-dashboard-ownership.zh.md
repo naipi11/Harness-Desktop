@@ -22,7 +22,7 @@ transport 在 dispatch 失败、exchange 成功或失败、以及 handoff 到期
 
 [已认证 Dashboard 工作台](2026-08-21-authenticated-dashboard-workbench.md)会在此 ready 点之后拥有浏览器投影和按 cookie 划分作用域的 prompt 工作；它不会把 connection 或 attachment 生命周期移入 Renderer。
 
-Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航到本地恢复文档或当前 attachment 的精确 loopback origin。它会把 Dashboard 响应 CSP 绑定到所属的 `webContents`：`connect-src` 只包含 `'self'` 和该 origin 的精确 WebSocket 端口。主 frame 加载失败、Renderer 丢失或已认证 Dashboard 控制请求被拒绝时，该窗口只会进入一个合并的恢复 flight。重试会先刷新客户端报告的 origin，再铸造另一个 handoff；如果 Runtime 所有者不可达或发生变化，Main 会先取消其接纳资格并关闭它，再重新连接替代所有者。关闭失败的所有者会继续留在进程关闭跟踪中，使重试失败，并阻止接纳替代所有者。不属于任何窗口或归属不明确的响应会保留原始 header，并且不能改变其他窗口的恢复状态。
+Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航到本地恢复文档或当前 attachment 的精确 loopback origin。它会把 Dashboard 响应 CSP 绑定到所属的 `webContents`：`connect-src` 只包含 `'self'` 和该 origin 的精确 WebSocket 端口。主 frame 加载失败、Renderer 丢失或已认证 Dashboard 控制请求被拒绝时，该窗口只会进入一个合并的恢复 flight。重试会先刷新客户端报告的 origin，再铸造另一个 handoff；如果 Runtime 所有者不可达或发生变化，Main 会先取消其接纳资格并关闭它，再重新连接替代所有者。每个窗口的退役 fence 会在关闭等待或被拒绝时阻止替代所有者；后续重试会先重新关闭同一所有者。关闭失败的所有者会继续留在进程关闭跟踪中，使重试失败，并阻止接纳替代所有者；被拒绝的 attachment 与客户端释放只会清除各自失败的 flight，使进程关闭能够真正重试。不属于任何窗口或归属不明确的响应会保留原始 header，并且不能改变其他窗口的恢复状态。
 
 每个 attachment、transport、导航、marker 和加载失败都会先经过 `normalizeRecoveryDiagnostic`，Main 才会将其保留给恢复 UI。结果不包含 URL、端口、进程标识、Runtime home、token、handoff、cookie 或 attachment 值。
 
