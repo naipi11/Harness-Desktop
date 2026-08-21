@@ -385,6 +385,9 @@ importers:
       '@harness-desktop/dsh-app-boot':
         specifier: workspace:^
         version: link:../../packages/boot/app-boot
+      '@harness-desktop/dsh-host-local-runtime':
+        specifier: workspace:^
+        version: link:../../packages/host/local-runtime
       react:
         specifier: 18.2.0
         version: 18.2.0
