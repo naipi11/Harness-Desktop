@@ -39,5 +39,10 @@ export default defineConfig({
     root: 'src/renderer',
     publicDir: '../../../web/public',
     plugins: [react()],
+    resolve: {
+      alias: {
+        '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
+      },
+    },
   },
 })
