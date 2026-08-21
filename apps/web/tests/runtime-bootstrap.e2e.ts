@@ -94,7 +94,6 @@ function observe(page: Page): {
 }
 
 async function assertRecovery(page: Page, secret: string, consoleOutput: readonly string[]): Promise<void> {
-  await page.goto(`${origin}/`)
   await page.getByText(RECOVERY, { exact: true }).waitFor()
   const evidence = await page.evaluate(async () => ({
     body: document.body.textContent,
@@ -299,8 +298,8 @@ describe('Runtime Dashboard bootstrap', () => {
     try {
       await openBootstrap(navigation(wrong, runtimeNow + 60_000), wrongPage)
       expect(wrongPage.url()).toBe(`${origin}/_harness/handoff`)
-      expect(await wrongPage.textContent('body')).toBe('forbidden')
       await assertRecovery(wrongPage, wrong, wrongObserved.consoleOutput)
+      expect(await wrongPage.getByText('Protected Dashboard', { exact: true }).count()).toBe(0)
     } finally {
       await wrongContext.close()
     }
@@ -314,6 +313,7 @@ describe('Runtime Dashboard bootstrap', () => {
       await openBootstrap(navigation(expired.id, expired.expiresAt), expiredPage, () => { runtimeNow = expired.expiresAt })
       expect(expiredPage.url()).toBe(`${origin}/_harness/handoff`)
       await assertRecovery(expiredPage, expired.id, expiredObserved.consoleOutput)
+      expect(await expiredPage.getByText('Protected Dashboard', { exact: true }).count()).toBe(0)
     } finally {
       await expiredContext.close()
     }
@@ -332,6 +332,7 @@ describe('Runtime Dashboard bootstrap', () => {
       await openBootstrap(navigation(replayed.id, replayed.expiresAt), replayPage)
       expect(replayPage.url()).toBe(`${origin}/_harness/handoff`)
       await assertRecovery(replayPage, replayed.id, replayObserved.consoleOutput)
+      expect(await replayPage.getByText('Protected Dashboard', { exact: true }).count()).toBe(0)
     } finally {
       await replayContext.close()
     }

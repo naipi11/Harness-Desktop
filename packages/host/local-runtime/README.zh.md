@@ -14,7 +14,7 @@
 
 组装后的 WebServer 在 `127.0.0.1` 上绑定由操作系统分配的端口。仅所有者可读的端点记录包含协议版本、运行时身份、端口、进程身份和私有访问 token。发布和移除使用受保护的同目录文件及原子重命名；移除操作会恢复已取得的替代记录，但不会覆盖更新的端点。
 
-原生控制要求精确的回环 authority 与 bearer token。原生调用方创建一个 60 秒、单次使用、仅正文的 handoff。`POST /_harness/handoff` 只从一个 URL 编码表单正文接受该值，不发送 CORS 权限，并通过不带 expiry attribute 的会话 `HttpOnly; SameSite=Strict; Path=/` cookie 返回干净重定向。Dashboard API 与事件请求需要该 cookie 和精确运行时 origin，从而提供仅使用 cookie 的 Dashboard 认证。启动器拥有的清理控制器会在分发、交换结算或过期后只删除其私有 bootstrap 文档与目录。
+原生控制要求精确的回环 authority 与 bearer token。原生调用方创建一个 60 秒、单次使用、仅正文的 handoff。`POST /_harness/handoff` 只从一个 URL 编码表单正文接受该值，不发送 CORS 权限，并通过不带 expiry attribute 的会话 `HttpOnly; SameSite=Strict; Path=/` cookie 返回干净重定向。畸形、未知、过期或已重放的 handoff 会收到一个 no-store `403` HTML 恢复文档，其内容只有 `Dashboard connection expired. Run harness web to reconnect.`。Dashboard API 与事件请求需要该 cookie 和精确运行时 origin，从而提供仅使用 cookie 的 Dashboard 认证。启动器拥有的清理控制器会在分发、交换结算或过期后只删除其私有 bootstrap 文档与目录。
 
 ## 非披露保证
 

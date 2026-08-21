@@ -22,6 +22,7 @@ const CONTROL_PATH = '/_harness/control'
 const INTERNAL_CONTROL_PATH = '/_harness/control/internal'
 const DASHBOARD_CONTROL_PATH = '/_harness/dashboard-control'
 const HANDOFF_PATH = '/_harness/handoff'
+const HANDOFF_RECOVERY = 'Dashboard connection expired. Run harness web to reconnect.'
 const MAX_HANDOFF_BODY_BYTES = 4096
 const MAX_CONTROL_BODY_BYTES = 65_536
 
@@ -75,13 +76,13 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
       }
       const id = await formBodyHandoff(request)
       if (id === undefined) {
-        forbidden(response)
+        handoffForbidden(response)
         return
       }
       const result = options.auth.consumeBrowserHandoff(id)
       await options.onHandoffSettled?.(id)
       if (result.kind === 'rejected') {
-        forbidden(response)
+        handoffForbidden(response)
         return
       }
       response.writeHead(303, {
@@ -357,6 +358,14 @@ function unauthorized(response: ServerResponse): void {
 function forbidden(response: ServerResponse): void {
   response.writeHead(403)
   response.end('forbidden')
+}
+
+function handoffForbidden(response: ServerResponse): void {
+  response.writeHead(403, {
+    'cache-control': 'no-store',
+    'content-type': 'text/html; charset=utf-8',
+  })
+  response.end(HANDOFF_RECOVERY)
 }
 
 function notFound(response: ServerResponse): void {

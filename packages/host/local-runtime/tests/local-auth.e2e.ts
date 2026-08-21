@@ -10,6 +10,7 @@ import WebServer from '@harness-desktop/dsh-host-webserver'
 import { LocalDashboardAuth } from '../src/auth.ts'
 import { mountLocalControlRoutes } from '../src/control-routes.ts'
 
+const HANDOFF_RECOVERY = 'Dashboard connection expired. Run harness web to reconnect.'
 let context: Context | undefined
 
 afterEach(async () => {
@@ -17,7 +18,7 @@ afterEach(async () => {
   context = undefined
 })
 
-async function start(): Promise<{ port: number; auth: LocalDashboardAuth }> {
+async function start(now?: () => number): Promise<{ port: number; auth: LocalDashboardAuth }> {
   context = new Context()
   const fiber = context.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await fiber.await()
@@ -26,6 +27,7 @@ async function start(): Promise<{ port: number; auth: LocalDashboardAuth }> {
   const auth = new LocalDashboardAuth({
     accessToken: 'private-endpoint-token',
     origin: `http://127.0.0.1:${String(port)}`,
+    ...(now === undefined ? {} : { now }),
   })
   await context.plugin({
     inject: ['webServer'],
@@ -69,10 +71,48 @@ describe('local Runtime auth routes', () => {
     expect(cookie).not.toMatch(/Expires=|Max-Age=/i)
     expect(cookie).not.toContain(handoff.id)
 
-    expect((await fetch(`http://127.0.0.1:${String(port)}/_harness/handoff`, {
+    const replay = await fetch(`http://127.0.0.1:${String(port)}/_harness/handoff`, {
       method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ handoff: handoff.id }),
-    })).status).toBe(403)
+    })
+    expect(replay.status).toBe(403)
+    expect(await replay.text()).toBe(HANDOFF_RECOVERY)
+    expect(replay.headers.get('cache-control')).toBe('no-store')
+    expect(replay.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(replay.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('uses the stable recovery document only for malformed, wrong, expired, or replayed handoffs', async () => {
+    let now = 100
+    const { port, auth } = await start(() => now)
+    const origin = `http://127.0.0.1:${String(port)}`
+    const request = async (handoff: string): Promise<Response> => await fetch(`${origin}/_harness/handoff`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
+      body: new URLSearchParams({ handoff }),
+    })
+
+    const malformed = await request('short')
+    const wrong = await request('wrong_browser_handoff_value_12345678901234567890')
+    const expiredHandoff = auth.mintBrowserHandoff()
+    now = expiredHandoff.expiresAt
+    const expired = await request(expiredHandoff.id)
+    now += 1
+    const replayedHandoff = auth.mintBrowserHandoff()
+    expect((await request(replayedHandoff.id)).status).toBe(303)
+    const replayed = await request(replayedHandoff.id)
+
+    for (const response of [malformed, wrong, expired, replayed]) {
+      expect(response.status).toBe(403)
+      expect(await response.text()).toBe(HANDOFF_RECOVERY)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+      expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    }
+    const dashboardForbidden = await fetch(`${origin}/api/session.list`, { method: 'POST' })
+    expect(dashboardForbidden.status).toBe(403)
+    expect(await dashboardForbidden.text()).toBe('forbidden')
   })
 
   it('refuses Dashboard API requests without the issued cookie and exact Runtime origin', async () => {
