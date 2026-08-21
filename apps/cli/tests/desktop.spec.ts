@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { posix, win32 } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import {
   createInstalledDesktopActivator,
   DesktopNotInstalledError,
   runDesktopInvocation,
+  type DesktopLaunchProcess,
   type DesktopDiagnosticId,
   type DesktopIO,
   type InstalledDesktopActivator,
@@ -29,6 +31,10 @@ const builderModule: unknown = await import(
 const builderConfig = (builderModule as { readonly default: BuilderIdentityConfig }).default
 const builderPackageRoot = desktopManifest.name.replaceAll('/', '')
 const builderExecutable = builderConfig.executableName
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 function output(): { stream: PassThrough; text: () => string } {
   const stream = new PassThrough()
@@ -192,6 +198,42 @@ describe('installed Desktop activation', () => {
 
     await expect(activator.activate()).rejects.toMatchObject({
       diagnosticId: '55555555-5555-4555-8555-555555555555',
+    })
+  })
+
+  it('kills a timed-out helper and waits for its exit before trying another candidate', async () => {
+    vi.useFakeTimers()
+    const events = new EventEmitter()
+    const kill = vi.fn(() => true)
+    const child = Object.assign(events, {
+      kill,
+      unref: vi.fn(),
+    }) as unknown as DesktopLaunchProcess
+    const spawnProcess = vi.fn(() => child)
+    const installed = posix.join('/Users/person/Applications', `${builderExecutable}.app`)
+    const activator = createInstalledDesktopActivator({
+      platform: 'darwin',
+      env: { HOME: '/Users/person' },
+      exists: async path => path === installed,
+      spawnProcess,
+      helperTimeoutMs: 50,
+      diagnosticId: () => diagnosticId('66666666-6666-4666-8666-666666666666'),
+    })
+    let settled = false
+    const activation = activator.activate().then(
+      value => ({ status: 'fulfilled' as const, value }),
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    ).finally(() => { settled = true })
+    await vi.waitFor(() => { expect(spawnProcess).toHaveBeenCalledOnce() })
+
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(kill).toHaveBeenCalledWith('SIGKILL')
+    expect(settled).toBe(false)
+    events.emit('exit', null)
+    await expect(activation).resolves.toMatchObject({
+      status: 'rejected',
+      error: { diagnosticId: '66666666-6666-4666-8666-666666666666' },
     })
   })
 

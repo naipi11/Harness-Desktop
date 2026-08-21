@@ -125,6 +125,26 @@ async function nextEvent(
   }
 }
 
+async function listDashboardSessions(
+  origin: string,
+  cookie: string,
+  rpcId: string,
+): Promise<readonly { readonly sessionId: SessionId }[]> {
+  const response = await fetch(`${origin}/api/session.list`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie, origin },
+    body: JSON.stringify({ type: 'client-request', rpcId, method: 'session.list', payload: {} }),
+  })
+  const body = await response.json() as {
+    readonly result:
+      | { readonly ok: true; readonly value: { readonly items: readonly { readonly sessionId: SessionId }[] } }
+      | { readonly ok: false; readonly error: { readonly message: string } }
+  }
+  if (!response.ok) throw new Error(`Dashboard session.list failed with HTTP ${String(response.status)}`)
+  if (!body.result.ok) throw new Error(`Dashboard session.list failed: ${body.result.error.message}`)
+  return body.result.value.items
+}
+
 describe('shared Runtime client acceptance', () => {
   it.each(['harness', 'dsh'] as const)(
     'keeps %s terminal work active after releasing only the named Web lease',
@@ -166,6 +186,24 @@ describe('shared Runtime client acceptance', () => {
       dashboard = await client.attachDashboard()
       const navigation = await dashboard.createBrowserHandoff()
       expect(navigation.origin).toBe(`http://127.0.0.1:${String(endpoint.port)}`)
+      const exchanged = await fetch(`${navigation.origin}/_harness/handoff`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
+        body: new URLSearchParams({ handoff: navigation.handoff.id }),
+      })
+      expect(exchanged.status).toBe(303)
+      expect(exchanged.headers.get('location')).toBe('/')
+      const setCookie = exchanged.headers.get('set-cookie')
+      expect(setCookie).toContain('HttpOnly')
+      const cookie = setCookie?.split(';', 1)[0]
+      if (cookie === undefined) throw new Error('Dashboard handoff did not issue a cookie')
+      const beforeStopSessions = await listDashboardSessions(
+        navigation.origin,
+        cookie,
+        `${commandName}-before-web-stop`,
+      )
+      expect(beforeStopSessions.some(item => item.sessionId === sessionId)).toBe(true)
 
       const acquired = await runProduct(runtime, commandName, ['web', '--background', '--no-open'])
       expect(acquired).toEqual({ code: 0, stderr: '', stdout: 'Web lease: web present\n' })
@@ -181,6 +219,12 @@ describe('shared Runtime client acceptance', () => {
       expect(await client.observeActiveWork()).toEqual(active)
       const afterEndpoint = JSON.parse(await readFile(endpointPath, 'utf8')) as unknown
       expect(afterEndpoint).toEqual(beforeEndpoint)
+      const afterStopSessions = await listDashboardSessions(
+        navigation.origin,
+        cookie,
+        `${commandName}-after-web-stop`,
+      )
+      expect(afterStopSessions.some(item => item.sessionId === sessionId)).toBe(true)
 
       expect(await terminal.cancel()).toEqual({ kind: 'cancelled' })
       expect(await client.observeActiveWork()).toEqual({ ownUiWork: [] })

@@ -16,6 +16,20 @@ export type InstalledDesktopLaunchResult =
   | { readonly kind: 'spawned' }
   | { readonly kind: 'exited'; readonly exitCode: number | null }
 
+/** Process events required to prove native activation settlement. */
+export interface DesktopLaunchProcess {
+  /** Request process termination after a bounded helper timeout. */
+  kill(signal: NodeJS.Signals): boolean
+  /** Register a one-shot launch failure listener. */
+  once(event: 'error', listener: (error: Error) => void): this
+  /** Register a one-shot helper exit listener. */
+  once(event: 'exit', listener: (exitCode: number | null) => void): this
+  /** Register a one-shot installed-executable spawn listener. */
+  once(event: 'spawn', listener: () => void): this
+  /** Release the parent event-loop reference after installed-executable spawn. */
+  unref(): void
+}
+
 /** Activate the registered Harness Desktop installation. */
 export interface InstalledDesktopActivator {
   /** @returns acknowledgement after the installed application accepts activation. */
@@ -43,6 +57,14 @@ export interface InstalledDesktopActivatorOptions {
     args: readonly string[],
     waitForExit: boolean,
   ) => Promise<InstalledDesktopLaunchResult>
+  /** Native process creation boundary. */
+  readonly spawnProcess?: (
+    command: string,
+    args: readonly string[],
+    options: { readonly detached: boolean; readonly stdio: 'ignore'; readonly windowsHide: true },
+  ) => DesktopLaunchProcess
+  /** Maximum native helper runtime before kill is requested. */
+  readonly helperTimeoutMs?: number
   /** Redacted correlation identifier factory. */
   readonly diagnosticId?: () => DesktopDiagnosticId
 }
@@ -154,13 +176,23 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+function spawnNativeProcess(
+  command: string,
+  args: readonly string[],
+  options: { readonly detached: boolean; readonly stdio: 'ignore'; readonly windowsHide: true },
+): DesktopLaunchProcess {
+  return spawn(command, args, options)
+}
+
 function launchNativeApplication(
   command: string,
   args: readonly string[],
   waitForExit: boolean,
+  spawnProcess: NonNullable<InstalledDesktopActivatorOptions['spawnProcess']>,
+  helperTimeoutMs: number,
 ): Promise<InstalledDesktopLaunchResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: !waitForExit, stdio: 'ignore', windowsHide: true })
+    const child = spawnProcess(command, args, { detached: !waitForExit, stdio: 'ignore', windowsHide: true })
     if (!waitForExit) {
       child.once('error', reject)
       child.once('spawn', () => {
@@ -170,10 +202,11 @@ function launchNativeApplication(
       return
     }
 
+    let timedOut = false
     const timeout = setTimeout(() => {
+      timedOut = true
       child.kill('SIGKILL')
-      reject(new Error('Desktop activation helper timed out'))
-    }, HELPER_EXIT_TIMEOUT_MS)
+    }, helperTimeoutMs)
     timeout.unref()
     child.once('error', (error) => {
       clearTimeout(timeout)
@@ -181,7 +214,8 @@ function launchNativeApplication(
     })
     child.once('exit', (exitCode) => {
       clearTimeout(timeout)
-      resolve({ kind: 'exited', exitCode })
+      if (timedOut) reject(new Error('Desktop activation helper timed out'))
+      else resolve({ kind: 'exited', exitCode })
     })
   })
 }
@@ -197,7 +231,11 @@ export function createInstalledDesktopActivator(
   const platform = options.platform ?? process.platform
   const env = options.env ?? process.env
   const exists = options.exists ?? pathExists
-  const launch = options.launch ?? launchNativeApplication
+  const spawnProcess = options.spawnProcess ?? spawnNativeProcess
+  const helperTimeoutMs = options.helperTimeoutMs ?? HELPER_EXIT_TIMEOUT_MS
+  const launch = options.launch ?? ((command, args, waitForExit) => (
+    launchNativeApplication(command, args, waitForExit, spawnProcess, helperTimeoutMs)
+  ))
   const diagnosticId = options.diagnosticId ?? (() => randomUUID() as DesktopDiagnosticId)
   const route = installationRoute(platform)
   return {
