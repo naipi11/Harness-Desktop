@@ -14,7 +14,7 @@
 
 组装后的 WebServer 在 `127.0.0.1` 上绑定由操作系统分配的端口。仅所有者可读的端点记录包含协议版本、运行时身份、端口、进程身份和私有访问 token。发布和移除使用受保护的同目录文件及原子重命名；移除操作会恢复已取得的替代记录，但不会覆盖更新的端点。
 
-原生控制要求精确的回环 authority 与 bearer token。原生调用方创建一个 60 秒、单次使用、仅正文的 handoff。`POST /_harness/handoff` 只从一个 URL 编码表单正文接受该值，不发送 CORS 权限，并通过不带 expiry attribute 的会话 `HttpOnly; SameSite=Strict; Path=/` cookie 返回干净重定向。畸形、未知、过期或已重放的 handoff 会收到一个 no-store `403` HTML 恢复文档，其内容只有 `Dashboard connection expired. Run harness web to reconnect.`。Dashboard API 与事件请求需要该 cookie 和精确运行时 origin，从而提供仅使用 cookie 的 Dashboard 认证。启动器拥有的清理控制器会在分发、交换结算或过期后只删除其私有 bootstrap 文档与目录。
+原生控制要求精确的回环 authority 与 bearer token。原生调用方创建一个 60 秒、单次使用、仅正文并绑定其 Runtime 客户端所有者的 handoff；交换得到的浏览器 cookie 会为 Dashboard prompt 和活动工作控制保留该所有者。没有所有者的浏览器启动则会获得从 cookie 稳定派生的所有者。`POST /_harness/handoff` 只从一个 URL 编码表单正文接受该 handoff，不发送 CORS 权限，并通过不带 expiry attribute 的会话 `HttpOnly; SameSite=Strict; Path=/` cookie 返回干净重定向。畸形、未知、过期或已重放的 handoff 会收到一个 no-store `403` HTML 恢复文档，其内容只有 `Dashboard connection expired. Run harness web to reconnect.`。Dashboard API 与事件请求需要该 cookie 和精确运行时 origin，从而提供仅使用 cookie 的 Dashboard 认证。启动器拥有的清理控制器会在分发、交换结算或过期后只删除其私有 bootstrap 文档与目录。
 
 ## 非披露保证
 
@@ -27,7 +27,7 @@
 
 只有 `createRuntimeConnector()` 会发现端点，并将其 token 保留在已认证请求闭包中。`connect({ start: false })` 执行只读发现，在不创建数据根目录、锁、端点或进程的前提下抛出 `RuntimeUnavailableError`。`connect({ start: true })` 通过所有者锁串行化竞争启动，等待已认证的健康所有者，并把成功调用方附加到该运行时。
 
-`RuntimeClient` 提供脱敏状态、稳定的 `web` 后台租约、耐久旧数据迁移、按所有者划分作用域的活动工作控制、终端附加项、Dashboard 附加项和独立关闭。`TerminalConnection` 通过已组装的 API 与 agent（智能体）所有者提交任务和审批，运行已注册的模型、权限、会话与命令控制，流式发送有界协议事件，只取消其关联操作，并且只关闭自身附加项。`DashboardAttachment` 创建仅正文 handoff 并独立释放。关闭附加项绝不取消活动工作。Dashboard 在 prompt 关联前停止工作或 Runtime 在此时关闭，都会中止该 carrier 的准入；发生竞态而迟到、且携带相同 `rpcId` 的消息会在 Agent 领取 Turn 前从 inbox 移除。
+`RuntimeClient` 提供脱敏状态、稳定的 `web` 后台租约、耐久旧数据迁移、按所有者划分作用域的活动工作控制、终端附加项、Dashboard 附加项和独立关闭。`TerminalConnection` 通过已组装的 API 与 agent（智能体）所有者提交任务和审批，运行已注册的模型、权限、会话与命令控制，流式发送有界协议事件，只取消其关联操作，并且只关闭自身附加项。`DashboardAttachment` 创建仅正文 handoff 并独立释放。关闭附加项绝不取消活动工作。Dashboard 在 prompt 关联前停止工作或 Runtime 在此时关闭，都会中止该 carrier 的准入；发生竞态而迟到、且携带相同 `rpcId` 的消息会在 Agent 领取 Turn 前从 inbox 移除。取消已领取的工作会等待 Agent 进入空闲，并且即使没有单独收到 `turn/end` 回调也会结束 Runtime 工作 lease。
 
 `RuntimeUnavailableError` 标识缺失，`RuntimeBusyError` 标识同一会话的写入方并携带其品牌化会话 id，`RuntimeProtocolError` 标识不兼容、畸形、超限或携带密钥的本地响应。`normalizeRecoveryDiagnostic()` 将这些错误及未知本地失败投影为稳定且不含 token、路径和密钥的恢复字段，并提供可复制的诊断 id。
 

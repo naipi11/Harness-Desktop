@@ -262,7 +262,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     void record.settlement.then(record.finished.resolve, record.finished.reject)
     return record.settlement
   }
-  const cancelWork = (record: WorkRecord): Promise<void> => {
+  const cancelWork = async (record: WorkRecord): Promise<void> => {
     if (record.messageInserted !== undefined && record.messageId === undefined) {
       markCancelledDashboardPrompt(record)
       record.admissionAbort?.abort()
@@ -272,7 +272,12 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       return finishWork(record)
     }
     record.agent.cancel({ kind: 'user' }, { keepInbox: true })
-    return record.finished.promise
+    const settlement = await Promise.race([
+      record.finished.promise.then(() => 'finished' as const),
+      record.agent.whenIdle().then(() => 'idle' as const),
+    ])
+    if (settlement === 'idle' && work.get(record.id) === record) await finishWork(record)
+    await record.finished.promise
   }
   const waitForDashboardMessage = async (record: WorkRecord): Promise<void> => {
     if (record.messageId !== undefined || record.messageInserted === undefined) return

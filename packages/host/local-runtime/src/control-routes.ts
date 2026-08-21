@@ -58,7 +58,12 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
         unauthorized(response)
         return
       }
-      const handoff = options.auth.mintBrowserHandoff()
+      const clientId = clientHeader(request)
+      if (clientId === undefined) {
+        invalidRequest(response)
+        return
+      }
+      const handoff = options.auth.mintBrowserHandoff(clientId)
       response.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': 'application/json; charset=utf-8',

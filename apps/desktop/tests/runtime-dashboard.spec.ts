@@ -254,8 +254,10 @@ describe('RuntimeDashboardController', () => {
     await controller.open(new FakeWindow())
 
     await expect(controller.close()).rejects.toThrow('Desktop Runtime resources could not be closed.')
+    expect(closeClient).not.toHaveBeenCalled()
     await expect(controller.close()).resolves.toBeUndefined()
     expect(closeAttachment).toHaveBeenCalledTimes(2)
+    expect(closeClient).toHaveBeenCalledOnce()
   })
 
   it('retries a rejected Runtime client release on the next controller close', async () => {

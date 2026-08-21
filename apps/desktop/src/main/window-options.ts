@@ -161,6 +161,7 @@ export class WindowRuntimeOwners<
   private readonly controllers = new WeakMap<Window, Controller>()
   private readonly origins = new WeakMap<Window, string>()
   private readonly retirements = new WeakMap<Window, {
+    readonly client: Client | undefined
     readonly controller: Controller
     flight: Promise<void> | undefined
   }>()
@@ -178,7 +179,9 @@ export class WindowRuntimeOwners<
   }
 
   /** @returns the window's current Runtime client. */
-  client(window: Window): Client | undefined { return this.clients.get(window) }
+  client(window: Window): Client | undefined {
+    return this.clients.get(window) ?? this.retirements.get(window)?.client
+  }
 
   /** @returns the window's current Dashboard controller. */
   controller(window: Window): Controller | undefined { return this.controllers.get(window) }
@@ -202,12 +205,13 @@ export class WindowRuntimeOwners<
   async retire(window: Window): Promise<void> {
     let retirement = this.retirements.get(window)
     if (retirement === undefined) {
+      const client = this.clients.get(window)
       const controller = this.controllers.get(window)
       this.clients.delete(window)
       this.controllers.delete(window)
       this.origins.delete(window)
       if (controller === undefined) return
-      retirement = { controller, flight: undefined }
+      retirement = { client, controller, flight: undefined }
       this.retirements.set(window, retirement)
     }
     if (retirement.flight !== undefined) return retirement.flight

@@ -484,7 +484,7 @@ class RuntimeClientConnection implements RuntimeClient {
     return {
       createBrowserHandoff: async () => {
         if (closed) throw new RuntimeProtocolError('runtime-start-failed')
-        return this.wire.browserHandoff()
+        return this.wire.browserHandoff(this.clientId)
       },
       close: async () => {
         if (closed) return
@@ -639,11 +639,15 @@ class RuntimeWire {
     return this.request(INTERNAL_CONTROL_PATH, clientId, request, value => parseInternalSuccess(request, value)) as Promise<T>
   }
 
-  async browserHandoff(): Promise<DashboardNavigation> {
+  async browserHandoff(clientId: RuntimeClientId): Promise<DashboardNavigation> {
     let response: Response
     try {
       response = await fetch(`${this.origin}${HANDOFF_CONTROL_PATH}`, {
-        method: 'POST', headers: { authorization: `Bearer ${this.endpoint.accessToken}` },
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.endpoint.accessToken}`,
+          'x-harness-runtime-client': clientId,
+        },
       })
     } catch {
       throw new RuntimeUnavailableError()

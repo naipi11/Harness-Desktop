@@ -61,6 +61,8 @@ const trayLifecycle = new DesktopTrayLifecycle<BrowserWindow, Tray>({
   isDestroyed: window => window.isDestroyed(),
   restore: restoreWindow,
   requestClose: window => closePolicy.request(window),
+  quitApplication: () => { app.quit() },
+  reportCloseFailure,
 })
 const closePolicy = new DesktopClosePolicy<BrowserWindow>({
   client: window => runtimeOwners.client(window),
@@ -388,9 +390,17 @@ function createTray(actions: readonly DesktopTrayAction[]): Tray {
   tray.setToolTip(productMetadata.productName)
   tray.setContextMenu(Menu.buildFromTemplate(actions.map(action => ({
     label: action.label,
-    click: () => { void action.click() },
+    click: () => {
+      void action.click().catch(() => {
+        // Tray actions report close failures before their returned promise settles.
+      })
+    },
   }))))
-  tray.on('click', () => { void actions[0]?.click() })
+  tray.on('click', () => {
+    void actions[0]?.click().catch(() => {
+      // Tray actions report close failures before their returned promise settles.
+    })
+  })
   return tray
 }
 

@@ -26,12 +26,13 @@ it('keeps a retiring owner visible to shutdown until close settles', async () =>
   let releaseClose!: () => void
   const close = vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve }))
   const original = { close }
+  const client = {}
   const replacement = { close: vi.fn(async () => {}) }
-  owners.publish(window, {}, original, 'http://127.0.0.1:41001')
+  owners.publish(window, client, original, 'http://127.0.0.1:41001')
 
   const retiring = owners.retire(window)
   expect(owners.controller(window)).toBeUndefined()
-  expect(owners.client(window)).toBeUndefined()
+  expect(owners.client(window)).toBe(client)
   expect(owners.origin(window)).toBeUndefined()
   expect(owners.active()).toEqual([original])
 
@@ -40,6 +41,7 @@ it('keeps a retiring owner visible to shutdown until close settles', async () =>
   releaseClose()
   await retiring
   expect(close).toHaveBeenCalledOnce()
+  expect(owners.client(window)).toBeUndefined()
   owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
   expect(owners.controller(window)).toBe(replacement)
   expect(owners.origin(window)).toBe('http://127.0.0.1:41002')
@@ -54,12 +56,13 @@ it('retains a failed retirement for shutdown retry and propagates the failure', 
     .mockRejectedValueOnce(failure)
     .mockResolvedValueOnce(undefined)
   const original = { close }
+  const client = {}
   const replacement = { close: vi.fn(async () => {}) }
-  owners.publish(window, {}, original, 'http://127.0.0.1:41001')
+  owners.publish(window, client, original, 'http://127.0.0.1:41001')
 
   await expect(owners.retire(window)).rejects.toBe(failure)
   expect(owners.controller(window)).toBeUndefined()
-  expect(owners.client(window)).toBeUndefined()
+  expect(owners.client(window)).toBe(client)
   expect(owners.origin(window)).toBeUndefined()
   expect(owners.active()).toEqual([original])
   expect(() => { owners.publish(window, {}, replacement, 'http://127.0.0.1:41002') })
@@ -67,6 +70,7 @@ it('retains a failed retirement for shutdown retry and propagates the failure', 
 
   await expect(owners.retire(window)).resolves.toBeUndefined()
   expect(close).toHaveBeenCalledTimes(2)
+  expect(owners.client(window)).toBeUndefined()
   expect(owners.active()).toEqual([])
   owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
   expect(owners.controller(window)).toBe(replacement)

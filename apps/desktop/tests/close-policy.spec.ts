@@ -1,18 +1,21 @@
 /** Main-owned close decisions and tray lifecycle. */
 
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  ActiveWorkStatus,
-  OwnUiWorkStopResult,
-  RuntimeClient,
+import {
+  normalizeRecoveryDiagnostic,
+  type ActiveWorkStatus,
+  type OwnUiWorkStopResult,
+  type RuntimeClient,
 } from '@harness-desktop/dsh-host-local-runtime'
 import {
   DesktopClosePolicy,
   DesktopTrayLifecycle,
   desktopCloseChoices,
+  type DesktopCloseResult,
   type DesktopClosePolicyDependencies,
   type DesktopTrayAction,
 } from '../src/main/close-policy.ts'
+import { WindowRuntimeOwners } from '../src/main/window-options.ts'
 
 interface FakeWindow {
   destroyed: boolean
@@ -157,14 +160,8 @@ describe('DesktopClosePolicy', () => {
   it('keeps the owner open and reports the exact redacted safe-stop failure', async () => {
     const stopResult = {
       kind: 'failed',
-      diagnostic: {
-        code: 'runtime-stop-failed',
-        subject: 'Active work',
-        message: 'The active work could not be stopped safely.',
-        correction: 'Keep Harness open and retry.',
-        diagnosticId: 'desktop-stop-fixture',
-      },
-    } as unknown as OwnUiWorkStopResult
+      diagnostic: normalizeRecoveryDiagnostic(new Error('safe stop failed')),
+    } satisfies OwnUiWorkStopResult
     const fixture = setupPolicy({
       status: activeStatus,
       choice: 'safely-stop-own-ui-work',
@@ -208,6 +205,41 @@ describe('DesktopClosePolicy', () => {
     expect(fixture.choose).not.toHaveBeenCalled()
     expect(fixture.events).toEqual(['observe', 'close-own-client', 'close-window'])
   })
+
+  it('observes fresh active work before retrying a rejected owner retirement', async () => {
+    const window: FakeWindow = { destroyed: false, hidden: false, focused: false }
+    const idleStatus = { ownUiWork: [] } satisfies ActiveWorkStatus
+    const observeActiveWork = vi.fn()
+      .mockResolvedValueOnce(idleStatus)
+      .mockResolvedValueOnce(activeStatus)
+    const client = runtimeClient({ observeActiveWork })
+    const retirementFailure = new Error('client release failed')
+    const controller = {
+      close: vi.fn()
+        .mockRejectedValueOnce(retirementFailure)
+        .mockResolvedValueOnce(undefined),
+    }
+    const owners = new WindowRuntimeOwners<FakeWindow, RuntimeClient, typeof controller>()
+    owners.publish(window, client, controller, 'http://127.0.0.1:43123')
+    const closeWindow = vi.fn()
+    const choose = vi.fn(async () => 'cancel' as const)
+    const policy = new DesktopClosePolicy<FakeWindow>({
+      client: candidate => owners.client(candidate),
+      choose,
+      minimizeToTray: () => {},
+      closeOwnClient: candidate => owners.retire(candidate),
+      closeWindow,
+      reportStopFailure: async () => {},
+    })
+
+    await expect(policy.request(window)).rejects.toBe(retirementFailure)
+    expect(owners.client(window)).toBe(client)
+    await expect(policy.request(window)).resolves.toEqual({ kind: 'cancelled', status: activeStatus })
+    expect(observeActiveWork).toHaveBeenCalledTimes(2)
+    expect(choose).toHaveBeenCalledWith(window, activeStatus, desktopCloseChoices)
+    expect(controller.close).toHaveBeenCalledOnce()
+    expect(closeWindow).not.toHaveBeenCalled()
+  })
 })
 
 describe('DesktopTrayLifecycle', () => {
@@ -215,6 +247,8 @@ describe('DesktopTrayLifecycle', () => {
     const window: FakeWindow = { destroyed: false, hidden: true, focused: false }
     const createdActions: DesktopTrayAction[][] = []
     const closeRequests: FakeWindow[] = []
+    const quitApplication = vi.fn()
+    const reportCloseFailure = vi.fn(async () => {})
     let destroys = 0
     const tray = new DesktopTrayLifecycle<FakeWindow, object>({
       create: (actions) => {
@@ -227,7 +261,12 @@ describe('DesktopTrayLifecycle', () => {
         candidate.hidden = false
         candidate.focused = true
       },
-      requestClose: async (candidate) => { closeRequests.push(candidate) },
+      requestClose: async (candidate) => {
+        closeRequests.push(candidate)
+        return { kind: 'cancelled', status: activeStatus }
+      },
+      quitApplication,
+      reportCloseFailure,
     })
 
     tray.ensure(window)
@@ -239,10 +278,59 @@ describe('DesktopTrayLifecycle', () => {
     expect(window).toEqual({ destroyed: false, hidden: false, focused: true })
     await createdActions[0]![1]!.click()
     expect(closeRequests).toEqual([window])
+    expect(quitApplication).not.toHaveBeenCalled()
+    expect(reportCloseFailure).not.toHaveBeenCalled()
     expect(destroys).toBe(0)
 
     tray.dispose()
     expect(destroys).toBe(1)
+  })
+
+  it.each([
+    ['closed', { kind: 'closed', status: activeStatus } satisfies DesktopCloseResult, 1],
+    ['closed without a client', { kind: 'closed-without-client' } satisfies DesktopCloseResult, 1],
+    ['minimized again', { kind: 'minimized', status: activeStatus } satisfies DesktopCloseResult, 0],
+    ['cancelled', { kind: 'cancelled', status: activeStatus } satisfies DesktopCloseResult, 0],
+  ] as const)('quits only after the same close request is %s', async (_label, result, quitCalls) => {
+    const window: FakeWindow = { destroyed: false, hidden: true, focused: false }
+    let actions: readonly DesktopTrayAction[] = []
+    const quitApplication = vi.fn()
+    const tray = new DesktopTrayLifecycle<FakeWindow, object>({
+      create: (created) => { actions = created; return {} },
+      destroy: () => {},
+      isDestroyed: candidate => candidate.destroyed,
+      restore: () => {},
+      requestClose: async () => result,
+      quitApplication,
+      reportCloseFailure: async () => {},
+    })
+    tray.ensure(window)
+
+    await actions[1]!.click()
+
+    expect(quitApplication).toHaveBeenCalledTimes(quitCalls)
+  })
+
+  it('reports a rejected Quit close request without rejecting the native menu callback', async () => {
+    const window: FakeWindow = { destroyed: false, hidden: true, focused: false }
+    const failure = new Error('close observation failed')
+    let actions: readonly DesktopTrayAction[] = []
+    const reportCloseFailure = vi.fn(async () => {})
+    const quitApplication = vi.fn()
+    const tray = new DesktopTrayLifecycle<FakeWindow, object>({
+      create: (created) => { actions = created; return {} },
+      destroy: () => {},
+      isDestroyed: candidate => candidate.destroyed,
+      restore: () => {},
+      requestClose: async () => { throw failure },
+      quitApplication,
+      reportCloseFailure,
+    })
+    tray.ensure(window)
+
+    await expect(actions[1]!.click()).resolves.toBeUndefined()
+    expect(reportCloseFailure).toHaveBeenCalledWith(window, failure)
+    expect(quitApplication).not.toHaveBeenCalled()
   })
 })
 

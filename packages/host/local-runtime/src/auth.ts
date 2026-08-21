@@ -34,6 +34,7 @@ export interface LocalDashboardAuthOptions {
 interface HandoffRecord {
   readonly expiresAt: number
   readonly expiryTimer: ReturnType<typeof setTimeout>
+  readonly owner?: string
 }
 
 interface HeaderRequest {
@@ -47,7 +48,7 @@ interface HeaderRequest {
  */
 export class LocalDashboardAuth {
   private readonly handoffs = new Map<string, HandoffRecord>()
-  private readonly sessions = new Set<string>()
+  private readonly sessions = new Map<string, string>()
   private readonly now: () => number
   private readonly origin: string
   private readonly authority: string
@@ -62,13 +63,16 @@ export class LocalDashboardAuth {
     this.now = options.now ?? Date.now
   }
 
-  /** Mint one opaque form-body handoff that expires after the fixed 60-second interval. */
-  mintBrowserHandoff(): BrowserHandoff {
+  /**
+   * Mint one opaque form-body handoff that expires after the fixed 60-second interval.
+   * @param owner - native UI owner retained through the browser cookie, when one minted the handoff.
+   */
+  mintBrowserHandoff(owner?: string): BrowserHandoff {
     const id = randomSecret()
     const expiresAt = this.now() + HANDOFF_LIFETIME_MS
     const expiryTimer = setTimeout(() => { this.handoffs.delete(id) }, HANDOFF_LIFETIME_MS)
     expiryTimer.unref?.()
-    this.handoffs.set(id, { expiresAt, expiryTimer })
+    this.handoffs.set(id, { expiresAt, expiryTimer, ...(owner === undefined ? {} : { owner }) })
     return { id, expiresAt }
   }
 
@@ -93,7 +97,8 @@ export class LocalDashboardAuth {
     clearTimeout(handoff.expiryTimer)
     this.handoffs.delete(id)
     const session = randomSecret()
-    this.sessions.add(session)
+    const owner = handoff.owner ?? `dashboard-${createHash('sha256').update(session).digest('base64url')}`
+    this.sessions.set(session, owner)
     return { kind: 'accepted', cookie: `${SESSION_COOKIE_NAME}=${session}` }
   }
 
@@ -110,8 +115,7 @@ export class LocalDashboardAuth {
   dashboardOwner(request: HeaderRequest): string | undefined {
     if (header(request, 'host') !== this.authority || header(request, 'origin') !== this.origin) return undefined
     const session = cookieValue(header(request, 'cookie'), SESSION_COOKIE_NAME)
-    if (session === undefined || !this.sessions.has(session)) return undefined
-    return `dashboard-${createHash('sha256').update(session).digest('base64url')}`
+    return session === undefined ? undefined : this.sessions.get(session)
   }
 
   /** Render the only permitted browser session cookie attributes. */

@@ -76,6 +76,22 @@ describe('local Runtime authorization', () => {
     expect(auth.consumeBrowserHandoff(expired.id)).toEqual({ kind: 'rejected' })
   })
 
+  it('retains an explicit native client as the Dashboard control owner', () => {
+    const auth = new LocalDashboardAuth({
+      accessToken: 'private-endpoint-token',
+      origin: 'http://127.0.0.1:39817',
+    })
+    const handoff = auth.mintBrowserHandoff('desktop-native-owner')
+    const session = auth.consumeBrowserHandoff(handoff.id)
+    if (session.kind !== 'accepted') throw new Error('expected an authenticated session')
+
+    expect(auth.dashboardOwner(request({
+      host: '127.0.0.1:39817',
+      origin: 'http://127.0.0.1:39817',
+      cookie: session.cookie,
+    }))).toBe('desktop-native-owner')
+  })
+
   it('cleans an owned bootstrap path exactly once for dispatch, exchange, or expiry', async () => {
     let expiry!: () => void
     const paths: string[] = []

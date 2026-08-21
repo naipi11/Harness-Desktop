@@ -174,21 +174,15 @@ export class RuntimeDashboardController {
   }
 
   private async closeOwnedResources(): Promise<void> {
-    const failures: unknown[] = []
     await Promise.allSettled([this.startupFlight, this.retryFlight].filter(
       (flight): flight is Promise<DesktopStartupResult> => flight !== undefined,
     ))
     try {
       await this.closeCurrentAttachment()
-    } catch (error) {
-      failures.push(error)
-    }
-    try {
       await this.client.close()
     } catch (error) {
-      failures.push(error)
+      throw new AggregateError([error], 'Desktop Runtime resources could not be closed.')
     }
-    if (failures.length > 0) throw new AggregateError(failures, 'Desktop Runtime resources could not be closed.')
   }
 }
 

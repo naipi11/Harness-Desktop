@@ -87,12 +87,18 @@ describe('local Runtime auth routes', () => {
   })
 
   it('requires bearer authorization to mint a body-only handoff and exchanges it once without CORS', async () => {
-    const { port } = await start()
+    const { port, auth } = await start()
     const control = `http://127.0.0.1:${String(port)}/_harness/control/browser-handoff`
     expect((await fetch(control, { method: 'POST' })).status).toBe(401)
+    expect((await fetch(control, {
+      method: 'POST', headers: { authorization: 'Bearer private-endpoint-token' },
+    })).status).toBe(400)
 
     const minted = await fetch(control, {
-      method: 'POST', headers: { authorization: 'Bearer private-endpoint-token' },
+      method: 'POST', headers: {
+        authorization: 'Bearer private-endpoint-token',
+        'x-harness-runtime-client': 'desktop-native-owner',
+      },
     })
     expect(minted.status).toBe(200)
     const handoff = await minted.json() as { id: string; expiresAt: number }
@@ -112,6 +118,9 @@ describe('local Runtime auth routes', () => {
     expect(cookie).toContain('Path=/')
     expect(cookie).not.toMatch(/Expires=|Max-Age=/i)
     expect(cookie).not.toContain(handoff.id)
+    expect(auth.dashboardOwner({
+      headers: { host: `127.0.0.1:${String(port)}`, origin: `http://127.0.0.1:${String(port)}`, cookie: cookie! },
+    })).toBe('desktop-native-owner')
 
     const replay = await fetch(`http://127.0.0.1:${String(port)}/_harness/handoff`, {
       method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' },

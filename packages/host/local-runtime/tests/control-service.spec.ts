@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import SessionStore, { SessionId as makeSessionId } from '@harness-desktop/dsh-session'
@@ -186,6 +186,35 @@ describe('Runtime control service', () => {
     expect(keepInbox).toBe(true)
     expect(await control!.handleDashboard(dashboardOwner, { operation: 'observe-active-work' }))
       .toEqual({ ownUiWork: [] })
+  })
+
+  it('settles claimed Dashboard work after agent quiescence without requiring a turn-end event', async () => {
+    const { agents } = await start()
+    const nativeOwner = client('dashboard-idle-native')
+    const dashboardOwner = client('dashboard-idle-owner')
+    const terminal = client('dashboard-idle-terminal')
+    const sessionId = makeSessionId('dashboard-idle-session')
+    await control!.attachClient(nativeOwner)
+    await control!.openTerminal(nativeOwner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected Dashboard Agent')
+    const whenIdle = vi.fn(async () => {})
+    ;(agent as unknown as { whenIdle: () => Promise<void> }).whenIdle = whenIdle
+    const rpcId = 'dashboard-idle-rpc' as never
+    const ownership = await control!.ownDashboardPrompt(dashboardOwner, { sessionId, rpcId })
+    const message = { id: 'dashboard-idle-message', source: { kind: 'user', rpcId } } as never
+    const committing = ownership.commit()
+    queueMicrotask(() => { control!.handleAgentInboxInserted(agent, message) })
+    await committing
+    control!.handleAgentInboxClaimed(agent, message, 1)
+
+    const result = await control!.stopOwnUiWork(dashboardOwner)
+
+    expect(result).toMatchObject({ kind: 'stopped' })
+    expect(whenIdle).toHaveBeenCalledOnce()
+    expect(await control!.observeActiveWork(dashboardOwner)).toEqual({ ownUiWork: [] })
+    const replacement = await runtime!.beginAgentWork(sessionId)
+    await runtime!.endAgentWork(replacement)
   })
 
   it('releases Dashboard admission when the API rejects before publishing a message', async () => {

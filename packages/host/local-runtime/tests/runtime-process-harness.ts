@@ -266,7 +266,10 @@ export async function mintBrowserCookie(port: number, accessToken: string): Prom
   const origin = `http://127.0.0.1:${String(port)}`
   const minted = await fetch(`${origin}/_harness/control/browser-handoff`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${accessToken}` },
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'x-harness-runtime-client': 'runtime-process-browser-client',
+    },
   })
   if (!minted.ok) throw new Error(`Runtime handoff mint failed with HTTP ${String(minted.status)}`)
   const handoff = await minted.json() as { id: string }

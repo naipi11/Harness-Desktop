@@ -94,6 +94,8 @@ export class DesktopClosePolicy<Window extends object> {
         await this.close(window)
         return { kind: 'closed', status, stopResult }
       }
+      default:
+        return assertNever(choice)
     }
   }
 
@@ -108,7 +110,7 @@ export interface DesktopTrayAction {
   /** Operating-system menu label. */
   readonly label: 'Restore' | 'Quit'
   /** Execute the native lifecycle action. */
-  readonly click: () => void | Promise<void>
+  readonly click: () => Promise<void>
 }
 
 /** Platform adapter for one lazily created Desktop tray. */
@@ -122,7 +124,11 @@ export interface DesktopTrayDependencies<Window extends object, Tray> {
   /** Show and focus the retained Desktop window. */
   readonly restore: (window: Window) => void
   /** Request the same close decision used by the native window close event. */
-  readonly requestClose: (window: Window) => Promise<unknown>
+  readonly requestClose: (window: Window) => Promise<DesktopCloseResult>
+  /** Exit the Electron application after the close policy actually closed its window. */
+  readonly quitApplication: () => void
+  /** Present a redacted close failure without rejecting the native menu callback. */
+  readonly reportCloseFailure: (window: Window, error: unknown) => Promise<void>
 }
 
 /** Lazily owns one platform tray for a hidden Desktop window. */
@@ -137,15 +143,36 @@ export class DesktopTrayLifecycle<Window extends object, Tray> {
   ensure(window: Window): void {
     this.window = window
     if (this.tray !== undefined) return
-    const restore = (): void => {
+    const restore = (): Promise<void> => {
       const current = this.window
-      if (current === undefined || this.dependencies.isDestroyed(current)) return
+      if (current === undefined || this.dependencies.isDestroyed(current)) return Promise.resolve()
       this.dependencies.restore(current)
+      return Promise.resolve()
     }
     const quit = async (): Promise<void> => {
       const current = this.window
       if (current === undefined || this.dependencies.isDestroyed(current)) return
-      await this.dependencies.requestClose(current)
+      try {
+        const result = await this.dependencies.requestClose(current)
+        switch (result.kind) {
+          case 'closed':
+          case 'closed-without-client':
+            this.dependencies.quitApplication()
+            return
+          case 'minimized':
+          case 'cancelled':
+          case 'stop-failed':
+            return
+          default:
+            assertNever(result)
+        }
+      } catch (error) {
+        try {
+          await this.dependencies.reportCloseFailure(current, error)
+        } catch {
+          // Native application teardown may make the already-redacted failure dialog unavailable.
+        }
+      }
     }
     this.tray = this.dependencies.create([
       { label: 'Restore', click: restore },
@@ -161,4 +188,8 @@ export class DesktopTrayLifecycle<Window extends object, Tray> {
     this.window = undefined
     this.dependencies.destroy(tray)
   }
+}
+
+function assertNever(_value: never): never {
+  throw new Error('Desktop close policy received an unsupported discriminant.')
 }

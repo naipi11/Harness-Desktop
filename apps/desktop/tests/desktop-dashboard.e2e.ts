@@ -169,12 +169,30 @@ test('boots the real authenticated Dashboard without exposing bootstrap authorit
 
 test('preserves Dashboard workbench focus through close to tray and restore', async () => {
   const fixture = await launchDesktopRuntimeFixture()
+  const workspace = await seedDesktopWorkspace(fixture.runtime)
   try {
     const page = fixture.page
     const workbench = page.getByRole('region', { name: 'Engineering workbench' })
     await workbench.waitFor({ timeout: 45_000 })
     const notice = page.getByRole('dialog').getByRole('button', { name: 'Continue' })
-    if (await notice.count()) await notice.click()
+    if (await notice.count()) {
+      await notice.click()
+      await notice.waitFor({ state: 'hidden' })
+    }
+    await page.getByRole('button', { name: 'Add workspace', exact: true }).click()
+    const directoryDialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
+    await directoryDialog.getByRole('button', { name: 'Edit path' }).click()
+    const pathInput = directoryDialog.getByRole('textbox', { name: 'Edit path' })
+    await pathInput.fill(workspace)
+    await pathInput.press('Enter')
+    await directoryDialog.getByRole('button', { name: 'Open', exact: true }).click()
+    await directoryDialog.waitFor({ state: 'hidden' })
+    const composer = page.getByRole('textbox', { name: 'Describe what you want to build' })
+    await composer.fill('Keep this live approval active through the Desktop close decision.')
+    await page.getByRole('button', { name: 'Send message' }).click()
+    const approval = page.locator('[data-approval-key]')
+    await expect(approval).toBeVisible({ timeout: 30_000 })
+    expect(fixture.requests.filter(request => request.url.endsWith('/api/session.prompt'))).toHaveLength(1)
     await page.getByRole('tab', { name: 'Terminal' }).click()
     await page.getByRole('button', { name: 'Enter focus mode' }).click()
     await expect(workbench).toHaveAttribute('data-workbench-focus', 'true')
@@ -182,39 +200,17 @@ test('preserves Dashboard workbench focus through close to tray and restore', as
 
     await fixture.application.evaluate(({ dialog }) => {
       const state = globalThis as typeof globalThis & {
-        __HARNESS_CLOSE_TEST_FETCH__?: typeof fetch
         __HARNESS_CLOSE_TEST_DIALOG__?: typeof dialog.showMessageBox
         __HARNESS_CLOSE_TEST_TRACE__?: unknown[]
-        __HARNESS_CLOSE_TEST_ACTIVE__?: boolean
       }
-      state.__HARNESS_CLOSE_TEST_FETCH__ = globalThis.fetch
       state.__HARNESS_CLOSE_TEST_DIALOG__ = dialog.showMessageBox.bind(dialog)
       state.__HARNESS_CLOSE_TEST_TRACE__ = []
-      state.__HARNESS_CLOSE_TEST_ACTIVE__ = true
-      const originalFetch = globalThis.fetch
-      globalThis.fetch = async (input, init) => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-        const body = typeof init?.body === 'string' ? init.body : ''
-        if (url.endsWith('/_harness/control')
-          && body === JSON.stringify({ operation: 'observe-active-work' })) {
-          state.__HARNESS_CLOSE_TEST_TRACE__?.push({ kind: 'observe', body })
-          return new Response(JSON.stringify({
-            ok: true,
-            value: {
-              ownUiWork: state.__HARNESS_CLOSE_TEST_ACTIVE__ === true
-                ? ['11111111-1111-4111-8111-111111111111']
-                : [],
-            },
-          }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          })
-        }
-        return await originalFetch(input, init)
-      }
       Reflect.set(dialog, 'showMessageBox', async (_window: unknown, options: { readonly buttons?: string[] }) => {
         state.__HARNESS_CLOSE_TEST_TRACE__?.push({ kind: 'dialog', buttons: options.buttons })
-        return { response: 0, checkboxChecked: false }
+        return {
+          response: state.__HARNESS_CLOSE_TEST_TRACE__?.length === 1 ? 0 : 1,
+          checkboxChecked: false,
+        }
       })
     })
 
@@ -222,11 +218,10 @@ test('preserves Dashboard workbench focus through close to tray and restore', as
       BrowserWindow.getAllWindows()[0]?.close()
     })
     await expect.poll(() => fixture.application.evaluate(() =>
-      ((globalThis as Record<string, unknown>).__HARNESS_CLOSE_TEST_TRACE__ as unknown[] | undefined)?.length ?? 0))
-      .toBeGreaterThanOrEqual(2)
+      ((globalThis as Record<string, unknown>).__HARNESS_CLOSE_TEST_TRACE__ as Array<{ kind?: unknown }> | undefined)
+        ?.filter(entry => entry.kind === 'dialog').length ?? 0)).toBe(1)
     expect(await fixture.application.evaluate(() =>
       (globalThis as Record<string, unknown>).__HARNESS_CLOSE_TEST_TRACE__)).toEqual([
-      { kind: 'observe', body: JSON.stringify({ operation: 'observe-active-work' }) },
       { kind: 'dialog', buttons: ['Minimize to Tray', 'Safely Stop My Work', 'Cancel'] },
     ])
     await expect.poll(() => fixture.application.evaluate(({ BrowserWindow }) =>
@@ -245,8 +240,6 @@ test('preserves Dashboard workbench focus through close to tray and restore', as
     const pageClosed = page.waitForEvent('close')
     const applicationClosed = fixture.application.waitForEvent('close')
     await fixture.application.evaluate(({ BrowserWindow }) => {
-      const state = globalThis as Record<string, unknown>
-      state.__HARNESS_CLOSE_TEST_ACTIVE__ = false
       BrowserWindow.getAllWindows()[0]?.close()
     })
     await pageClosed
@@ -254,21 +247,14 @@ test('preserves Dashboard workbench focus through close to tray and restore', as
   } finally {
     await fixture.application.evaluate(({ dialog }) => {
       const state = globalThis as typeof globalThis & {
-        __HARNESS_CLOSE_TEST_FETCH__?: typeof fetch
         __HARNESS_CLOSE_TEST_DIALOG__?: typeof dialog.showMessageBox
         __HARNESS_CLOSE_TEST_TRACE__?: unknown[]
-        __HARNESS_CLOSE_TEST_ACTIVE__?: boolean
-      }
-      if (state.__HARNESS_CLOSE_TEST_FETCH__ !== undefined) {
-        globalThis.fetch = state.__HARNESS_CLOSE_TEST_FETCH__
-        delete state.__HARNESS_CLOSE_TEST_FETCH__
       }
       if (state.__HARNESS_CLOSE_TEST_DIALOG__ !== undefined) {
         Reflect.set(dialog, 'showMessageBox', state.__HARNESS_CLOSE_TEST_DIALOG__)
         delete state.__HARNESS_CLOSE_TEST_DIALOG__
       }
       delete state.__HARNESS_CLOSE_TEST_TRACE__
-      delete state.__HARNESS_CLOSE_TEST_ACTIVE__
     }).catch(() => {})
     await fixture.close()
   }
