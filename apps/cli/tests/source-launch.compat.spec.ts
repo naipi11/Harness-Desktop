@@ -44,5 +44,17 @@ describe('SOURCE CLI launchers (node --import tsx/esm)', () => {
     expect(malformed.exitCode).toBe(2)
     expect(malformed.stderr).toContain('run needs exactly one task')
     expect(malformed.stderr).not.toContain('--profile')
+
+    const malformedDesktop = await execa(process.execPath, ['--import', 'tsx/esm', sourceBin, 'desktop', 'extra'], {
+      cwd: repoRoot,
+      input: '',
+      timeout: 25_000,
+      killSignal: 'SIGKILL',
+      reject: false,
+    })
+    expect(malformedDesktop.exitCode).toBe(2)
+    expect(malformedDesktop.stderr).toContain('desktop takes no arguments')
+    expect(malformedDesktop.stderr).toContain(`Use \`${commandName} desktop\`.`)
+    expect(malformedDesktop.stderr).not.toContain('--profile')
   }, 60_000)
 })

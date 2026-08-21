@@ -9,6 +9,11 @@ import {
 } from '@harness-desktop/dsh-host-local-runtime'
 import { parseProductArgs, ProductArgumentError, type ProductInvocation } from './args.ts'
 import { createBrowserHandoffTransport } from './browser.ts'
+import {
+  createInstalledDesktopActivator,
+  runDesktopInvocation,
+  type InstalledDesktopActivator,
+} from './desktop.ts'
 import { createProcessTerminalIO, runTerminalInvocation, type TerminalIO } from './terminal-client.ts'
 import { runWebInvocation } from './web-daemon.ts'
 
@@ -29,6 +34,7 @@ function readVersion(): string {
  * @param io - terminal resources owned by this process.
  * @param connector - token-encapsulating shared Runtime connector.
  * @param opener - launcher-owned browser handoff transport.
+ * @param activator - installed Desktop application activator.
  * @returns the exact public CLI exit code.
  */
 export function dispatchInvocation(
@@ -36,6 +42,7 @@ export function dispatchInvocation(
   io: TerminalIO,
   connector: RuntimeConnector,
   opener: BrowserHandoffTransport,
+  activator: InstalledDesktopActivator,
 ): Promise<number> {
   switch (invocation.mode) {
     case 'interactive':
@@ -44,7 +51,7 @@ export function dispatchInvocation(
     case 'web':
       return runWebInvocation(invocation, connector, opener, io)
     case 'desktop':
-      return Promise.resolve(0)
+      return runDesktopInvocation(activator, io)
     default:
       invocation satisfies never
       throw new Error(`unhandled invocation mode ${JSON.stringify(invocation)}`)
@@ -55,7 +62,7 @@ export function dispatchInvocation(
  * Parse and dispatch one primary or compatible CLI invocation.
  * @param commandName - the entry name shown in launcher-owned output.
  * @param argv - arguments after the entrypoint.
- * @param dependencies - optional Runtime, browser, and terminal boundaries for tests.
+ * @param dependencies - optional Runtime, browser, Desktop, and terminal boundaries for tests.
  * @returns the exact public CLI exit code after the command settles.
  */
 export function runCli(
@@ -65,13 +72,15 @@ export function runCli(
     readonly io?: TerminalIO
     readonly connector?: RuntimeConnector
     readonly opener?: BrowserHandoffTransport
+    readonly activator?: InstalledDesktopActivator
   } = {},
 ): Promise<number> {
   const io = dependencies.io ?? createProcessTerminalIO()
   const connector = dependencies.connector ?? createRuntimeConnector()
   const opener = dependencies.opener ?? createBrowserHandoffTransport()
+  const activator = dependencies.activator ?? createInstalledDesktopActivator()
   try {
-    return dispatchInvocation(parseProductArgs(argv, commandName, readVersion()), io, connector, opener)
+    return dispatchInvocation(parseProductArgs(argv, commandName, readVersion()), io, connector, opener, activator)
   } catch (error) {
     if (error instanceof ProductArgumentError) {
       io.stderr.write(`${commandName}: ${error.message}\n${error.correction}\n`)

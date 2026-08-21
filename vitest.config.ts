@@ -102,6 +102,7 @@ const testIncludes = [
   'apps/cli/tests/runtime-client.e2e.ts',
   'apps/cli/tests/interactive-terminal.pty.e2e.ts',
   'apps/cli/tests/web-runtime.e2e.ts',
+  'apps/cli/tests/runtime-clients.acceptance.e2e.ts',
   'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',
 ]
