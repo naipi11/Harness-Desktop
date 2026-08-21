@@ -34,9 +34,12 @@ it('builds one CommonJS preload and makes the main process load it', async () =>
   expect(main).not.toContain('@harness-desktop/dsh-app-boot/product-metadata')
 })
 
-it('builds renderer bootstrap HTML without a copied product name', async () => {
+it('builds a network-isolated recovery bootstrap without a copied product name', async () => {
   const html = await readFile(fileURLToPath(new URL('../out/renderer/index.html', import.meta.url)), 'utf8')
-  expect(html).toContain('<title>Desktop</title>')
+  expect(html).toContain('<title>Dashboard recovery</title>')
+  expect(html).toContain("connect-src 'none'")
+  expect(html).not.toMatch(/\b(?:https?:|wss?:)/)
+  expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/)
   expect(html).not.toContain('Harness Desktop')
   expect(html).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg" />')
   expect(await readFile(fileURLToPath(new URL('../out/renderer/favicon.svg', import.meta.url)), 'utf8'))
