@@ -1,9 +1,11 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import {
   createDashboardContentSecurityPolicy,
   createWindowOptions,
   installWindowNavigationPolicy,
+  WindowRecoveryFlights,
+  WindowRuntimeOwners,
 } from '../src/main/window-options.ts'
 
 it('keeps the desktop window sandboxed behind the supplied preload', () => {
@@ -16,6 +18,45 @@ it('keeps the desktop window sandboxed behind the supplied preload', () => {
     nodeIntegration: false,
     webSecurity: true,
   })
+})
+
+it('retires an unreachable window owner before admitting its replacement', async () => {
+  const owners = new WindowRuntimeOwners<object, object, { close(): Promise<void> }>()
+  const window = {}
+  let releaseClose!: () => void
+  const close = vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve }))
+  const original = { close }
+  const replacement = { close: vi.fn(async () => {}) }
+  owners.publish(window, {}, original, 'http://127.0.0.1:41001')
+
+  const retiring = owners.retire(window)
+  expect(owners.controller(window)).toBeUndefined()
+  expect(owners.client(window)).toBeUndefined()
+  expect(owners.origin(window)).toBeUndefined()
+  expect(owners.active()).toEqual([])
+
+  owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
+  releaseClose()
+  await retiring
+  expect(close).toHaveBeenCalledOnce()
+  expect(owners.controller(window)).toBe(replacement)
+  expect(owners.origin(window)).toBe('http://127.0.0.1:41002')
+})
+
+it('registers a recovery flight before its operation can synchronously reenter', async () => {
+  const flights = new WindowRecoveryFlights<object>()
+  const window = {}
+  let calls = 0
+  let nested: Promise<void> | undefined
+
+  const outer = flights.run(window, async () => {
+    calls += 1
+    nested = flights.run(window, async () => { calls += 1 })
+  })
+
+  await outer
+  await nested
+  expect(calls).toBe(1)
 })
 
 it('limits Dashboard connections to self and the exact Runtime WebSocket origin', () => {

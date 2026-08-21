@@ -115,3 +115,87 @@ export function createDashboardContentSecurityPolicy(dashboardOrigin: string): s
     "frame-ancestors 'none'",
   ].join('; ')
 }
+
+/** Coalesces one recovery operation per Main-owned window. */
+export class WindowRecoveryFlights<Window extends object> {
+  private readonly flights = new WeakMap<Window, Promise<void>>()
+
+  /**
+   * Register a flight before deferring its operation, so synchronous event reentry observes it.
+   * @param window - window whose recovery operation is being admitted.
+   * @param operation - one asynchronous recovery document load.
+   * @returns the existing or newly admitted recovery settlement.
+   */
+  run(window: Window, operation: () => Promise<void>): Promise<void> {
+    const existing = this.flights.get(window)
+    if (existing !== undefined) return existing
+    let resolve!: () => void
+    let reject!: (error: unknown) => void
+    const flight = new Promise<void>((accept, decline) => {
+      resolve = accept
+      reject = decline
+    })
+    this.flights.set(window, flight)
+    const settle = (): void => {
+      if (this.flights.get(window) === flight) this.flights.delete(window)
+    }
+    void Promise.resolve().then(operation).then(resolve, reject)
+    void flight.then(settle, settle)
+    return flight
+  }
+}
+
+/** Minimum controller lifetime owned by one Desktop window. */
+export interface ClosableWindowController {
+  /** Release the controller's attachment and Runtime client. */
+  close(): Promise<void>
+}
+
+/** Tracks the current Runtime client, controller, and exact origin for every Desktop window. */
+export class WindowRuntimeOwners<
+  Window extends object,
+  Client,
+  Controller extends ClosableWindowController,
+> {
+  private readonly clients = new WeakMap<Window, Client>()
+  private readonly controllers = new WeakMap<Window, Controller>()
+  private readonly origins = new WeakMap<Window, string>()
+  private readonly activeControllers = new Set<Controller>()
+
+  /** Publish one fully constructed window owner. */
+  publish(window: Window, client: Client, controller: Controller, origin: string): void {
+    this.clients.set(window, client)
+    this.controllers.set(window, controller)
+    this.origins.set(window, origin)
+    this.activeControllers.add(controller)
+  }
+
+  /** @returns the window's current Runtime client. */
+  client(window: Window): Client | undefined { return this.clients.get(window) }
+
+  /** @returns the window's current Dashboard controller. */
+  controller(window: Window): Controller | undefined { return this.controllers.get(window) }
+
+  /** @returns the window's current exact Dashboard origin. */
+  origin(window: Window): string | undefined { return this.origins.get(window) }
+
+  /** Replace only the current client's validated Dashboard origin. */
+  setOrigin(window: Window, origin: string): void { this.origins.set(window, origin) }
+
+  /** @returns every controller still owned by the Desktop process. */
+  active(): readonly Controller[] { return [...this.activeControllers] }
+
+  /**
+   * Remove an owner from admission before closing it, so a replacement cannot be deleted by late settlement.
+   * @param window - window whose unreachable owner is retired.
+   */
+  async retire(window: Window): Promise<void> {
+    const controller = this.controllers.get(window)
+    this.clients.delete(window)
+    this.controllers.delete(window)
+    this.origins.delete(window)
+    if (controller === undefined) return
+    this.activeControllers.delete(controller)
+    await controller.close()
+  }
+}

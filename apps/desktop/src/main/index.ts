@@ -30,17 +30,16 @@ import {
   createDashboardContentSecurityPolicy,
   desktopIconPath,
   installWindowNavigationPolicy,
+  WindowRecoveryFlights,
+  WindowRuntimeOwners,
 } from './window-options.ts'
 
 const runtimeConnector = createRuntimeConnector()
 const desktopReadiness = new DesktopReadiness()
-const runtimeControllers = new Set<RuntimeDashboardController>()
-const windowControllers = new WeakMap<BrowserWindow, RuntimeDashboardController>()
 const startupTasks = new Set<Promise<unknown>>()
 const recoveryDiagnostics = new WeakMap<BrowserWindow, RedactedRuntimeDiagnostic>()
-const recoveryFlights = new WeakMap<BrowserWindow, Promise<void>>()
-const dashboardOrigins = new WeakMap<BrowserWindow, string>()
-const windowClients = new WeakMap<BrowserWindow, RuntimeClient>()
+const recoveryFlights = new WindowRecoveryFlights<BrowserWindow>()
+const runtimeOwners = new WindowRuntimeOwners<BrowserWindow, RuntimeClient, RuntimeDashboardController>()
 const windowsByContents = new Map<number, BrowserWindow>()
 const policySessions = new WeakSet<Electron.Session>()
 const windowStartups = new WindowStartupFlights(startupTasks, startDesktopWindow)
@@ -58,7 +57,7 @@ function createWindow(): BrowserWindow {
   windowsByContents.set(webContentsId, window)
   installWindowNavigationPolicy(window.webContents, {
     recoveryUrl: recoveryDocumentUrl(),
-    dashboardOrigin: () => dashboardOrigins.get(window),
+    dashboardOrigin: () => runtimeOwners.origin(window),
   })
   installDashboardResponsePolicy(window)
   window.webContents.on('render-process-gone', (_event, details) => {
@@ -95,14 +94,11 @@ async function startDesktopWindow(window: BrowserWindow): Promise<ControllerStar
       return recoveryResult(new Error('Desktop window is closed.'))
     }
     const dashboardOrigin = (await client.status()).dashboardOrigin
-    dashboardOrigins.set(window, dashboardOrigin)
     const controller = new RuntimeDashboardController(
       client,
       createBrowserHandoffTransport(window, { readiness: desktopReadiness }),
     )
-    runtimeControllers.add(controller)
-    windowControllers.set(window, controller)
-    windowClients.set(window, client)
+    runtimeOwners.publish(window, client, controller, dashboardOrigin)
     unownedClient = undefined
     const result = await controller.open(window)
     return await publishStartupResult(window, result)
@@ -173,23 +169,37 @@ function responseOwnerWindow(
   origin: string,
 ): BrowserWindow | undefined {
   const direct = webContentsId === undefined ? undefined : windowsByContents.get(webContentsId)
-  if (direct !== undefined) return dashboardOrigins.get(direct) === origin ? direct : undefined
+  if (direct !== undefined) return runtimeOwners.origin(direct) === origin ? direct : undefined
   const candidates = BrowserWindow.getAllWindows().filter(window =>
     !window.isDestroyed()
     && window.webContents.session === browserSession
-    && dashboardOrigins.get(window) === origin)
+    && runtimeOwners.origin(window) === origin)
   return candidates.length === 1 ? candidates[0] : undefined
 }
 
 async function retryDesktopWindow(window: BrowserWindow): Promise<ControllerStartupResult> {
-  const controller = windowControllers.get(window)
+  const controller = runtimeOwners.controller(window)
   if (controller === undefined) return await windowStartups.run(window)
-  const client = windowClients.get(window)
+  const client = runtimeOwners.client(window)
   if (client !== undefined) {
     try {
-      dashboardOrigins.set(window, (await client.status()).dashboardOrigin)
+      const origin = (await client.status()).dashboardOrigin
+      const previousOrigin = runtimeOwners.origin(window)
+      if (previousOrigin !== undefined && previousOrigin !== origin) {
+        await runtimeOwners.retire(window).catch(() => {})
+        return await windowStartups.run(window)
+      }
+      runtimeOwners.setOrigin(window, origin)
     } catch (error) {
-      return await publishStartupResult(window, recoveryResult(error))
+      await runtimeOwners.retire(window).catch(() => {})
+      try {
+        return await windowStartups.run(window)
+      } catch (restartError) {
+        return await publishStartupResult(window, recoveryResult(new AggregateError(
+          [error, restartError],
+          'Desktop Runtime owner replacement failed.',
+        )))
+      }
     }
   }
   return await publishStartupResult(window, await controller.retryAfterUserAction(window))
@@ -218,18 +228,14 @@ async function publishStartupResult(
 
 async function recoverDesktopWindow(window: BrowserWindow, error: unknown): Promise<void> {
   if (window.isDestroyed()) return
-  const existing = recoveryFlights.get(window)
-  if (existing !== undefined) return existing
-  const flight = (async () => {
+  return recoveryFlights.run(window, async () => {
     recoveryDiagnostics.set(window, normalizeRecoveryDiagnostic(error))
     try {
       await loadRecoveryDocument(window)
     } catch (loadError) {
       recoveryDiagnostics.set(window, normalizeRecoveryDiagnostic(loadError))
     }
-  })().finally(() => { recoveryFlights.delete(window) })
-  recoveryFlights.set(window, flight)
-  return flight
+  })
 }
 
 function recoveryResult(error: unknown): ControllerStartupResult {
@@ -250,7 +256,7 @@ function recoveryDocumentUrl(): string {
 
 async function closeDesktopRuntime(): Promise<void> {
   await windowStartups.close()
-  const results = await Promise.allSettled([...runtimeControllers].map(controller => controller.close()))
+  const results = await Promise.allSettled(runtimeOwners.active().map(controller => controller.close()))
   const failures = results
     .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     .map(result => result.reason as unknown)
