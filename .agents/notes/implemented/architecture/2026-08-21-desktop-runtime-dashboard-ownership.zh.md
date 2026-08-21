@@ -22,6 +22,8 @@ transport 在 dispatch 失败、exchange 成功或失败、以及 handoff 到期
 
 [已认证 Dashboard 工作台](2026-08-21-authenticated-dashboard-workbench.md)会在此 ready 点之后拥有浏览器投影和按 cookie 划分作用域的 prompt 工作；它不会把 connection 或 attachment 生命周期移入 Renderer。
 
+Main 会在原生窗口关闭前观察 Desktop Runtime 客户端返回的精确 `ActiveWorkStatus`。存在活动工作时只提供 `minimize-to-tray`、`safely-stop-own-ui-work` 和 `cancel`：最小化会延迟创建平台 tray 并隐藏现有窗口，而不释放其所有者；安全停止会等待精确且只针对该所有者的 `OwnUiWorkStopResult`，然后才退役该窗口的 attachment 和客户端；取消不会改变任何状态。安全停止失败时窗口保持打开，并且只呈现 Foundation 的脱敏诊断。tray 提供 Restore 和 Quit；Restore 会显示并聚焦同一个 Dashboard 窗口，Quit 会重复相同的关闭决策。空闲关闭和应用关闭继续按 attachment 在前、客户端在后的顺序释放，并且绝不停止 Runtime、释放后台 lease 或取消其他所有者的工作。
+
 Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航到本地恢复文档或当前 attachment 的精确 loopback origin。它会把 Dashboard 响应 CSP 绑定到所属的 `webContents`：`connect-src` 只包含 `'self'` 和该 origin 的精确 WebSocket 端口。主 frame 加载失败、Renderer 丢失或已认证 Dashboard 控制请求被拒绝时，该窗口只会进入一个合并的恢复 flight。重试会先刷新客户端报告的 origin，再铸造另一个 handoff；如果 Runtime 所有者不可达或发生变化，Main 会先取消其接纳资格并关闭它，再重新连接替代所有者。每个窗口的退役 fence 会在关闭等待或被拒绝时阻止替代所有者；后续重试会先重新关闭同一所有者。关闭失败的所有者会继续留在进程关闭跟踪中，使重试失败，并阻止接纳替代所有者；被拒绝的 attachment 与客户端释放只会清除各自失败的 flight，使进程关闭能够真正重试。不属于任何窗口或归属不明确的响应会保留原始 header，并且不能改变其他窗口的恢复状态。
 
 每个 attachment、transport、导航、marker 和加载失败都会先经过 `normalizeRecoveryDiagnostic`，Main 才会将其保留给恢复 UI。结果不包含 URL、端口、进程标识、Runtime home、token、handoff、cookie 或 attachment 值。
@@ -32,10 +34,12 @@ Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航�
 
 **让 Renderer 或 preload 执行 attachment 和重试。** 这会跨越 renderer 边界暴露有权限的 Runtime 对象，并允许窗口销毁后发生隐式重试。Main 保留生命周期所有权，Renderer 只请求显式恢复操作。
 
+**把活动工作关闭状态放入 Dashboard Renderer。** 由 Renderer 拥有关闭提示会复制原生窗口与 tray 生命周期，并且 Renderer 丢失时提示可能消失。Main 直接使用 Foundation 仅针对所有者的操作；Dashboard 继续拥有工作台。
+
 **把 `did-finish-load` 或第一次进程 acknowledgement 当作永久就绪。** Dashboard marker 在异步认证启动后才出现，并且每次替换导航都需要独立验证 URL 和 marker。一次性的输出记录不会削弱逐导航验证。
 
 ## 后果
 
-Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航、响应所有权、恢复和窗口关闭状态，直至这些操作结算。真实 Chromium 与 Electron 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权、精确 WebSocket CSP、拒绝外部导航，以及 URL、referrer、storage、header、console 或 DOM 均不泄露秘密。Electron journey 还固定了 Runtime 初始启动失败、用户重试失败并替换诊断、后续重试成功、分段流式工具输出，以及通过 Dashboard 解决真实等待中审批。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort，以及先关闭 attachment 再关闭客户端的顺序。
+Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航、响应所有权、恢复、关闭决策和 tray 状态，直至这些操作结算。真实 Chromium 与 Electron 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权、精确 WebSocket CSP、拒绝外部导航、URL、referrer、storage、header、console 或 DOM 均不泄露秘密，以及现有 Dashboard 工作台在隐藏和恢复之间保持不变。Electron journey 还固定了 Runtime 初始启动失败、用户重试失败并替换诊断、后续重试成功、分段流式工具输出，以及通过 Dashboard 解决真实等待中审批。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort、每个关闭决策、tray 操作，以及先关闭 attachment 再关闭客户端的顺序。
 
 Web root marker 是无秘密的同步属性，不是 renderer 控制 API。stdout acknowledgement 同样只供进程观察，且不携带 Runtime 控制数据。

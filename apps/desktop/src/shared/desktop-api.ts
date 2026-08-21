@@ -30,6 +30,12 @@ export type DesktopStartupResult =
   | { readonly kind: 'dashboard-loaded' }
   | { readonly kind: 'recovery'; readonly diagnostic: DesktopRecoveryDiagnostic }
 
+/** Exact user decisions offered when Desktop-owned UI work is active during close. */
+export type DesktopCloseChoice =
+  | 'minimize-to-tray'
+  | 'safely-stop-own-ui-work'
+  | 'cancel'
+
 /** User-selected project directory or an explicit cancellation. */
 export type FolderSelectionResult =
   | { readonly kind: 'selected'; readonly path: string }

@@ -13,11 +13,19 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   Notification,
   shell,
+  Tray,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { createBrowserHandoffTransport } from './browser-handoff-transport.ts'
+import {
+  DesktopClosePolicy,
+  DesktopTrayLifecycle,
+  desktopCloseChoices,
+  type DesktopTrayAction,
+} from './close-policy.ts'
 import { registerDesktopIpc } from './desktop-ipc.ts'
 import { DesktopReadiness } from './readiness.ts'
 import {
@@ -43,8 +51,32 @@ const runtimeOwners = new WindowRuntimeOwners<BrowserWindow, RuntimeClient, Runt
 const windowsByContents = new Map<number, BrowserWindow>()
 const policySessions = new WeakSet<Electron.Session>()
 const windowStartups = new WindowStartupFlights(startupTasks, startDesktopWindow)
+const admittedWindowCloses = new WeakSet<BrowserWindow>()
 let shutdownFlight: Promise<void> | undefined
 let quitAfterShutdown = false
+
+const trayLifecycle = new DesktopTrayLifecycle<BrowserWindow, Tray>({
+  create: createTray,
+  destroy: (tray) => { tray.destroy() },
+  isDestroyed: window => window.isDestroyed(),
+  restore: restoreWindow,
+  requestClose: window => closePolicy.request(window),
+})
+const closePolicy = new DesktopClosePolicy<BrowserWindow>({
+  client: window => runtimeOwners.client(window),
+  choose: chooseActiveWorkClose,
+  minimizeToTray: (window) => {
+    trayLifecycle.ensure(window)
+    window.hide()
+  },
+  closeOwnClient: window => runtimeOwners.retire(window),
+  closeWindow: (window) => {
+    if (window.isDestroyed()) return
+    admittedWindowCloses.add(window)
+    window.close()
+  },
+  reportStopFailure: reportActiveWorkStopFailure,
+})
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow(
@@ -62,6 +94,15 @@ function createWindow(): BrowserWindow {
   installDashboardResponsePolicy(window)
   window.webContents.on('render-process-gone', (_event, details) => {
     void recoverDesktopWindow(window, new Error(`Desktop renderer stopped: ${details.reason}`))
+  })
+  window.on('close', (event) => {
+    if (quitAfterShutdown || admittedWindowCloses.delete(window)) return
+    event.preventDefault()
+    void closePolicy.request(window).catch((error: unknown) => {
+      void reportCloseFailure(window, error).catch(() => {
+        // Native teardown may make the already-redacted close-failure dialog unavailable.
+      })
+    })
   })
   window.once('closed', () => {
     windowsByContents.delete(webContentsId)
@@ -303,7 +344,9 @@ void app.whenReady().then(() => {
   createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    const existing = BrowserWindow.getAllWindows().find(window => !window.isDestroyed())
+    if (existing === undefined) createWindow()
+    else restoreWindow(existing)
   })
 })
 
@@ -329,6 +372,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
+  trayLifecycle.dispose()
   void closeDesktopRuntime().catch(() => {
     // before-quit already awaited and handled the same idempotent local release.
   })
@@ -337,4 +381,69 @@ app.on('will-quit', () => {
 function copyText(text: string): Promise<void> {
   clipboard.writeText(text)
   return Promise.resolve()
+}
+
+function createTray(actions: readonly DesktopTrayAction[]): Tray {
+  const tray = new Tray(desktopIconPath(process.platform))
+  tray.setToolTip(productMetadata.productName)
+  tray.setContextMenu(Menu.buildFromTemplate(actions.map(action => ({
+    label: action.label,
+    click: () => { void action.click() },
+  }))))
+  tray.on('click', () => { void actions[0]?.click() })
+  return tray
+}
+
+function restoreWindow(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  window.show()
+  window.focus()
+}
+
+async function chooseActiveWorkClose(
+  window: BrowserWindow,
+  _status: Awaited<ReturnType<RuntimeClient['observeActiveWork']>>,
+): Promise<'minimize-to-tray' | 'safely-stop-own-ui-work' | 'cancel'> {
+  const result = await dialog.showMessageBox(window, {
+    type: 'question',
+    title: 'Active work is running',
+    message: 'Choose what Harness Desktop should do with your active work.',
+    detail: 'Keep it running in the tray, stop only this Desktop client’s work safely, or cancel closing.',
+    buttons: ['Minimize to Tray', 'Safely Stop My Work', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  })
+  return desktopCloseChoices[result.response] ?? 'cancel'
+}
+
+async function reportActiveWorkStopFailure(
+  window: BrowserWindow,
+  result: Extract<Awaited<ReturnType<RuntimeClient['stopOwnUiWork']>>, { readonly kind: 'failed' }>,
+): Promise<void> {
+  await dialog.showMessageBox(window, {
+    type: 'error',
+    title: result.diagnostic.subject,
+    message: result.diagnostic.message,
+    detail: `${result.diagnostic.correction}\nDiagnostic ID: ${result.diagnostic.diagnosticId}`,
+    buttons: ['OK'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  })
+}
+
+async function reportCloseFailure(window: BrowserWindow, error: unknown): Promise<void> {
+  if (window.isDestroyed()) return
+  const diagnostic = normalizeRecoveryDiagnostic(error)
+  await dialog.showMessageBox(window, {
+    type: 'error',
+    title: diagnostic.subject,
+    message: diagnostic.message,
+    detail: `${diagnostic.correction}\nDiagnostic ID: ${diagnostic.diagnosticId}`,
+    buttons: ['OK'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  })
 }
