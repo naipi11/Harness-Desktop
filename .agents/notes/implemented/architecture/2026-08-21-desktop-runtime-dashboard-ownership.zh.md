@@ -22,6 +22,8 @@ transport 在 dispatch 失败、exchange 成功或失败、以及 handoff 到期
 
 [已认证 Dashboard 工作台](2026-08-21-authenticated-dashboard-workbench.md)会在此 ready 点之后拥有浏览器投影和按 cookie 划分作用域的 prompt 工作；它不会把 connection 或 attachment 生命周期移入 Renderer。
 
+Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航到本地恢复文档或当前 attachment 的精确 loopback origin。它会把 Dashboard 响应 CSP 绑定到所属的 `webContents`：`connect-src` 只包含 `'self'` 和该 origin 的精确 WebSocket 端口。主 frame 加载失败、Renderer 丢失或已认证 Dashboard 控制请求被拒绝时，该窗口只会进入一个合并的恢复 flight。重试会先刷新客户端报告的 origin，再铸造另一个 handoff；不属于任何窗口或归属不明确的响应会保留原始 header，并且不能改变其他窗口的恢复状态。
+
 每个 attachment、transport、导航、marker 和加载失败都会先经过 `normalizeRecoveryDiagnostic`，Main 才会将其保留给恢复 UI。结果不包含 URL、端口、进程标识、Runtime home、token、handoff、cookie 或 attachment 值。
 
 ## 考虑过的替代方案
@@ -34,6 +36,6 @@ transport 在 dispatch 失败、exchange 成功或失败、以及 handoff 到期
 
 ## 后果
 
-Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航和窗口关闭状态，直至这些操作结算。真实 Chromium 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权，以及 URL、referrer、storage、header、console 或 DOM 均不泄露秘密。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort，以及先关闭 attachment 再关闭客户端的顺序。
+Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航、响应所有权、恢复和窗口关闭状态，直至这些操作结算。真实 Chromium 与 Electron 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权、精确 WebSocket CSP、拒绝外部导航，以及 URL、referrer、storage、header、console 或 DOM 均不泄露秘密。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort，以及先关闭 attachment 再关闭客户端的顺序。
 
 Web root marker 是无秘密的同步属性，不是 renderer 控制 API。stdout acknowledgement 同样只供进程观察，且不携带 Runtime 控制数据。

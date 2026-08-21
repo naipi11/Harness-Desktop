@@ -1,9 +1,11 @@
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import {
   createRuntimeConnector,
   normalizeRecoveryDiagnostic,
   type RedactedRuntimeDiagnostic,
+  type RuntimeClient,
 } from '@harness-desktop/dsh-host-local-runtime'
 import {
   app,
@@ -23,7 +25,12 @@ import {
   type DesktopStartupResult as ControllerStartupResult,
 } from './runtime-dashboard.ts'
 import { WindowStartupFlights } from './window-startup-flights.ts'
-import { createWindowOptions, desktopIconPath } from './window-options.ts'
+import {
+  createWindowOptions,
+  createDashboardContentSecurityPolicy,
+  desktopIconPath,
+  installWindowNavigationPolicy,
+} from './window-options.ts'
 
 const runtimeConnector = createRuntimeConnector()
 const desktopReadiness = new DesktopReadiness()
@@ -31,6 +38,11 @@ const runtimeControllers = new Set<RuntimeDashboardController>()
 const windowControllers = new WeakMap<BrowserWindow, RuntimeDashboardController>()
 const startupTasks = new Set<Promise<unknown>>()
 const recoveryDiagnostics = new WeakMap<BrowserWindow, RedactedRuntimeDiagnostic>()
+const recoveryFlights = new WeakMap<BrowserWindow, Promise<void>>()
+const dashboardOrigins = new WeakMap<BrowserWindow, string>()
+const windowClients = new WeakMap<BrowserWindow, RuntimeClient>()
+const windowsByContents = new Map<number, BrowserWindow>()
+const policySessions = new WeakSet<Electron.Session>()
 const windowStartups = new WindowStartupFlights(startupTasks, startDesktopWindow)
 let shutdownFlight: Promise<void> | undefined
 let quitAfterShutdown = false
@@ -42,6 +54,23 @@ function createWindow(): BrowserWindow {
       desktopIconPath(process.platform),
     ),
   )
+  const webContentsId = window.webContents.id
+  windowsByContents.set(webContentsId, window)
+  installWindowNavigationPolicy(window.webContents, {
+    recoveryUrl: recoveryDocumentUrl(),
+    dashboardOrigin: () => dashboardOrigins.get(window),
+  })
+  installDashboardResponsePolicy(window)
+  window.webContents.on('render-process-gone', (_event, details) => {
+    void recoverDesktopWindow(window, new Error(`Desktop renderer stopped: ${details.reason}`))
+  })
+  window.once('closed', () => {
+    windowsByContents.delete(webContentsId)
+  })
+  window.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return
+    void recoverDesktopWindow(window, new Error(`Desktop document failed to load: ${description}`))
+  })
 
   window.once('ready-to-show', () => {
     window.show()
@@ -56,22 +85,37 @@ function createWindow(): BrowserWindow {
 }
 
 async function startDesktopWindow(window: BrowserWindow): Promise<ControllerStartupResult> {
+  let unownedClient: RuntimeClient | undefined
   try {
     const client = await runtimeConnector.connect({ start: true })
+    unownedClient = client
     if (window.isDestroyed()) {
       await client.close()
+      unownedClient = undefined
       return recoveryResult(new Error('Desktop window is closed.'))
     }
+    const dashboardOrigin = (await client.status()).dashboardOrigin
+    dashboardOrigins.set(window, dashboardOrigin)
     const controller = new RuntimeDashboardController(
       client,
       createBrowserHandoffTransport(window, { readiness: desktopReadiness }),
     )
     runtimeControllers.add(controller)
     windowControllers.set(window, controller)
+    windowClients.set(window, client)
+    unownedClient = undefined
     const result = await controller.open(window)
     return await publishStartupResult(window, result)
   } catch (error) {
-    let diagnostic = normalizeRecoveryDiagnostic(error)
+    let failure = error
+    if (unownedClient !== undefined) {
+      try {
+        await unownedClient.close()
+      } catch (closeError) {
+        failure = new AggregateError([error, closeError], 'Desktop startup and client release both failed.')
+      }
+    }
+    let diagnostic = normalizeRecoveryDiagnostic(failure)
     recoveryDiagnostics.set(window, diagnostic)
     if (!window.isDestroyed()) {
       try {
@@ -85,9 +129,69 @@ async function startDesktopWindow(window: BrowserWindow): Promise<ControllerStar
   }
 }
 
+function installDashboardResponsePolicy(window: BrowserWindow): void {
+  const browserSession = window.webContents.session
+  if (policySessions.has(browserSession)) return
+  policySessions.add(browserSession)
+  browserSession.webRequest.onHeadersReceived((details, callback) => {
+    let origin: string
+    try {
+      origin = new URL(details.url).origin
+    } catch {
+      callback(unchangedResponseHeaders(details.responseHeaders))
+      return
+    }
+    const ownerWindow = responseOwnerWindow(browserSession, details.webContentsId, origin)
+    if (ownerWindow === undefined) {
+      callback(unchangedResponseHeaders(details.responseHeaders))
+      return
+    }
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [createDashboardContentSecurityPolicy(origin)],
+      },
+    })
+    const path = new URL(details.url).pathname
+    if (details.statusCode === 401 || (details.statusCode === 403 && path === '/_harness/dashboard-control')) {
+      setImmediate(() => {
+        void recoverDesktopWindow(ownerWindow, new Error('Dashboard authentication expired.'))
+      })
+    }
+  })
+}
+
+function unchangedResponseHeaders(
+  responseHeaders: Record<string, string[]> | undefined,
+): Electron.HeadersReceivedResponse {
+  return responseHeaders === undefined ? {} : { responseHeaders }
+}
+
+function responseOwnerWindow(
+  browserSession: Electron.Session,
+  webContentsId: number | undefined,
+  origin: string,
+): BrowserWindow | undefined {
+  const direct = webContentsId === undefined ? undefined : windowsByContents.get(webContentsId)
+  if (direct !== undefined) return dashboardOrigins.get(direct) === origin ? direct : undefined
+  const candidates = BrowserWindow.getAllWindows().filter(window =>
+    !window.isDestroyed()
+    && window.webContents.session === browserSession
+    && dashboardOrigins.get(window) === origin)
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
 async function retryDesktopWindow(window: BrowserWindow): Promise<ControllerStartupResult> {
   const controller = windowControllers.get(window)
   if (controller === undefined) return await windowStartups.run(window)
+  const client = windowClients.get(window)
+  if (client !== undefined) {
+    try {
+      dashboardOrigins.set(window, (await client.status()).dashboardOrigin)
+    } catch (error) {
+      return await publishStartupResult(window, recoveryResult(error))
+    }
+  }
   return await publishStartupResult(window, await controller.retryAfterUserAction(window))
 }
 
@@ -112,6 +216,22 @@ async function publishStartupResult(
   return { kind: 'recovery', diagnostic }
 }
 
+async function recoverDesktopWindow(window: BrowserWindow, error: unknown): Promise<void> {
+  if (window.isDestroyed()) return
+  const existing = recoveryFlights.get(window)
+  if (existing !== undefined) return existing
+  const flight = (async () => {
+    recoveryDiagnostics.set(window, normalizeRecoveryDiagnostic(error))
+    try {
+      await loadRecoveryDocument(window)
+    } catch (loadError) {
+      recoveryDiagnostics.set(window, normalizeRecoveryDiagnostic(loadError))
+    }
+  })().finally(() => { recoveryFlights.delete(window) })
+  recoveryFlights.set(window, flight)
+  return flight
+}
+
 function recoveryResult(error: unknown): ControllerStartupResult {
   return { kind: 'recovery', diagnostic: normalizeRecoveryDiagnostic(error) }
 }
@@ -120,6 +240,12 @@ function loadRecoveryDocument(window: BrowserWindow): Promise<void> {
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
   if (!app.isPackaged && rendererUrl !== undefined) return window.loadURL(rendererUrl)
   return window.loadFile(join(__dirname, '../renderer/index.html'))
+}
+
+function recoveryDocumentUrl(): string {
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL
+  if (!app.isPackaged && rendererUrl !== undefined) return rendererUrl
+  return pathToFileURL(join(__dirname, '../renderer/index.html')).href
 }
 
 async function closeDesktopRuntime(): Promise<void> {

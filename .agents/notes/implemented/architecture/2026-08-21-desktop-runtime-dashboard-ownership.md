@@ -22,6 +22,8 @@ The clean Dashboard performs its cookie-authenticated control preflight before `
 
 The [authenticated Dashboard workbench](2026-08-21-authenticated-dashboard-workbench.md) owns browser projections and cookie-scoped prompt work after this readiness point; it does not move connection or attachment lifecycle into Renderer.
 
+Main denies every renderer-created child window and permits top-level navigation only to the local recovery document or the current attachment's exact loopback origin. It binds Dashboard response CSP to the owning `webContents`: `connect-src` contains only `'self'` and that origin's exact WebSocket port. A main-frame load failure, renderer loss, or authenticated Dashboard-control rejection enters one coalesced recovery flight for that window. Retry refreshes the client-reported origin before minting another handoff; an unowned or ambiguous response retains its original headers and cannot change another window's recovery state.
+
 Every attachment, transport, navigation, marker, and load failure is converted through `normalizeRecoveryDiagnostic` before Main retains it for recovery UI. The result contains no URL, port, process identity, Runtime home, token, handoff, cookie, or attachment value.
 
 ## Alternatives considered
@@ -34,6 +36,6 @@ Every attachment, transport, navigation, marker, and load failure is converted t
 
 ## Consequences
 
-Desktop startup depends on a private temporary file and an extra browser exchange, and Main must retain cleanup, expiry, navigation, and window-close state until they settle. Real Chromium coverage pins the opaque-origin POST, 303 and cookie sequence, clean URL, absent CORS permission, and lack of URL, referrer, storage, header, console, or DOM leakage. Unit coverage pins concurrent startup, explicit retry, closed-window races, per-navigation marker checks, pending-probe aborts, and attachment-before-client shutdown.
+Desktop startup depends on a private temporary file and an extra browser exchange, and Main must retain cleanup, expiry, navigation, response ownership, recovery, and window-close state until they settle. Real Chromium and Electron coverage pins the opaque-origin POST, 303 and cookie sequence, clean URL, absent CORS permission, exact WebSocket CSP, denied foreign navigation, and lack of URL, referrer, storage, header, console, or DOM leakage. Unit coverage pins concurrent startup, explicit retry, closed-window races, per-navigation marker checks, pending-probe aborts, and attachment-before-client shutdown.
 
 The Web root marker is a non-secret synchronization attribute, not a renderer control API. The stdout acknowledgement is likewise process-observable only and carries no Runtime control data.
