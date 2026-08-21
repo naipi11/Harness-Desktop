@@ -296,7 +296,7 @@ function validateNavigation(navigation: DashboardNavigation, currentTime: number
 }
 
 function bootstrapHtml(navigation: DashboardNavigation): string {
-  return `<!doctype html><meta charset="utf-8"><form id="handoff" method="post" action="${navigation.origin}/_harness/handoff"><input type="hidden" name="handoff" value="${navigation.handoff.id}"></form><script>document.getElementById('handoff').submit()</script>`
+  return `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><form id="handoff" method="post" autocomplete="off" action="${navigation.origin}/_harness/handoff"><input type="hidden" name="handoff" value="${navigation.handoff.id}"></form><script>document.getElementById('handoff').submit()</script>`
 }
 
 async function dispatchBrowserDocument(url: string): Promise<void> {
