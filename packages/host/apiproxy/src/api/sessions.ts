@@ -345,7 +345,7 @@ export interface SessionsApi {
     mode: 'queue' | 'steer'
     content: PromptContentPart[]
     clientTimeZone?: string
-  }>):
+  }>, signal?: AbortSignal):
   Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
 
   /** Reads one durable image after proving that this session's log references its id. */

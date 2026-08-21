@@ -232,7 +232,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
                   }
                   let response: RpcResponse<unknown>
                   try {
-                    response = await invocation.invoke()
+                    response = await invocation.invoke(ownership.signal)
                   } catch (error: unknown) {
                     await ownership.release()
                     throw error

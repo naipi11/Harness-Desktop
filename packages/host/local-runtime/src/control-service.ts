@@ -59,6 +59,7 @@ interface WorkRecord {
   readonly rpcId: RpcId
   readonly finished: PromiseWithResolvers<void>
   readonly messageInserted?: PromiseWithResolvers<void>
+  readonly admissionAbort?: AbortController
   messageId?: UserMessage['id']
   turn?: number
   settlement?: Promise<void>
@@ -134,6 +135,8 @@ export interface RuntimeControlService {
 
 /** Carrier-side settlement for one Dashboard prompt admission. */
 export interface DashboardPromptOwnership {
+  /** Abort Dashboard prompt admission when ownership is cancelled before correlation. */
+  readonly signal: AbortSignal
   /** Keep ownership after the accepted prompt published its correlated inbox message. */
   commit(): Promise<void>
   /** Release ownership after a rejected, command-only, or failed API request. */
@@ -172,6 +175,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
   const clients = new Set<RuntimeClientId>()
   const children = new Map<RuntimeClientId, ChildAttachment>()
   const work = new Map<ActiveWorkId, WorkRecord>()
+  // A cancelled pre-correlation prompt stays denied until its late insertion
+  // arrives or the physical carrier settles; WeakMap ownership follows Agent lifetime.
+  const cancelledDashboardPrompts = new WeakMap<Agent, Set<RpcId>>()
   const terminals = new Map<RuntimeClientId, TerminalRecord>()
   const approvals = new Map<ApprovalId, PendingApproval>()
   const detectMigration = options.detectMigration ?? detectLegacyImport
@@ -189,6 +195,17 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     const result = migrationQueue.then(operation, operation)
     migrationQueue = result.then(() => undefined, () => undefined)
     return result
+  }
+  const markCancelledDashboardPrompt = (record: WorkRecord): void => {
+    const cancelled = cancelledDashboardPrompts.get(record.agent) ?? new Set<RpcId>()
+    cancelled.add(record.rpcId)
+    cancelledDashboardPrompts.set(record.agent, cancelled)
+  }
+  const clearCancelledDashboardPrompt = (record: Pick<WorkRecord, 'agent' | 'rpcId'>): void => {
+    const cancelled = cancelledDashboardPrompts.get(record.agent)
+    if (cancelled === undefined) return
+    cancelled.delete(record.rpcId)
+    if (cancelled.size === 0) cancelledDashboardPrompts.delete(record.agent)
   }
   const retainRuntime = async <T>(operation: () => Promise<T>): Promise<T> => {
     const retainer = `control-${randomUUID()}` as RuntimeClientId
@@ -246,6 +263,11 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     return record.settlement
   }
   const cancelWork = (record: WorkRecord): Promise<void> => {
+    if (record.messageInserted !== undefined && record.messageId === undefined) {
+      markCancelledDashboardPrompt(record)
+      record.admissionAbort?.abort()
+      return finishWork(record)
+    }
     if (record.turn === undefined && record.messageId !== undefined && record.agent.inbox.remove(record.messageId)) {
       return finishWork(record)
     }
@@ -381,6 +403,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       if (agent === undefined) throw new Error('host-local-runtime: Dashboard prompt session has no live Agent')
       const runtimeLease = await options.runtime.beginAgentWork(request.sessionId)
       const finished = Promise.withResolvers<void>()
+      const admissionAbort = new AbortController()
       void finished.promise.catch(() => {
         // The carrier and stop operation observe the same settlement failure.
       })
@@ -392,18 +415,26 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         rpcId: request.rpcId,
         finished,
         messageInserted: Promise.withResolvers<void>(),
+        admissionAbort,
       }
       work.set(record.id, record)
       return {
+        signal: admissionAbort.signal,
         async commit() {
-          if (work.get(record.id) !== record) return
+          if (work.get(record.id) !== record) {
+            clearCancelledDashboardPrompt(record)
+            return
+          }
           await waitForDashboardMessage(record)
           if (work.get(record.id) !== record) return
           if (record.messageId !== undefined) return
           await finishWork(record)
           throw new Error('host-local-runtime: accepted Dashboard prompt published no correlated message')
         },
-        release: () => finishWork(record),
+        async release() {
+          await finishWork(record)
+          clearCancelledDashboardPrompt(record)
+        },
       }
     },
     observeActiveWork(owner) {
@@ -544,6 +575,11 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     handleAgentInboxInserted(agent, message) {
       const rpcId = messageRpcId(message)
       if (rpcId === undefined) return
+      if (cancelledDashboardPrompts.get(agent)?.has(rpcId) === true) {
+        agent.inbox.remove(message.id)
+        clearCancelledDashboardPrompt({ agent, rpcId })
+        return
+      }
       for (const record of work.values()) {
         if (record.agent === agent && record.rpcId === rpcId && record.messageId === undefined) {
           record.messageId = message.id

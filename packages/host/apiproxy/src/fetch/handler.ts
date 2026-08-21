@@ -93,8 +93,11 @@ export interface FetchUnaryInvocation {
   readonly carrier: Request
   readonly method: keyof RpcMethodMap
   readonly request: RpcRequest<unknown>
-  /** @returns the ordinary ApiProxy response; call exactly once. */
-  invoke(): Promise<RpcResponse<unknown>>
+  /**
+   * @param signal - optional owner cancellation combined with the physical carrier.
+   * @returns the ordinary ApiProxy response; call exactly once.
+   */
+  invoke(signal?: AbortSignal): Promise<RpcResponse<unknown>>
 }
 
 /** Optional wrapper around schema-validated unary dispatch. */
@@ -115,7 +118,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.selectModel': { schema: sessionSelectModelRequestSchema, invoke: (api, r) => api.sessions.selectModel(r) },
   'session.rename': { schema: sessionRenameRequestSchema, invoke: (api, r) => api.sessions.rename(r) },
   'session.fork': { schema: sessionForkRequestSchema, invoke: (api, r) => api.sessions.fork(r) },
-  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r) => api.sessions.prompt(r) },
+  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r, signal) => api.sessions.prompt(r, signal) },
   'session.attachment': { schema: sessionAttachmentRequestSchema, invoke: (api, r) => api.sessions.attachment(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
@@ -204,7 +207,11 @@ async function handleUnary<K extends keyof RpcMethodMap>(
   }
   try {
     const request = { rpcId: message.rpcId, payload: payload.data } as RpcRequest<RequestPayload<K>>
-    const invoke = (): Promise<RpcResponse<ResponseValue<K>>> => route.invoke(api, request, carrier.signal)
+    const invoke = (signal?: AbortSignal): Promise<RpcResponse<ResponseValue<K>>> => route.invoke(
+      api,
+      request,
+      signal === undefined ? carrier.signal : AbortSignal.any([carrier.signal, signal]),
+    )
     const response = options.intercept === undefined
       ? await invoke()
       : await options.intercept({ carrier, method, request, invoke })

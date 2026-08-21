@@ -1,140 +1,189 @@
-/** Real Chromium coverage for the authenticated EngineeringWorkbench component. */
+/** Real Chromium coverage for the shipped authenticated Engineering Workbench graph. */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { fileURLToPath } from 'node:url'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Browser, BrowserContext, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { createServer as createViteServer, type ViteDevServer } from 'vite'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { Context } from '@harness-desktop/cordis'
-import WebServer from '@harness-desktop/dsh-host-webserver'
-import { LocalDashboardAuth } from '../../../packages/host/local-runtime/src/auth.ts'
-import { mountLocalControlRoutes } from '../../../packages/host/local-runtime/src/control-routes.ts'
-import type { RuntimeControlService } from '../../../packages/host/local-runtime/src/control-service.ts'
-import type { DashboardControlRequest, RuntimeClientId } from '../../../packages/host/local-runtime/src/runtime-client.ts'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@harness-desktop/dsh-llm'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@harness-desktop/dsh-session'
+import type {} from '@harness-desktop/dsh-tool-todo'
+import { launchWebScaffold, seedSession, watchConsole, type WebScaffold } from './scaffold.ts'
 
 let browser: Browser
-let context: Context
-let vite: ViteDevServer
-let origin = ''
-let auth: LocalDashboardAuth
-const ENTRY_SOURCE = fileURLToPath(new URL('./dashboard-workbench-entry.ts', import.meta.url))
+let scaffold: WebScaffold
+const SESSION_ID = 'authenticated-workbench-session'
 
-async function authenticatedPage(): Promise<{
-  browserContext: BrowserContext
-  page: Page
-  errors: string[]
-  failedUrls: string[]
-}> {
+function workbenchFixture(): string {
+  const session = Session.create(SessionId('authenticated-workbench-source'))
+  const shellTool = process.platform === 'win32' ? 'pwsh' : 'bash'
+  session.append('turn/start', { turn: 1 })
+  const user = session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'Prepare the workbench evidence.' }], source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('session/title', {
+    title: 'Authenticated workbench', messageSeqs: [user.seq], source: { kind: 'fallback' },
+  })
+  session.append('todo/write', { todos: [{ content: 'Ship workbench', status: 'in_progress' }] })
+  session.append('step/start', { turn: 1, step: 1 })
+  const calls = [
+    {
+      id: CallId('workbench-edit'), name: 'edit',
+      arguments: JSON.stringify({ file_path: 'src/app.ts', old_string: 'old', new_string: 'new' }),
+      result: 'Updated src/app.ts',
+    },
+    {
+      id: CallId('workbench-shell'), name: shellTool,
+      arguments: JSON.stringify({ command: 'pnpm test', description: 'Run focused tests' }),
+      result: '48 tests passed\n[exit code: 0]',
+    },
+    {
+      id: CallId('workbench-write'), name: 'write',
+      arguments: JSON.stringify({ file_path: 'artifact.txt', content: 'artifact\n' }),
+      result: 'Created artifact.txt',
+    },
+  ]
+  session.append('assistant/message', {
+    turn: 1,
+    step: 1,
+    message: createAssistantMessage({
+      content: calls.map(call => ({ type: 'tool-call' as const, id: call.id, name: call.name, arguments: call.arguments })),
+      source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }),
+  }, { surfaceOp: 'append' })
+  for (const call of calls) {
+    const source = session.append('tool/call', {
+      turn: 1, step: 1, callId: call.id, name: call.name, arguments: call.arguments,
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: call.id, content: [{ type: 'text', text: call.result }], isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [source.seq] })
+  }
+  session.append('step/end', { turn: 1, step: 1 })
+  session.append('step/start', { turn: 1, step: 2 })
+  session.append('assistant/message', {
+    turn: 1,
+    step: 2,
+    message: createAssistantMessage({
+      content: [{ type: 'text', text: 'Workbench artifacts are ready.' }],
+      source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('step/end', { turn: 1, step: 2 })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  return [
+    JSON.stringify({
+      type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: 0,
+    }),
+    ...session.events.map(event => JSON.stringify(event)),
+    '',
+  ].join('\n')
+}
+
+async function authenticatedPage(): Promise<{ browserContext: BrowserContext; page: Page }> {
+  const handoff = scaffold.mintDashboardHandoff?.()
+  if (handoff === undefined) throw new Error('authenticated Web scaffold did not expose a Dashboard handoff')
   const browserContext = await browser.newContext()
   const page = await browserContext.newPage()
-  const errors: string[] = []
-  const failedUrls: string[] = []
-  page.on('pageerror', (error) => { errors.push(String(error)) })
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
-  page.on('response', (response) => { if (response.status() >= 400) failedUrls.push(`${String(response.status())} ${response.url()}`) })
   await page.addInitScript(() => {
     ;(globalThis as Record<string, unknown>).harnessDesktop = { projection: 'desktop-only-secret' }
     localStorage.setItem('harness-workbench', 'local-recovery-secret')
   })
-  const handoff = auth.mintBrowserHandoff()
-  await page.setContent(`<form id="handoff" method="post" action="${origin}/_harness/handoff"><input type="hidden" name="handoff" value="${handoff.id}"></form>`)
+  await page.setContent(
+    `<form id="handoff" method="post" action="${scaffold.baseUrl}/_harness/handoff">`
+      + `<input type="hidden" name="handoff" value="${handoff.id}"></form>`,
+  )
   await Promise.all([
-    page.waitForURL(`${origin}/`),
+    page.waitForURL(`${scaffold.baseUrl}/`),
     page.locator('#handoff').evaluate((form: HTMLFormElement) => { form.submit() }),
   ])
-  return { browserContext, page, errors, failedUrls }
+  return { browserContext, page }
 }
 
 beforeAll(async () => {
-  vite = await createViteServer({
-    configFile: false,
-    root: fileURLToPath(new URL('..', import.meta.url)),
-    appType: 'custom', logLevel: 'silent', server: { middlewareMode: true },
-    resolve: {
-      alias: {
-        '@harness-desktop/cordis': fileURLToPath(new URL('../../../vendor/cordis/src/index.ts', import.meta.url)),
-        '@harness-desktop/dsh-client-web-react': fileURLToPath(new URL('../../../packages/client/web-react/lib/index.js', import.meta.url)),
-      },
-    },
-    plugins: [{
-      name: 'dashboard-workbench-entry', enforce: 'pre',
-      resolveId(id) { return id === '@harness-desktop/dsh-client-web' ? ENTRY_SOURCE : undefined },
-    }],
-  })
-  context = new Context()
-  await context.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
-  origin = `http://127.0.0.1:${String(context.webServer.port)}`
-  auth = new LocalDashboardAuth({ accessToken: 'dashboard-workbench-native-token', origin })
-  const controlService = {
-    sessions: undefined,
-    async handleDashboard(owner: RuntimeClientId, request: DashboardControlRequest) {
-      if (!owner.startsWith('dashboard-')) throw new Error('Dashboard owner was not authenticated')
-      if (request.operation === 'observe-active-work') return { ownUiWork: ['runtime-work'] }
-      if (request.operation === 'stop-own-ui-work') return { kind: 'stopped', work: ['runtime-work'] }
-      return { kind: 'not-needed' }
-    },
-  } as unknown as RuntimeControlService
-  await context.plugin({
-    inject: ['webServer'],
-    apply(routeContext: Context) { mountLocalControlRoutes(routeContext, { auth, controlService }) },
-  }).await()
-  context.webServer.registerFallback((request: IncomingMessage, response: ServerResponse) => {
-    const url = new URL(request.url ?? '/', origin)
-    if (request.method === 'GET' && url.pathname === '/') {
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-      response.end('<!doctype html><div id="root"></div><script type="module" src="/src/main.ts"></script>')
-      return
-    }
-    vite.middlewares(request, response, () => { response.writeHead(404); response.end('not found') })
-  })
+  scaffold = await launchWebScaffold({ authenticatedDashboard: { activeWork: ['runtime-work'] } })
+  await mkdir(join(scaffold.workspaceCwd, 'src'), { recursive: true })
+  await writeFile(join(scaffold.workspaceCwd, 'src', 'app.ts'), 'new\n')
+  await seedSession(scaffold, workbenchFixture(), SESSION_ID)
   browser = await chromium.launch({ headless: true })
-}, 60_000)
+}, 120_000)
 
 afterAll(async () => {
   await browser?.close()
-  await vite?.close()
-  await context?.fiber.dispose()
+  await scaffold?.close()
 })
 
 describe('authenticated engineering workbench', () => {
-  it('renders five projections and restores Dashboard chrome without reconnecting', async () => {
-    const { browserContext, page, errors, failedUrls } = await authenticatedPage()
+  it('drives all five shipped panels, active-work control, and focus without reconnecting', async () => {
+    const { browserContext, page } = await authenticatedPage()
+    const tripwire = watchConsole(page)
+    const muxRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes('/api/events.mux')) muxRequests.push(request.url())
+    })
     try {
-      await expect.poll(() => page.getByRole('region', { name: 'Engineering workbench' }).count(), {
-        timeout: 15_000,
-        message: `Workbench failed to mount: ${await page.locator('body').innerText()} ${errors.join(' ')} ${failedUrls.join(' ')}`,
-      }).toBe(1)
-      expect(await page.getByRole('tab').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-workbench-panel'))))
+      const workbench = page.getByRole('region', { name: 'Engineering workbench' })
+      await workbench.waitFor({ timeout: 30_000 })
+      const groupRow = page.locator('[role="treeitem"]').first()
+      await groupRow.waitFor({ timeout: 15_000 })
+      if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
+      const sessionRow = page.locator('[role="treeitem"]').nth(1)
+      await sessionRow.waitFor({ timeout: 10_000 })
+      await sessionRow.click()
+      await page.getByText('Authenticated workbench', { exact: true }).first().waitFor()
+      expect(await workbench.locator('[data-workbench-panel]').evaluateAll(nodes =>
+        nodes.map(node => node.getAttribute('data-workbench-panel'))))
         .toEqual(['files', 'diff', 'terminal', 'artifacts', 'tasks'])
-      await page.getByText('src', { exact: true }).waitFor()
-      await page.getByRole('button', { name: 'Open src' }).click()
+
       await page.getByRole('tab', { name: 'Diff' }).click()
-      await page.getByText('new', { exact: true }).waitFor()
+      await workbench.locator('[data-workbench-active-panel="diff"]').getByText('artifact', { exact: true }).waitFor()
       await page.getByRole('tab', { name: 'Terminal' }).click()
-      await page.getByText('48 tests passed', { exact: true }).waitFor()
+      await workbench.locator('[data-workbench-active-panel="terminal"]')
+        .getByText('48 tests passed', { exact: true }).waitFor()
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      await page.getByText('C:/workspace/src/app.ts', { exact: true }).waitFor()
+      await workbench.locator('[data-workbench-active-panel="artifacts"]')
+        .getByText('artifact.txt', { exact: true }).waitFor()
       await page.getByRole('tab', { name: 'Tasks' }).click()
-      await page.getByText('Ship workbench', { exact: true }).waitFor()
-      const connectionRequests = (): Promise<number> => page.evaluate(() => performance.getEntriesByType('resource')
-        .filter(entry => entry.name.includes('/api/events.mux')).length)
-      const requestsBeforeFocus = await connectionRequests()
+      await workbench.locator('[data-workbench-active-panel="tasks"]')
+        .getByText('Ship workbench', { exact: true }).waitFor()
+      await page.getByRole('tab', { name: 'Files' }).click()
+      await workbench.locator('[data-workbench-active-panel="files"]').getByText('src', { exact: true }).waitFor()
+
+      const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath').mockImplementation(async request => ({
+        rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } },
+      }))
+      try {
+        await page.getByRole('button', { name: 'Open src' }).click()
+        await expect.poll(() => openPath.mock.calls.length).toBe(1)
+        expect(openPath.mock.calls[0]![0].payload).toEqual({ path: join(scaffold.workspaceCwd, 'src') })
+      } finally {
+        openPath.mockRestore()
+      }
+
+      await page.getByText('runtime-work', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Stop my active work' }).click()
+      await page.getByText('Idle', { exact: true }).waitFor()
+
+      const muxBeforeFocus = muxRequests.length
+      expect(await page.locator('[data-workbench-dashboard-chrome]').count()).toBe(1)
       await page.getByRole('button', { name: 'Enter focus mode' }).click()
       expect(await page.locator('[data-workbench-dashboard-chrome]').count()).toBe(0)
-      expect(await page.getByText('Authenticated workbench', { exact: true }).count()).toBeGreaterThan(0)
       await page.getByRole('button', { name: 'Exit focus mode' }).click()
       expect(await page.locator('[data-workbench-dashboard-chrome]').count()).toBe(1)
-      expect(await connectionRequests()).toBe(requestsBeforeFocus)
-      const evidence = await page.evaluate(() => ({
-        actions: (globalThis as Record<string, unknown>).__WORKBENCH_ACTIONS__,
-        text: document.querySelector('[aria-label="Engineering workbench"]')?.textContent,
-      }))
-      expect(evidence.actions).toContainEqual({ method: 'openPath', args: ['C:/workspace/src'] })
-      expect(evidence.text).not.toContain('desktop-only-secret')
-      expect(evidence.text).not.toContain('local-recovery-secret')
+      expect(muxRequests).toHaveLength(muxBeforeFocus)
+      expect(await page.locator('#root').getAttribute('data-harness-dashboard-ready')).toBe('true')
+
+      const text = await workbench.innerText()
+      expect(text).not.toContain('desktop-only-secret')
+      expect(text).not.toContain('local-recovery-secret')
+      expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
     } finally {
       await browserContext.close()
     }
-  })
+  }, 60_000)
 })

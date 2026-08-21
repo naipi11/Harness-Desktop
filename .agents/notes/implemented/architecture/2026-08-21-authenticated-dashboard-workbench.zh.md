@@ -16,7 +16,7 @@ app-shell 在构建 Dashboard 前 inject `workspaces`。`EngineeringWorkbench` �
 
 client-module 声明支持 `includeWhenDisabled`，供 Host 侧由其他生命周期所有者管理的浏览器侧使用。Client connection 使用该声明：它在本地 Runtime 中的 Loader 行保持禁用，Runtime 挂载已认证 Host 路由，而浏览器 bundle 仍加入启动图。普通 Web 组合则直接启用 Host 行。
 
-已认证 connection 会包装完成 schema 校验的 unary dispatch。对于 `session.prompt`，Runtime 从 HttpOnly cookie 派生单向 owner，在 ApiProxy 准入前保留 Session writer，并记录请求 `rpcId`。现有 inbox 事件会关联已发布的用户消息和已领取的 Turn。被拒绝的请求、只执行命令的结果、handler 失败，以及未发布关联消息的已接受请求都会释放该保留；关联过程只在有界事件间隔内等待。对应的精确 `turn/end` 会释放已接受工作。`observe-active-work` 与 `stop-own-ui-work` 使用同一个 cookie 派生 owner，因此其他 Dashboard cookie 无法观察或停止这些工作。
+已认证 connection 会包装完成 schema 校验的 unary dispatch。对于 `session.prompt`，Runtime 从 HttpOnly cookie 派生单向 owner，在 ApiProxy 准入前保留 Session writer，并记录请求 `rpcId`。现有 inbox 事件会关联已发布的用户消息和已领取的 Turn。被拒绝的请求、只执行命令的结果、handler 失败，以及未发布关联消息的已接受请求都会释放该保留；关联过程只在有界事件间隔内等待。在关联前停止工作或关闭 Runtime 会中止 invocation，并保留关联 tombstone，直到 carrier 结算，或发生竞态的迟到消息从 inbox 中被移除。对应的精确 `turn/end` 会释放已接受工作。`observe-active-work` 与 `stop-own-ui-work` 使用同一个 cookie 派生 owner，因此其他 Dashboard cookie 无法观察或停止这些工作。
 
 工作台会在 Terminal 和 Task prompt 操作后刷新活动工作。只要工作仍处于活动状态，它就会按固定间隔轮询已认证操作，最多尝试 30 次；工作结算或 focus 变化不会重新连接浏览器客户端。无秘密的 ready marker 仍由成功完成认证的 `AppWebEntry` settle 拥有，详见 [Desktop Runtime Dashboard 所有权](2026-08-21-desktop-runtime-dashboard-ownership.md)。
 
@@ -34,4 +34,4 @@ client-module 声明支持 `includeWhenDisabled`，供 Host 侧由其他生命�
 
 浏览器 connection 与本地 Runtime 共享完成校验的 unary interceptor 约定，Dashboard prompt 准入在提交前会增加一次短暂的关联等待。使用两个 cookie 的真实源码 Runtime 进程证明了按 owner 隔离的 prompt 观察与停止。客户端测试证明了操作刷新、focus 保留和投影选择。
 
-历史进程内 Web e2e scaffold 没有可铸造 handoff 的原生 Runtime 客户端。它启用普通 Host connection 行，并且只提供严格同源的 Dashboard-control shim，以启动真实构建产物中的 `AppWebEntry` 与 Loader 图。专用 Dashboard-ready 浏览器套件继续覆盖真实 handoff 与 HttpOnly cookie 顺序。
+进程内 Web e2e scaffold 可以在已发货的构建版 `AppWebEntry` 与 Loader 图周围挂载真实 `LocalDashboardAuth` handoff、cookie 校验器、已认证 Connection 路由和 Dashboard 控制。其浏览器覆盖会植入一个真实 Session，并证明五个投影与操作、ready marker 时序、不重连的 focus、未认证恢复，以及由 AppWebEntry 拥有的插件失败报告。

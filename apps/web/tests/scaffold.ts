@@ -41,6 +41,13 @@ import {
   loadOverlayPatches,
 } from '@harness-desktop/dsh-app-boot'
 import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
+import type {
+  DashboardControlRequest, RuntimeClientId,
+} from '@harness-desktop/dsh-host-local-runtime'
+import { mountAuthenticatedConnection } from '@harness-desktop/dsh-client-connection'
+import { LocalDashboardAuth, type BrowserHandoff } from '../../../packages/host/local-runtime/src/auth.ts'
+import { mountLocalControlRoutes } from '../../../packages/host/local-runtime/src/control-routes.ts'
+import type { RuntimeControlService } from '../../../packages/host/local-runtime/src/control-service.ts'
 import { settingsNamespace } from '@harness-desktop/dsh-settings'
 import { LlmAdapter } from '@harness-desktop/dsh-llm'
 import type {
@@ -175,6 +182,8 @@ export interface WebScaffold {
   workspaceCwd: string
   /** Temp persistence root (seeded sessions land here through the real API). */
   persistenceRoot: string
+  /** Mint a real one-use Dashboard handoff when authenticated Runtime mode is enabled. */
+  mintDashboardHandoff?: () => BrowserHandoff
   /** Isolated harness home the settings/credentials rows write ($HARNESS_HOME double). */
   harnessHome: string
   /** Await a settled turn end: in-process turn/end, then the agent's idle flip (which follows the persistence flush). */
@@ -185,6 +194,11 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Mount the real Runtime cookie/handoff carriers around the shipped browser graph. */
+  authenticatedDashboard?: {
+    /** Active-work ids returned before the Dashboard stop action consumes them. */
+    activeWork?: string[]
+  }
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -444,11 +458,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
     { id: 'web-runtime', config: { printUrl: false, surfaceContext } },
-    {
-      id: 'connection',
-      disabled: false,
-      config: { trustedHosts: options.remoteAuthority === undefined ? [] : [options.remoteAuthority] },
-    },
+    options.authenticatedDashboard === undefined
+      ? {
+        id: 'connection',
+        disabled: false,
+        config: { trustedHosts: options.remoteAuthority === undefined ? [] : [options.remoteAuthority] },
+      }
+      : { id: 'connection', disabled: true },
     { id: 'settings', config: { harnessHome } },
     { id: 'credentials', config: { harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves
@@ -495,6 +511,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const ctx = new Context()
   let port = 0
   let replayHandle: ReplayHandle | undefined
+  let mintDashboardHandoff: (() => BrowserHandoff) | undefined
   try {
     process.chdir(workspaceCwd)
     // The production module-resolution setup: an empty profile root inside the temp
@@ -510,7 +527,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     const homeProvider = createLocalRuntimePlugin({ env: { ...process.env, HARNESS_HOME: harnessHome } })
     ctx.provide('harnessHome', homeProvider.home)
     ctx.provide('harnessHomeProvider', homeProvider)
-    ctx.provide('harnessHomePath', homeProvider.path)
+    ctx.provide('harnessHomePath', (...segments: readonly string[]) => homeProvider.path(...segments))
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come
@@ -545,46 +562,68 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
     port = boundPort
 
-    // The in-process Web lane predates the local Runtime process and has no
-    // native client that can mint a browser handoff. Admit only same-origin
-    // Dashboard control probes so the built AppWebEntry/Loader graph runs;
-    // dashboard-ready.e2e.ts owns the real handoff and HttpOnly-cookie proof.
-    ctx.webServer.register({
-      kind: 'exact',
-      path: '/_harness/dashboard-control',
-      async handler(request, response) {
-        const host = request.headers.host
-        if (request.method !== 'POST' || host === undefined || request.headers.origin !== `http://${host}`) {
-          response.writeHead(403)
-          response.end('forbidden')
-          return
-        }
-        const chunks: Uint8Array[] = []
-        for await (const chunk of request as AsyncIterable<Uint8Array>) chunks.push(chunk)
-        let operation: unknown
-        try {
-          operation = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { operation?: unknown }).operation
-        } catch {
-          response.writeHead(400)
-          response.end('invalid request')
-          return
-        }
-        const value = operation === 'get-legacy-migration'
-          ? { kind: 'not-needed' }
-          : operation === 'observe-active-work'
-            ? { ownUiWork: [] }
-            : operation === 'stop-own-ui-work'
-              ? { kind: 'none-active' }
-              : undefined
-        if (value === undefined) {
-          response.writeHead(400)
-          response.end('invalid request')
-          return
-        }
-        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
-        response.end(JSON.stringify({ ok: true, value }))
-      },
-    })
+    if (options.authenticatedDashboard !== undefined) {
+      const origin = `http://127.0.0.1:${String(port)}`
+      const auth = new LocalDashboardAuth({ accessToken: 'web-e2e-native-token', origin })
+      let activeWork = [...(options.authenticatedDashboard.activeWork ?? [])]
+      const controlService = {
+        sessions: undefined,
+        async handleDashboard(_owner: RuntimeClientId, request: DashboardControlRequest) {
+          if (request.operation === 'get-legacy-migration') return { kind: 'not-needed' }
+          if (request.operation === 'observe-active-work') return { ownUiWork: [...activeWork] }
+          if (request.operation === 'stop-own-ui-work') {
+            const work = [...activeWork]
+            activeWork = []
+            return work.length === 0 ? { kind: 'none-active' } : { kind: 'stopped', work }
+          }
+          return { kind: 'not-needed' }
+        },
+      } as unknown as RuntimeControlService
+      mountLocalControlRoutes(ctx, { auth, controlService })
+      mountAuthenticatedConnection(ctx, { authorize: request => auth.authorizeDashboard(request) })
+      mintDashboardHandoff = () => auth.mintBrowserHandoff()
+    } else {
+      // The in-process Web lane predates the local Runtime process and has no
+      // native client that can mint a browser handoff. Admit only same-origin
+      // Dashboard control probes so the built AppWebEntry/Loader graph runs;
+      // authenticated scenarios opt into the Runtime carrier above.
+      ctx.webServer.register({
+        kind: 'exact',
+        path: '/_harness/dashboard-control',
+        async handler(request, response) {
+          const host = request.headers.host
+          if (request.method !== 'POST' || host === undefined || request.headers.origin !== `http://${host}`) {
+            response.writeHead(403)
+            response.end('forbidden')
+            return
+          }
+          const chunks: Uint8Array[] = []
+          for await (const chunk of request as AsyncIterable<Uint8Array>) chunks.push(chunk)
+          let operation: unknown
+          try {
+            operation = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { operation?: unknown }).operation
+          } catch {
+            response.writeHead(400)
+            response.end('invalid request')
+            return
+          }
+          const value = operation === 'get-legacy-migration'
+            ? { kind: 'not-needed' }
+            : operation === 'observe-active-work'
+              ? { ownUiWork: [] }
+              : operation === 'stop-own-ui-work'
+                ? { kind: 'none-active' }
+                : undefined
+          if (value === undefined) {
+            response.writeHead(400)
+            response.end('invalid request')
+            return
+          }
+          response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ ok: true, value }))
+        },
+      })
+    }
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
@@ -629,6 +668,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ctx,
     workspaceCwd,
     persistenceRoot,
+    ...(mintDashboardHandoff === undefined ? {} : { mintDashboardHandoff }),
     // Barrier stack: the in-process turn/end identifies the session, its
     // explicit flush makes the transcript durable, and the caller's browser
     // settled-poll comes last because host completion strictly precedes render.

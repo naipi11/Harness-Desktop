@@ -5,7 +5,7 @@
  * arms over the real slot stack.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Context } from '@harness-desktop/cordis'
 import { SlotTestRuntime } from '@harness-desktop/dsh-client-test-runtime'
 import { EMPTY_CHAT_SNAPSHOT } from '@harness-desktop/dsh-client-runtime/client'
@@ -16,6 +16,7 @@ import { buildRenderApp } from '@harness-desktop/dsh-client-web/src/app.tsx'
 let runtime: SlotTestRuntime | undefined
 
 afterEach(async () => {
+  vi.useRealTimers()
   cleanup()
   await runtime?.dispose()
   runtime = undefined
@@ -191,5 +192,28 @@ describe('buildRenderApp', () => {
     expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(observationsBeforeFocus)
     expect((globalThis as { harnessDesktop?: unknown }).harnessDesktop).toBeUndefined()
     expect(localStorage).toHaveLength(0)
+  })
+
+  it('does not restart active-work polling when an in-flight refresh settles after unmount', async () => {
+    vi.useFakeTimers()
+    const b = await workbench()
+    const refresh = Promise.withResolvers<{ ownUiWork: string[] }>()
+    b.foundation.observeActiveWork
+      .mockResolvedValueOnce({ ownUiWork: ['workbench-operation'] })
+      .mockImplementationOnce(() => refresh.promise)
+    const view = render(<>{b.renderApp()}</>)
+    await act(async () => {})
+    expect(b.foundation.observeActiveWork).toHaveBeenCalledOnce()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
+
+    view.unmount()
+    await act(async () => {
+      refresh.resolve({ ownUiWork: ['workbench-operation'] })
+      await Promise.resolve()
+    })
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
   })
 })

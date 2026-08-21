@@ -209,6 +209,68 @@ describe('Runtime control service', () => {
     await runtime!.endAgentWork(replacement)
   })
 
+  it('stops a Dashboard prompt before correlation without waiting for a turn and ignores late settlement', async () => {
+    const { agents } = await start()
+    const dashboardOwner = client('dashboard-pre-correlation-stop')
+    const nativeOwner = client('dashboard-pre-correlation-native')
+    const terminal = client('dashboard-pre-correlation-terminal')
+    const sessionId = makeSessionId('dashboard-pre-correlation-session')
+    await control!.attachClient(nativeOwner)
+    await control!.openTerminal(nativeOwner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected pre-correlation Dashboard Agent')
+    const rpcId = 'dashboard-pre-correlation-rpc' as never
+    const ownership = await control!.ownDashboardPrompt(dashboardOwner, { sessionId, rpcId })
+    const stopping = control!.stopOwnUiWork(dashboardOwner)
+    await expect(Promise.race([
+      stopping,
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+    ])).resolves.toMatchObject({ kind: 'stopped' })
+    expect(ownership.signal.aborted).toBe(true)
+
+    const lateMessage = {
+      id: 'late-dashboard-message', source: { kind: 'user', rpcId },
+    } as never
+    ;(agent.inbox.nextTurn as UserMessage[]).push(lateMessage)
+    control!.handleAgentInboxInserted(agent, lateMessage)
+    await ownership.commit()
+    await ownership.release()
+    expect(agent.inbox.nextTurn).toEqual([])
+    expect(agent.session.events.map(event => event.type)).not.toContain('turn/start')
+    expect(await control!.observeActiveWork(dashboardOwner)).toEqual({ ownUiWork: [] })
+    const replacement = await runtime!.beginAgentWork(sessionId)
+    await runtime!.endAgentWork(replacement)
+  }, 15_000)
+
+  it('closes with a Dashboard prompt still waiting for correlation', async () => {
+    const { agents } = await start()
+    const nativeOwner = client('dashboard-pre-correlation-close-native')
+    const dashboardOwner = client('dashboard-pre-correlation-close')
+    const terminal = client('dashboard-pre-correlation-close-terminal')
+    const sessionId = makeSessionId('dashboard-pre-correlation-close-session')
+    await control!.attachClient(nativeOwner)
+    await control!.openTerminal(nativeOwner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected close-race Dashboard Agent')
+    const rpcId = 'dashboard-pre-correlation-close-rpc' as never
+    const ownership = await control!.ownDashboardPrompt(dashboardOwner, { sessionId, rpcId })
+    const closing = control!.close()
+    await expect(Promise.race([
+      closing.then(() => 'closed' as const),
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+    ])).resolves.toBe('closed')
+    const lateMessage = { id: 'late-close-dashboard-message', source: { kind: 'user', rpcId } } as never
+    ;(agent.inbox.nextTurn as UserMessage[]).push(lateMessage)
+    control!.handleAgentInboxInserted(agent, lateMessage)
+    expect(agent.inbox.nextTurn).toEqual([])
+    expect(agent.session.events.map(event => event.type)).not.toContain('turn/start')
+    await ownership.release()
+    control = undefined
+
+    const replacement = await runtime!.beginAgentWork(sessionId)
+    await runtime!.endAgentWork(replacement)
+  }, 15_000)
+
   it('rejects a second writer for one live session without creating another session record', async () => {
     const { sessions } = await start()
     const first = client('first-client')

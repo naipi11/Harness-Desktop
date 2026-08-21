@@ -396,6 +396,11 @@ function err<T>(request: RpcRequest<unknown>, error: RpcError): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: false, error } }
 }
 
+/** Refuse a session prompt whose physical owner cancelled admission. */
+function cancelledPrompt<T>(request: RpcRequest<unknown>): RpcResponse<T> {
+  return err(request, { code: 'cancelled', message: 'session prompt was cancelled', details: {} })
+}
+
 /**
  * The RPC refusal a preset failure becomes, or undefined when the failure is
  * about something else.
@@ -2499,7 +2504,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { sessionId: childId })
       },
 
-      async prompt(request) {
+      async prompt(request, signal) {
         const { sessionId, mode, content, clientTimeZone } = request.payload
         const canonicalTimeZone = clientTimeZone === undefined
           ? undefined
@@ -2511,6 +2516,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { value: clientTimeZone },
           })
         }
+        if (signal?.aborted) return cancelledPrompt(request)
         const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
@@ -2586,6 +2592,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               const token = commandLine?.split(/\s/u, 1)[0] ?? '/'
               return err(request, { code: 'unknown-command', message: `unknown command: ${token}`, details: {} })
             }
+            if (signal?.aborted) return cancelledPrompt(request)
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
             if (skillAdmission !== undefined) await Promise.resolve()

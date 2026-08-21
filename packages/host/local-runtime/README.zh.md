@@ -27,7 +27,7 @@
 
 只有 `createRuntimeConnector()` 会发现端点，并将其 token 保留在已认证请求闭包中。`connect({ start: false })` 执行只读发现，在不创建数据根目录、锁、端点或进程的前提下抛出 `RuntimeUnavailableError`。`connect({ start: true })` 通过所有者锁串行化竞争启动，等待已认证的健康所有者，并把成功调用方附加到该运行时。
 
-`RuntimeClient` 提供脱敏状态、稳定的 `web` 后台租约、耐久旧数据迁移、按所有者划分作用域的活动工作控制、终端附加项、Dashboard 附加项和独立关闭。`TerminalConnection` 通过已组装的 API 与 agent（智能体）所有者提交任务和审批，运行已注册的模型、权限、会话与命令控制，流式发送有界协议事件，只取消其关联操作，并且只关闭自身附加项。`DashboardAttachment` 创建仅正文 handoff 并独立释放。关闭附加项绝不取消活动工作。
+`RuntimeClient` 提供脱敏状态、稳定的 `web` 后台租约、耐久旧数据迁移、按所有者划分作用域的活动工作控制、终端附加项、Dashboard 附加项和独立关闭。`TerminalConnection` 通过已组装的 API 与 agent（智能体）所有者提交任务和审批，运行已注册的模型、权限、会话与命令控制，流式发送有界协议事件，只取消其关联操作，并且只关闭自身附加项。`DashboardAttachment` 创建仅正文 handoff 并独立释放。关闭附加项绝不取消活动工作。Dashboard 在 prompt 关联前停止工作或 Runtime 在此时关闭，都会中止该 carrier 的准入；发生竞态而迟到、且携带相同 `rpcId` 的消息会在 Agent 领取 Turn 前从 inbox 移除。
 
 `RuntimeUnavailableError` 标识缺失，`RuntimeBusyError` 标识同一会话的写入方并携带其品牌化会话 id，`RuntimeProtocolError` 标识不兼容、畸形、超限或携带密钥的本地响应。`normalizeRecoveryDiagnostic()` 将这些错误及未知本地失败投影为稳定且不含 token、路径和密钥的恢复字段，并提供可复制的诊断 id。
 

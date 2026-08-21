@@ -190,16 +190,21 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     if ((activeWork?.ownUiWork.length ?? 0) === 0) return
     let remaining = ACTIVE_WORK_REFRESH_LIMIT
     let timer: ReturnType<typeof setTimeout> | undefined
+    let disposed = false
     const poll = (): void => {
       timer = setTimeout(() => {
+        if (disposed) return
         remaining -= 1
         void refreshActiveWork().catch(() => {}).finally(() => {
-          if (remaining > 0) poll()
+          if (!disposed && remaining > 0) poll()
         })
       }, ACTIVE_WORK_REFRESH_MS)
     }
     poll()
-    return () => { if (timer !== undefined) clearTimeout(timer) }
+    return () => {
+      disposed = true
+      if (timer !== undefined) clearTimeout(timer)
+    }
   }, [activeWork?.ownUiWork.length, refreshActiveWork])
 
   const openPath = (path: string): void => {
