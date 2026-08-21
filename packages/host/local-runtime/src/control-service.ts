@@ -98,7 +98,10 @@ export interface RuntimeControlService {
   attachDashboard(owner: RuntimeClientId, attachmentId: RuntimeClientId): Promise<void>
   releaseClient(owner: RuntimeClientId, attachmentId?: RuntimeClientId): Promise<void>
   handleNative(clientId: RuntimeClientId, request: RuntimeControlRequest): Promise<unknown>
-  handleDashboard(request: DashboardControlRequest): Promise<LegacyMigrationState>
+  handleDashboard(
+    owner: RuntimeClientId,
+    request: DashboardControlRequest,
+  ): Promise<LegacyMigrationState | ActiveWorkStatus | OwnUiWorkStopResult>
   observeActiveWork(owner: RuntimeClientId): Promise<ActiveWorkStatus>
   stopOwnUiWork(owner: RuntimeClientId): Promise<OwnUiWorkStopResult>
   openTerminal(owner: RuntimeClientId, terminalId: RuntimeClientId, request: TerminalOpenRequest): Promise<OpenTerminalResult>
@@ -185,7 +188,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     if (!release.ok) throw release.error
     return outcome.value
   }
-  const migration = (operation: DashboardControlRequest['operation']): Promise<LegacyMigrationState> =>
+  const migration = (
+    operation: 'get-legacy-migration' | 'accept-legacy-migration' | 'decline-legacy-migration' | 'retry-legacy-migration',
+  ): Promise<LegacyMigrationState> =>
     serializeMigration(() => retainRuntime(async () => {
       const current = await detectMigration(options.resolution)
       if (operation === 'get-legacy-migration' || current.kind === 'imported') return publicMigration(current)
@@ -324,7 +329,19 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         case 'stop-own-ui-work': requireBaseClient(clients, clientId); return service.stopOwnUiWork(clientId)
       }
     },
-    handleDashboard(request) { return migration(request.operation) },
+    handleDashboard(owner, request) {
+      switch (request.operation) {
+        case 'get-legacy-migration':
+        case 'accept-legacy-migration':
+        case 'decline-legacy-migration':
+        case 'retry-legacy-migration':
+          return migration(request.operation)
+        case 'observe-active-work':
+          return service.observeActiveWork(owner)
+        case 'stop-own-ui-work':
+          return service.stopOwnUiWork(owner)
+      }
+    },
     observeActiveWork(owner) {
       return Promise.resolve({ ownUiWork: [...work.values()].filter(record => record.owner === owner).map(record => record.id) })
     },

@@ -9,6 +9,8 @@ import type { ApiProxy } from '@harness-desktop/dsh-host-apiproxy/api'
 import WebServer from '@harness-desktop/dsh-host-webserver'
 import { LocalDashboardAuth } from '../src/auth.ts'
 import { mountLocalControlRoutes } from '../src/control-routes.ts'
+import type { RuntimeControlService } from '../src/control-service.ts'
+import type { DashboardControlRequest, RuntimeClientId } from '../src/runtime-client.ts'
 
 const HANDOFF_RECOVERY = 'Dashboard connection expired. Run harness web to reconnect.'
 let context: Context | undefined
@@ -18,7 +20,10 @@ afterEach(async () => {
   context = undefined
 })
 
-async function start(now?: () => number): Promise<{ port: number; auth: LocalDashboardAuth }> {
+async function start(
+  now?: () => number,
+  controlService?: RuntimeControlService,
+): Promise<{ port: number; auth: LocalDashboardAuth }> {
   context = new Context()
   const fiber = context.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await fiber.await()
@@ -34,6 +39,7 @@ async function start(now?: () => number): Promise<{ port: number; auth: LocalDas
     apply(routeContext) {
       mountLocalControlRoutes(routeContext, {
         auth,
+        ...controlService === undefined ? {} : { controlService },
         mountAuthenticatedDashboard: (dashboardAuth) => {
           mountAuthenticatedConnection(routeContext, { authorize: request => dashboardAuth.authorizeDashboard(request) })
         },
@@ -44,6 +50,42 @@ async function start(now?: () => number): Promise<{ port: number; auth: LocalDas
 }
 
 describe('local Runtime auth routes', () => {
+  it('routes Foundation active-work controls through the authenticated Dashboard owner', async () => {
+    const handled: { owner: RuntimeClientId; request: DashboardControlRequest }[] = []
+    const controlService = {
+      sessions: undefined,
+      async handleDashboard(owner: RuntimeClientId, request: DashboardControlRequest) {
+        handled.push({ owner, request })
+        return request.operation === 'observe-active-work'
+          ? { ownUiWork: ['dashboard-work'] }
+          : { kind: 'stopped', work: ['dashboard-work'] }
+      },
+    } as unknown as RuntimeControlService
+    const { port, auth } = await start(undefined, controlService)
+    const origin = `http://127.0.0.1:${String(port)}`
+    const exchange = auth.consumeBrowserHandoff(auth.mintBrowserHandoff().id)
+    if (exchange.kind !== 'accepted') throw new Error('expected an authenticated session')
+    const post = async (operation: string): Promise<Response> => await fetch(`${origin}/_harness/dashboard-control`, {
+      method: 'POST',
+      headers: { cookie: exchange.cookie, origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ operation }),
+    })
+
+    expect(await (await post('observe-active-work')).json()).toEqual({
+      ok: true, value: { ownUiWork: ['dashboard-work'] },
+    })
+    expect(await (await post('stop-own-ui-work')).json()).toEqual({
+      ok: true, value: { kind: 'stopped', work: ['dashboard-work'] },
+    })
+    expect(new Set(handled.map(call => call.owner))).toEqual(new Set([handled[0]?.owner]))
+    expect(handled.map(call => call.request.operation)).toEqual(['observe-active-work', 'stop-own-ui-work'])
+    expect((await fetch(`${origin}/_harness/dashboard-control`, {
+      method: 'POST', headers: { origin, 'content-type': 'application/json' },
+      body: '{"operation":"observe-active-work"}',
+    })).status).toBe(403)
+    expect((await post('status')).status).toBe(400)
+  })
+
   it('requires bearer authorization to mint a body-only handoff and exchanges it once without CORS', async () => {
     const { port } = await start()
     const control = `http://127.0.0.1:${String(port)}/_harness/control/browser-handoff`

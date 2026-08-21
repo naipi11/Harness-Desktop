@@ -54,9 +54,19 @@ describe('local Runtime authorization', () => {
     expect(auth.authorizeDashboard(request({
       host: '127.0.0.1:39817', origin: 'http://127.0.0.1:39817', cookie: session.cookie,
     }))).toBe(true)
+    const owner = auth.dashboardOwner(request({
+      host: '127.0.0.1:39817', origin: 'http://127.0.0.1:39817', cookie: session.cookie,
+    }))
+    expect(owner).toMatch(/^dashboard-[A-Za-z0-9_-]{43}$/u)
+    expect(auth.dashboardOwner(request({
+      host: '127.0.0.1:39817', origin: 'http://127.0.0.1:39817', cookie: session.cookie,
+    }))).toBe(owner)
     expect(auth.authorizeDashboard(request({
       host: '127.0.0.1:39817', origin: 'http://localhost:39817', cookie: session.cookie,
     }))).toBe(false)
+    expect(auth.dashboardOwner(request({
+      host: '127.0.0.1:39817', origin: 'http://localhost:39817', cookie: session.cookie,
+    }))).toBeUndefined()
     expect(auth.authorizeDashboard(request({
       host: '127.0.0.1:39817', cookie: session.cookie,
     }))).toBe(false)

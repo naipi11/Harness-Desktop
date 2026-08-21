@@ -1,6 +1,6 @@
 /** Private native authorization and transient browser-session authentication. */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { lstat, mkdtemp, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -99,9 +99,19 @@ export class LocalDashboardAuth {
 
   /** Accept a Dashboard carrier only with the Runtime's exact Origin and issued HttpOnly cookie. */
   authorizeDashboard(request: HeaderRequest): boolean {
-    if (header(request, 'host') !== this.authority || header(request, 'origin') !== this.origin) return false
+    return this.dashboardOwner(request) !== undefined
+  }
+
+  /**
+   * Derive the stable, non-secret control owner for one authenticated browser session.
+   * @param request - Dashboard request carrying the exact Origin and HttpOnly cookie.
+   * @returns a one-way owner id, or undefined when authentication fails.
+   */
+  dashboardOwner(request: HeaderRequest): string | undefined {
+    if (header(request, 'host') !== this.authority || header(request, 'origin') !== this.origin) return undefined
     const session = cookieValue(header(request, 'cookie'), SESSION_COOKIE_NAME)
-    return session !== undefined && this.sessions.has(session)
+    if (session === undefined || !this.sessions.has(session)) return undefined
+    return `dashboard-${createHash('sha256').update(session).digest('base64url')}`
   }
 
   /** Render the only permitted browser session cookie attributes. */

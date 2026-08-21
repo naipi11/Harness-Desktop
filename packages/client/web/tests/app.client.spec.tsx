@@ -4,8 +4,8 @@
  * one ctx-level renderSlot('root') call, and the document-title projection
  * arms over the real slot stack.
  */
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Context } from '@harness-desktop/cordis'
 import { SlotTestRuntime } from '@harness-desktop/dsh-client-test-runtime'
 import type { SessionId } from '@harness-desktop/dsh-client-runtime/client'
@@ -24,6 +24,66 @@ async function bench() {
   runtime = await SlotTestRuntime.create()
   await runtime.root.declare({}, () => <div data-testid="frame" />)
   return { runtime, renderApp: buildRenderApp({ ctx: runtime.ctx }) }
+}
+
+async function workbench() {
+  runtime = await SlotTestRuntime.create()
+  await runtime.root.declare({}, () => <div data-testid="dashboard-chrome">conversation</div>)
+  const prompt = vi.fn(async () => ({ ok: true as const, value: { accepted: true as const } }))
+  await runtime.sessions.add({
+    id: 'workbench-session',
+    summary: { cwd: 'C:\\workspace', title: 'Workbench session' },
+    session: { prompt },
+    snapshot: {
+      nodes: [
+        {
+          kind: 'tool-result', seq: 4, time: 4, callId: 'diff-call',
+          call: { name: 'edit', argsRaw: '{"file_path":"C:\\\\workspace\\\\src\\\\app.ts"}' },
+          callTime: 3, content: [], isError: false, subCalls: [],
+          callView: {
+            card: 'diff', title: 'Edit app.ts',
+            diffs: [{ path: 'C:\\workspace\\src\\app.ts', oldText: 'old', newText: 'new' }],
+            locations: [{ path: 'C:\\workspace\\src\\app.ts' }],
+          },
+          resultView: {
+            card: 'diff',
+            diffs: [{ path: 'C:\\workspace\\src\\app.ts', oldText: 'old', newText: 'new' }],
+          },
+        },
+        {
+          kind: 'tool-result', seq: 8, time: 8, callId: 'terminal-call',
+          call: { name: 'bash', argsRaw: '{"command":"pnpm test"}' },
+          callTime: 7, content: [], isError: false, subCalls: [],
+          callView: { card: 'terminal', title: 'pnpm test', cwd: 'C:\\workspace' },
+          resultView: { card: 'terminal', output: '48 tests passed', exitCode: 0 },
+        },
+      ],
+    },
+  })
+  runtime.sessions.behavior('workbench-session').projections.set('todos', [
+    { content: 'Ship workbench', status: 'in_progress' },
+  ])
+  await runtime.workspaces.update((draft) => {
+    draft.items = [{
+      workspaceId: 'workspace-1' as never,
+      title: 'Harness', path: 'C:\\workspace', sessionIds: ['workbench-session' as never],
+      createdAt: '2026-08-21T00:00:00.000Z', updatedAt: '2026-08-21T00:00:00.000Z',
+    }]
+  })
+  runtime.workspaces.stub('listDirectory', async () => ({
+    path: 'C:\\workspace', home: 'C:\\workspace', crumbs: [], truncated: false,
+    entries: [{ name: 'src', path: 'C:\\workspace\\src', hidden: false }],
+  }))
+  const foundation = {
+    observeActiveWork: vi.fn(async () => ({ ownUiWork: ['workbench-operation'] })),
+    stopOwnUiWork: vi.fn(async () => ({ kind: 'stopped' as const, work: ['workbench-operation'] })),
+  }
+  return {
+    runtime,
+    foundation,
+    prompt,
+    renderApp: buildRenderApp({ ctx: runtime.ctx, foundation }),
+  }
 }
 
 describe('buildRenderApp', () => {
@@ -61,5 +121,56 @@ describe('buildRenderApp', () => {
     b.runtime.sessions.list.update((draft) => { draft.current = 'ghost' as SessionId })
     await b.runtime.flush()
     expect(document.title).toBe('Product')
+  })
+
+  it('mounts five authenticated workbench panels and keeps the session attached across focus mode', async () => {
+    const b = await workbench()
+    const view = render(<>{b.renderApp()}</>)
+
+    expect(await view.findByRole('region', { name: 'Engineering workbench' })).toBeTruthy()
+    expect(view.getAllByRole('tab').map(tab => tab.getAttribute('data-workbench-panel'))).toEqual([
+      'files', 'diff', 'terminal', 'artifacts', 'tasks',
+    ])
+    expect(await view.findByText('src')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Open src' }))
+    await waitFor(() => {
+      expect(b.runtime.workspaces.calls).toContainEqual({
+        method: 'openPath', args: ['C:\\workspace\\src'],
+      })
+    })
+
+    fireEvent.click(view.getByRole('tab', { name: 'Diff' }))
+    expect(view.getByText('old')).toBeTruthy()
+    expect(view.getByText('new')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Open C:\\workspace\\src\\app.ts' }))
+
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    expect(view.getByText('48 tests passed')).toBeTruthy()
+    fireEvent.change(view.getByRole('textbox', { name: 'Terminal input' }), { target: { value: 'run focused tests' } })
+    fireEvent.click(view.getByRole('button', { name: 'Send terminal input' }))
+    await waitFor(() => {
+      expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'run focused tests' }], 'queue')
+    })
+
+    fireEvent.click(view.getByRole('tab', { name: 'Artifacts' }))
+    expect(view.getByText('C:\\workspace\\src\\app.ts')).toBeTruthy()
+    fireEvent.click(view.getByRole('tab', { name: 'Tasks' }))
+    expect(view.getByText('Ship workbench')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Complete Ship workbench' }))
+    await waitFor(() => { expect(b.prompt).toHaveBeenCalledTimes(2) })
+
+    expect(await view.findByText('workbench-operation')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Stop my active work' }))
+    await waitFor(() => { expect(b.foundation.stopOwnUiWork).toHaveBeenCalledOnce() })
+
+    const observationsBeforeFocus = b.foundation.observeActiveWork.mock.calls.length
+    fireEvent.click(view.getByRole('button', { name: 'Enter focus mode' }))
+    expect(view.queryByTestId('dashboard-chrome')).toBeNull()
+    expect(view.getByText('Workbench session')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Exit focus mode' }))
+    expect(view.getByTestId('dashboard-chrome')).toBeTruthy()
+    expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(observationsBeforeFocus)
+    expect((globalThis as { harnessDesktop?: unknown }).harnessDesktop).toBeUndefined()
+    expect(localStorage).toHaveLength(0)
   })
 })

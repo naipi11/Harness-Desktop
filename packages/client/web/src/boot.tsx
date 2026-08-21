@@ -95,6 +95,7 @@ export class AppWebEntry {
    * @returns whether the application UI settled; `false` means the failure report rendered.
    */
   async run(): Promise<boolean> {
+    this.el.removeAttribute('data-harness-dashboard-ready')
     this.manifest = parseBootManifest((globalThis as DshWindow).__DSH_BOOT__)
 
     this.modules = new ClientModuleSystem({
@@ -146,6 +147,7 @@ export class AppWebEntry {
 
   /** Unmount the shell (loading page or settled UI). */
   dispose(): void {
+    this.el.removeAttribute('data-harness-dashboard-ready')
     this.root?.unmount()
   }
 

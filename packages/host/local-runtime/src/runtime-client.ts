@@ -232,12 +232,14 @@ export type RuntimeControlRequest =
   | { readonly operation: 'observe-active-work' }
   | { readonly operation: 'stop-own-ui-work' }
 
-/** Authenticated Dashboard migration operations sharing the Runtime's durable state. */
+/** Authenticated Dashboard operations sharing the Runtime's durable state and UI ownership. */
 export type DashboardControlRequest =
   | { readonly operation: 'get-legacy-migration' }
   | { readonly operation: 'accept-legacy-migration' }
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
+  | { readonly operation: 'observe-active-work' }
+  | { readonly operation: 'stop-own-ui-work' }
 
 /** Redacted control failures and per-session admission response. */
 export type RuntimeControlResult =

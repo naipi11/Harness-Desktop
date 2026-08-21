@@ -225,9 +225,10 @@ describe('Runtime control service', () => {
     const [secondWork] = (await control!.observeActiveWork(second)).ownUiWork
     if (firstWork === undefined || secondWork === undefined) throw new Error('expected distinct work admissions')
 
-    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [firstWork] })
-    expect(await control!.stopOwnUiWork(first)).toEqual({ kind: 'stopped', work: [firstWork] })
-    expect(await control!.observeActiveWork(first)).toEqual({ ownUiWork: [] })
+    expect(await control!.handleDashboard(first, { operation: 'observe-active-work' })).toEqual({ ownUiWork: [firstWork] })
+    expect(await control!.handleDashboard(first, { operation: 'stop-own-ui-work' }))
+      .toEqual({ kind: 'stopped', work: [firstWork] })
+    expect(await control!.handleDashboard(first, { operation: 'observe-active-work' })).toEqual({ ownUiWork: [] })
     expect(await control!.observeActiveWork(second)).toEqual({ ownUiWork: [secondWork] })
   })
 
@@ -629,7 +630,7 @@ describe('Runtime control service', () => {
       .toEqual({ kind: 'decision-required', sourceLabel: 'DSH_HOME', retryable: false })
     const imported = await control!.handleNative(first, { operation: 'accept-legacy-migration' })
     expect(imported).toEqual({ kind: 'imported', copied: ['sessions'] })
-    expect(await control!.handleDashboard({ operation: 'accept-legacy-migration' })).toEqual(imported)
+    expect(await control!.handleDashboard(first, { operation: 'accept-legacy-migration' })).toEqual(imported)
     expect(await readFile(join(home, 'legacy-migration.json'), 'utf8')).not.toContain(legacy)
     expect(await readFile(join(legacy, 'sessions', 'one.jsonl'), 'utf8')).toBe('{"session":1}\n')
 
@@ -642,7 +643,7 @@ describe('Runtime control service', () => {
     await writeFile(join(home, 'collision.txt'), 'user-owned')
     await start(legacy)
     await control!.attachClient(first)
-    const collision = await control!.handleDashboard({ operation: 'accept-legacy-migration' })
+    const collision = await control!.handleDashboard(first, { operation: 'accept-legacy-migration' })
     expect(collision).toMatchObject({ kind: 'target-not-empty', retryable: true })
     expect(JSON.stringify(collision)).not.toContain(legacy)
     await rm(join(home, 'collision.txt'))
@@ -659,7 +660,7 @@ describe('Runtime control service', () => {
     await control!.attachClient(owner)
 
     expect(await control!.handleNative(owner, { operation: 'decline-legacy-migration' })).toEqual({ kind: 'declined' })
-    expect(await control!.handleDashboard({ operation: 'get-legacy-migration' })).toEqual({ kind: 'declined' })
+    expect(await control!.handleDashboard(owner, { operation: 'get-legacy-migration' })).toEqual({ kind: 'declined' })
   })
 
   it('serializes concurrent native and Dashboard migration decisions onto one imported result', async () => {
@@ -673,8 +674,8 @@ describe('Runtime control service', () => {
 
     const results = await Promise.all([
       control!.handleNative(owner, { operation: 'accept-legacy-migration' }),
-      control!.handleDashboard({ operation: 'accept-legacy-migration' }),
-      control!.handleDashboard({ operation: 'decline-legacy-migration' }),
+      control!.handleDashboard(owner, { operation: 'accept-legacy-migration' }),
+      control!.handleDashboard(owner, { operation: 'decline-legacy-migration' }),
     ])
 
     expect(results).toEqual([
@@ -695,6 +696,7 @@ describe('Runtime control service', () => {
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const idleCallbacks = new Set<() => Promise<void>>()
+    const owner = client('pending-migration-dashboard')
     const { home } = await start(legacy, {
       async recordMigration() {
         entered.resolve(undefined)
@@ -711,7 +713,7 @@ describe('Runtime control service', () => {
       },
     })
 
-    const pending = control!.handleDashboard({ operation: 'accept-legacy-migration' })
+    const pending = control!.handleDashboard(owner, { operation: 'accept-legacy-migration' })
     await entered.promise
     try {
       expect(idleCallbacks.size).toBe(0)
@@ -735,7 +737,7 @@ describe('Runtime control service', () => {
       kind: 'failed', retained: [], retryable: true, diagnosticId: randomUUID(),
     }) + '\n')
 
-    const failed = await control!.handleDashboard({ operation: 'get-legacy-migration' })
+    const failed = await control!.handleDashboard(owner, { operation: 'get-legacy-migration' })
     expect(failed).toMatchObject({ kind: 'failed', retryable: true })
     expect(JSON.stringify(failed)).not.toContain(legacy)
     expect(await control!.handleNative(owner, { operation: 'retry-legacy-migration' }))

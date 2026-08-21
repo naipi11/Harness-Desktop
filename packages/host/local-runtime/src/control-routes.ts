@@ -170,7 +170,8 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
           notFound(response)
           return
         }
-        if (!options.auth.authorizeDashboard(request)) {
+        const owner = options.auth.dashboardOwner(request) as RuntimeClientId | undefined
+        if (owner === undefined) {
           forbidden(response)
           return
         }
@@ -179,7 +180,7 @@ export function mountLocalControlRoutes(ctx: Context, options: LocalControlRoute
           invalidRequest(response)
           return
         }
-        await replyControl(response, () => controlService.handleDashboard(body))
+        await replyControl(response, () => controlService.handleDashboard(owner, body))
       },
     }
     ctx.effect(() => webServer.register(nativeControl), 'host-local-runtime: native control operations')
@@ -240,6 +241,8 @@ function isDashboardControlRequest(value: unknown): value is DashboardControlReq
     'accept-legacy-migration',
     'decline-legacy-migration',
     'retry-legacy-migration',
+    'observe-active-work',
+    'stop-own-ui-work',
   ].includes(String(value.operation))
 }
 

@@ -22,6 +22,7 @@ afterEach(() => {
 it('resolves false when plugin boot renders its failure report', async () => {
   dshWindow.__DSH_BOOT__ = { rev: 'failure', entries: [] }
   const root = document.createElement('div')
+  root.dataset.harnessDashboardReady = 'true'
   document.body.appendChild(root)
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
   entry = new AppWebEntry(root)
@@ -30,6 +31,17 @@ it('resolves false when plugin boot renders its failure report', async () => {
   await act(async () => { booted = await entry?.run() })
 
   expect(booted).toBe(false)
+  expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
   expect(consoleError).toHaveBeenCalledOnce()
   expect(root.textContent).toContain('Failed to load plugins')
+})
+
+it('clears the authenticated ready marker when the application entry is disposed', () => {
+  const root = document.createElement('div')
+  root.dataset.harnessDashboardReady = 'true'
+  entry = new AppWebEntry(root)
+
+  entry.dispose()
+
+  expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
 })
