@@ -186,12 +186,23 @@ async function retryDesktopWindow(window: BrowserWindow): Promise<ControllerStar
       const origin = (await client.status()).dashboardOrigin
       const previousOrigin = runtimeOwners.origin(window)
       if (previousOrigin !== undefined && previousOrigin !== origin) {
-        await runtimeOwners.retire(window).catch(() => {})
+        try {
+          await runtimeOwners.retire(window)
+        } catch (error) {
+          return await publishStartupResult(window, recoveryResult(error))
+        }
         return await windowStartups.run(window)
       }
       runtimeOwners.setOrigin(window, origin)
     } catch (error) {
-      await runtimeOwners.retire(window).catch(() => {})
+      try {
+        await runtimeOwners.retire(window)
+      } catch (retireError) {
+        return await publishStartupResult(window, recoveryResult(new AggregateError(
+          [error, retireError],
+          'Desktop Runtime owner retirement failed.',
+        )))
+      }
       try {
         return await windowStartups.run(window)
       } catch (restartError) {

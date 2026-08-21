@@ -20,7 +20,7 @@ it('keeps the desktop window sandboxed behind the supplied preload', () => {
   })
 })
 
-it('retires an unreachable window owner before admitting its replacement', async () => {
+it('keeps a retiring owner visible to shutdown until close settles', async () => {
   const owners = new WindowRuntimeOwners<object, object, { close(): Promise<void> }>()
   const window = {}
   let releaseClose!: () => void
@@ -33,14 +33,35 @@ it('retires an unreachable window owner before admitting its replacement', async
   expect(owners.controller(window)).toBeUndefined()
   expect(owners.client(window)).toBeUndefined()
   expect(owners.origin(window)).toBeUndefined()
-  expect(owners.active()).toEqual([])
+  expect(owners.active()).toEqual([original])
 
   owners.publish(window, {}, replacement, 'http://127.0.0.1:41002')
+  expect(owners.active()).toEqual([original, replacement])
   releaseClose()
   await retiring
   expect(close).toHaveBeenCalledOnce()
   expect(owners.controller(window)).toBe(replacement)
   expect(owners.origin(window)).toBe('http://127.0.0.1:41002')
+  expect(owners.active()).toEqual([replacement])
+})
+
+it('retains a failed retirement for shutdown retry and propagates the failure', async () => {
+  const owners = new WindowRuntimeOwners<object, object, { close(): Promise<void> }>()
+  const window = {}
+  const failure = new Error('client close failed')
+  const close = vi.fn(async () => { throw failure })
+  const original = { close }
+  owners.publish(window, {}, original, 'http://127.0.0.1:41001')
+
+  await expect(owners.retire(window)).rejects.toBe(failure)
+  expect(owners.controller(window)).toBeUndefined()
+  expect(owners.client(window)).toBeUndefined()
+  expect(owners.origin(window)).toBeUndefined()
+  expect(owners.active()).toEqual([original])
+
+  const shutdown = await Promise.allSettled(owners.active().map(controller => controller.close()))
+  expect(shutdown).toEqual([{ status: 'rejected', reason: failure }])
+  expect(close).toHaveBeenCalledTimes(2)
 })
 
 it('registers a recovery flight before its operation can synchronously reenter', async () => {

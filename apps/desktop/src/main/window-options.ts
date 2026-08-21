@@ -195,7 +195,7 @@ export class WindowRuntimeOwners<
     this.controllers.delete(window)
     this.origins.delete(window)
     if (controller === undefined) return
-    this.activeControllers.delete(controller)
     await controller.close()
+    this.activeControllers.delete(controller)
   }
 }
