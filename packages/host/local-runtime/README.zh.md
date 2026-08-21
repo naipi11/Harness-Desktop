@@ -47,6 +47,8 @@
 
 构建版完整产品证据通过声明的 `lib/bin.js` 启动规范的基础与 Web 组合、加载构建版运行时产物，并针对该进程演练公开 `RuntimeConnector` 状态与后台租约控制。
 
+`RuntimeConnector` 使用调用方的 Node 可执行文件启动匹配的 Runtime 入口。当调用方是 Electron Main 时，只有子进程环境会设置 `ELECTRON_RUN_AS_NODE=1`，使 Electron 可执行文件以 Node 方式运行 Runtime 脚本；普通 Node 调用方保留其现有环境。该设置不会进入 Renderer，也不会改变无关的 Electron 子进程。
+
 声明的源码入口 `src/bin.ts` 会在执行 `pnpm run build:lib` 后启动相同组合，因为 Typert contribution 与浏览器 bundle 仍是生成的 `lib/` 产物。其直接 bin 进程证据观察源码模块加载、生成产物边界、端点发布、脱敏启动失败和关闭时的所有权清理；它本身并不证明公开连接器等价。
 
 源码公开连接器与控制行为通过 Loader 启动的仅源码后端 fixture（测试前置数据）演练，其中禁止工作区 `lib/` 导入，并显式声明测试后端与回放 overlay。该证据验证源码包与控制兼容性，但不把 fixture 描述为完整产品源码 bin。产品展示层仍是 `RuntimeConnector` 与 `RuntimeClient` 的独立消费方。

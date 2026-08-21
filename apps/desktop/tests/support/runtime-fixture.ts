@@ -14,7 +14,8 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const mainEntry = fileURLToPath(new URL('../../out/main/index.js', import.meta.url))
-const runtimeEntry = fileURLToPath(new URL('../../../../packages/host/local-runtime/src/bin.ts', import.meta.url))
+const runtimeEntry = fileURLToPath(new URL('./runtime-live-entry.mjs', import.meta.url))
+const runtimeLockHolder = fileURLToPath(new URL('./runtime-lock-holder.mjs', import.meta.url))
 const tsxLoader = import.meta.resolve('tsx')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 const runtimeModuleHook = fileURLToPath(new URL('./runtime-module-hook.mjs', import.meta.url))
@@ -78,6 +79,17 @@ export interface DesktopRuntimeFixture {
   readonly desktopOutput: () => string
   close(): Promise<void>
 }
+
+/** Desktop launched while another live process owns its selected Runtime home. */
+export interface DesktopFailureFixture {
+  readonly application: ElectronApplication
+  readonly page: Page
+  readonly requests: DesktopRequestCapture[]
+  releaseStartLock(): Promise<void>
+  startRuntime(): Promise<string>
+  close(): Promise<void>
+}
+
 
 
 /** Start the built canonical Runtime and real built Electron application. */
@@ -144,6 +156,123 @@ export async function launchDesktopRuntimeFixture(): Promise<DesktopRuntimeFixtu
   }
 }
 
+/** Launch Desktop through initial and explicit-retry failures held by a real Runtime lock. */
+export async function launchDesktopFailureFixture(): Promise<DesktopFailureFixture> {
+  const world = await prepareRuntimeWorld(false)
+  const holder = spawn(process.execPath, [runtimeLockHolder], {
+    cwd: world.cwd,
+    windowsHide: true,
+    env: runtimeEnvironment(world),
+  })
+  let holderStderr = ''
+  holder.stderr.setEncoding('utf8').on('data', (chunk: string) => { holderStderr += chunk })
+  await waitForProcessMarker(holder, () => holderStderr, 'desktop-runtime-lock-holder: ready')
+  let application: ElectronApplication | undefined
+  let runtime: RuntimeProcess | undefined
+  let holderReleased = false
+  const releaseHolder = async (): Promise<void> => {
+    if (holderReleased) return
+    holderReleased = true
+    holder.stdin.end()
+    const exitCode = await waitForChildExit(holder, () => holderStderr)
+    if (exitCode !== 0) throw new Error(`Desktop Runtime lock holder exited with ${String(exitCode)}: ${holderStderr}`)
+  }
+  try {
+    application = await electron.launch({
+      args: [mainEntry, '--lang=en-US'],
+      env: runtimeEnvironment(world),
+    })
+    const requests: DesktopRequestCapture[] = []
+    application.context().on('request', (request: Request) => {
+      requests.push({
+        url: request.url(), method: request.method(), referrer: request.headers()['referer'],
+        headers: request.headers(), body: request.postData(),
+      })
+    })
+    const page = await application.firstWindow()
+    return {
+      application,
+      page,
+      requests,
+      releaseStartLock: releaseHolder,
+      async startRuntime() {
+        runtime ??= startCanonicalRuntimeInWorld(world)
+        const endpoint = await waitForEndpoint(runtime)
+        return `http://127.0.0.1:${String(endpoint.port)}`
+      },
+      async close() {
+        const failures: unknown[] = []
+        await application?.close().catch((error: unknown) => failures.push(error))
+        await releaseHolder().catch((error: unknown) => failures.push(error))
+        if (runtime === undefined) {
+          await rm(world.cwd, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+        } else {
+          await releaseRuntime(runtime).catch((error: unknown) => failures.push(error))
+          await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+        }
+        if (failures.length === 1) throw failures[0]
+        if (failures.length > 1) throw new AggregateError(failures, 'Desktop failure fixture cleanup failed')
+      },
+    }
+  } catch (error) {
+    await application?.close().catch(() => {})
+    await releaseHolder().catch(() => {})
+    if (runtime === undefined) await rm(world.cwd, { recursive: true, force: true })
+    else await cleanupRuntimeProcess(runtime)
+    throw error
+  }
+}
+
+function runtimeEnvironment(world: RuntimeWorld): Record<string, string> {
+  return {
+    ...Object.fromEntries(Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    )),
+    HARNESS_HOME: world.harnessHome,
+    HOME: world.platformHome,
+    USERPROFILE: world.platformHome,
+    APPDATA: join(world.platformHome, 'AppData', 'Roaming'),
+    LOCALAPPDATA: join(world.platformHome, 'AppData', 'Local'),
+  }
+}
+
+async function waitForProcessMarker(
+  child: ChildProcessWithoutNullStreams,
+  stderr: () => string,
+  marker: string,
+): Promise<void> {
+  const deadline = Date.now() + processTimeoutMs
+  while (!stderr().includes(marker)) {
+    if (child.exitCode !== null) throw new Error(`Process exited before ${marker}: ${stderr()}`)
+    if (Date.now() >= deadline) throw new Error(`Process did not report ${marker}: ${stderr()}`)
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+}
+
+async function waitForChildExit(
+  child: ChildProcessWithoutNullStreams,
+  stderr: () => string,
+): Promise<number | null> {
+  if (child.exitCode !== null) return child.exitCode
+  return await new Promise((resolve, reject) => {
+    const onExit = (exitCode: number | null): void => {
+      clearTimeout(timer)
+      resolve(exitCode)
+    }
+    const timer = setTimeout(() => {
+      child.removeListener('exit', onExit)
+      child.kill('SIGKILL')
+      reject(new Error(`Process did not exit: ${stderr()}`))
+    }, processTimeoutMs)
+    child.once('exit', onExit)
+    if (child.exitCode !== null) {
+      child.removeListener('exit', onExit)
+      clearTimeout(timer)
+      resolve(child.exitCode)
+    }
+  })
+}
+
 async function startCanonicalRuntimeProcess(): Promise<RuntimeProcess> {
   return startCanonicalRuntimeInWorld(await prepareRuntimeWorld(true))
 }
@@ -155,10 +284,41 @@ async function prepareRuntimeWorld(seedHistory: boolean): Promise<RuntimeWorld> 
   const workspace = join(cwd, 'desktop-workspace')
   await mkdir(join(harnessHome, '.agent-presets', 'standard'), { recursive: true })
   await writeFile(join(harnessHome, '.agent-presets', 'standard', 'agent.cordis.yml'), '[]\n')
+  const replayOverride = join(harnessHome, 'desktop-live-replay.override.json')
+  await writeFile(replayOverride, `${JSON.stringify(liveReplayScript(), undefined, 2)}\n`)
   await mkdir(join(workspace, 'src'), { recursive: true })
   await writeFile(join(workspace, 'src', 'app.ts'), 'export const desktopFixture = true\n')
   if (seedHistory) await runHistorySeeder(harnessHome, workspace)
   return { cwd, harnessHome, platformHome, workspace }
+}
+
+function liveReplayScript(): unknown[] {
+  const callId = 'desktop-live-approval-call'
+  return [
+    {
+      kind: 'chunks',
+      chunks: [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'Preparing live approval' },
+        { type: 'block-end', index: 0, block: { type: 'text', text: 'Preparing live approval' } },
+        { type: 'block-start', index: 1, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 1, id: callId, name: 'runtime_approval', argumentsDelta: '{}' },
+        { type: 'block-end', index: 1, block: { type: 'tool-call', id: callId, name: 'runtime_approval', arguments: '{}' } },
+        { type: 'finish', reason: { kind: 'tool-calls' } },
+      ],
+    },
+    {
+      kind: 'chunks',
+      chunks: [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'LIVE_' },
+        { type: 'text-delta', index: 0, text: 'STREAM_' },
+        { type: 'text-delta', index: 0, text: 'COMPLETE' },
+        { type: 'block-end', index: 0, block: { type: 'text', text: 'LIVE_STREAM_COMPLETE' } },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ],
+    },
+  ]
 }
 
 function startCanonicalRuntimeInWorld(world: RuntimeWorld): RuntimeProcess {
@@ -182,6 +342,8 @@ function startCanonicalRuntimeInWorld(world: RuntimeWorld): RuntimeProcess {
       SSH_CONNECTION: '127.0.0.1 50000 127.0.0.1 22',
       HARNESS_DESKTOP_BROWSE_HOST: browseHost,
       HARNESS_DESKTOP_BROWSE_CLIENT: browseClient,
+      HARNESS_DESKTOP_REPLAY_OVERRIDE: join(harnessHome, 'desktop-live-replay.override.json'),
+      DEEPSEEK_API_KEY: '',
     },
   })
   let stderr = ''

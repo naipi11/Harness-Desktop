@@ -140,8 +140,8 @@ test('boots the real authenticated Dashboard without exposing bootstrap authorit
     await expect(settings.getByRole('button', { name: 'General' })).toHaveAttribute('aria-current', 'true')
     await settings.getByRole('button', { name: 'Models' }).click()
     await expect(settings.getByText('Enter your API keys to use models from the following providers.')).toBeVisible()
-    await expect(settings.getByRole('textbox', { name: 'API key' }))
-      .toHaveAttribute('placeholder', 'Provided by the launch environment (read-only)')
+    await settings.getByRole('button', { name: 'Edit DeepSeek (deepseek-official)' }).click()
+    await expect(settings.getByRole('textbox', { name: 'API key' })).toBeVisible()
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Add workspace', exact: true }).click()
     const directoryDialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
@@ -152,6 +152,16 @@ test('boots the real authenticated Dashboard without exposing bootstrap authorit
     await directoryDialog.getByRole('button', { name: 'Open', exact: true }).click()
     await directoryDialog.waitFor({ state: 'hidden' })
     await expect(page.getByRole('button', { name: 'Choose workspace', exact: true })).toContainText('picked-workspace')
+
+    const composer = page.getByRole('textbox', { name: 'Describe what you want to build' })
+    await composer.fill('Trigger the live approval fixture.')
+    await page.getByRole('button', { name: 'Send message' }).click()
+    await expect(page.getByText('Preparing live approval', { exact: true })).toBeVisible({ timeout: 30_000 })
+    const approval = page.locator('[data-approval-key]')
+    await expect(approval).toBeVisible()
+    await expect(page.locator('body')).toContainText('runtime_approval')
+    await approval.getByRole('button', { name: 'Allow once' }).click()
+    await expect(page.getByText('LIVE_STREAM_COMPLETE', { exact: true })).toBeVisible({ timeout: 30_000 })
   } finally {
     await fixture.close()
   }

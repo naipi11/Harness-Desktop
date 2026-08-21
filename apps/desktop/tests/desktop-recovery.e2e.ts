@@ -1,18 +1,20 @@
 /** Real Electron recovery and navigation-policy acceptance. */
 
 import { expect, test } from '@playwright/test'
-import { launchDesktopRuntimeFixture } from './support/runtime-fixture.ts'
+import { launchDesktopFailureFixture } from './support/runtime-fixture.ts'
 
 test('recovers only after a user retry and rejects renderer-created navigation', async () => {
-  const fixture = await launchDesktopRuntimeFixture()
+  const fixture = await launchDesktopFailureFixture()
   try {
     const page = fixture.page
-    await page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
-    const handoffsBeforeRecovery = fixture.requests.filter(request => request.url.endsWith('/_harness/handoff')).length
-    await fixture.application.context().clearCookies()
-    await page.reload().catch(() => {})
-    await expect(page.getByRole('heading', { name: 'Runtime unavailable' })).toBeVisible({ timeout: 30_000 })
-    expect(fixture.requests.filter(request => request.url.endsWith('/_harness/handoff'))).toHaveLength(handoffsBeforeRecovery)
+    await expect(page.getByRole('heading', { name: 'Runtime unavailable' })).toBeVisible({ timeout: 45_000 })
+    expect(fixture.requests.filter(request => request.url.endsWith('/_harness/handoff'))).toHaveLength(0)
+    const firstDiagnostic = (await page.locator('code').allTextContents()).at(-1)
+    expect(firstDiagnostic).toBeTruthy()
+
+    await page.getByRole('button', { name: 'Retry Dashboard' }).click()
+    await expect.poll(async () => (await page.locator('code').allTextContents()).at(-1), { timeout: 45_000 })
+      .not.toBe(firstDiagnostic)
 
     await fixture.application.evaluate(({ clipboard }) => {
       clipboard.writeText = (text) => {
@@ -26,15 +28,17 @@ test('recovers only after a user retry and rejects renderer-created navigation',
     expect(copied).toContain('Diagnostic ID:')
     expect(copied).not.toMatch(/runtime-endpoint|accessToken|HARNESS_HOME/i)
 
+    await fixture.releaseStartLock()
+    const origin = await fixture.startRuntime()
     await page.getByRole('button', { name: 'Retry Dashboard' }).click()
     await page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
-    expect(fixture.requests.filter(request => request.url.endsWith('/_harness/handoff'))).toHaveLength(handoffsBeforeRecovery + 1)
+    expect(fixture.requests.filter(request => request.url.endsWith('/_harness/handoff'))).toHaveLength(1)
 
     const child = await page.evaluate(() => window.open('https://github.com/deepseek-ai/deepseek-harness'))
     expect(child).toBeNull()
     expect(fixture.application.windows()).toHaveLength(1)
     await page.evaluate(() => { location.href = 'http://localhost:43123/' })
-    await expect.poll(() => page.url()).toBe(`${fixture.origin}/`)
+    await expect.poll(() => page.url()).toBe(`${origin}/`)
 
     await fixture.application.evaluate(({ shell }) => {
       shell.openExternal = async (url) => {

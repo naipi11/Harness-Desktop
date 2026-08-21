@@ -1088,7 +1088,7 @@ async function startMatchingRuntimeProcess(home: string): Promise<void> {
     ? [...inherited, ...hasImport(inherited, 'tsx/esm') ? [] : ['--import', 'tsx/esm'], entry]
     : [entry]
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, HARNESS_HOME: home },
+    env: runtimeChildEnvironment({ ...process.env, HARNESS_HOME: home }),
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
@@ -1098,6 +1098,22 @@ async function startMatchingRuntimeProcess(home: string): Promise<void> {
     child.once('error', reject)
   })
   child.unref()
+}
+
+/**
+ * Select Node mode only when an Electron Main process launches the Runtime child.
+ * @param environment - caller environment copied into the child.
+ * @param electronVersion - Electron version when the caller is Electron Main.
+ * @returns child environment with Electron's executable switched to Node mode when required.
+ */
+export function runtimeChildEnvironment(
+  environment: NodeJS.ProcessEnv,
+  electronVersion: string | undefined = process.versions.electron,
+): NodeJS.ProcessEnv {
+  return {
+    ...environment,
+    ...(electronVersion === undefined ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
+  }
 }
 
 const SOURCE_FLAGS_WITH_VALUE = new Set([

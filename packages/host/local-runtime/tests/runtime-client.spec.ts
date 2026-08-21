@@ -12,6 +12,7 @@ import {
   createRuntimeConnector,
   normalizeRecoveryDiagnostic,
   probeRuntimeStatus,
+  runtimeChildEnvironment,
   RuntimeProtocolError,
   RuntimeUnavailableError,
   type DashboardAttachment,
@@ -66,6 +67,16 @@ async function startControlledRuntime(home: string, lifecycle?: {
 }
 
 describe('public Runtime connector', () => {
+  it('sets Electron child launches to Node mode without changing Node caller environments', () => {
+    const nodeEnvironment = { EXISTING: 'value', ELECTRON_RUN_AS_NODE: 'preserved' }
+
+    expect(runtimeChildEnvironment(nodeEnvironment, undefined)).toEqual(nodeEnvironment)
+    expect(runtimeChildEnvironment(nodeEnvironment, '43.4.0')).toEqual({
+      EXISTING: 'value',
+      ELECTRON_RUN_AS_NODE: '1',
+    })
+  })
+
   it('does not create a file, lock, endpoint, or process when no-start discovery finds no Runtime', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-no-start-'))
     const home = join(root, 'missing-home')

@@ -36,6 +36,6 @@ Main 会拒绝 Renderer 创建的每个子窗口，并且只允许顶层导航�
 
 ## 后果
 
-Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航、响应所有权、恢复和窗口关闭状态，直至这些操作结算。真实 Chromium 与 Electron 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权、精确 WebSocket CSP、拒绝外部导航，以及 URL、referrer、storage、header、console 或 DOM 均不泄露秘密。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort，以及先关闭 attachment 再关闭客户端的顺序。
+Desktop 启动依赖私有临时文件和一次额外的浏览器 exchange，并且 Main 必须保留清理、到期、导航、响应所有权、恢复和窗口关闭状态，直至这些操作结算。真实 Chromium 与 Electron 覆盖固定了不透明 origin POST、303 与 cookie 顺序、干净 URL、无 CORS 授权、精确 WebSocket CSP、拒绝外部导航，以及 URL、referrer、storage、header、console 或 DOM 均不泄露秘密。Electron journey 还固定了 Runtime 初始启动失败、用户重试失败并替换诊断、后续重试成功、分段流式工具输出，以及通过 Dashboard 解决真实等待中审批。单元覆盖固定了并发启动、显式重试、窗口关闭竞态、逐导航 marker 检查、等待中 probe 的 abort，以及先关闭 attachment 再关闭客户端的顺序。
 
 Web root marker 是无秘密的同步属性，不是 renderer 控制 API。stdout acknowledgement 同样只供进程观察，且不携带 Runtime 控制数据。
