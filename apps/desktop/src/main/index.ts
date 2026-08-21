@@ -15,28 +15,23 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from 'electron'
-import {
-  desktopChannels,
-  isAllowedDesktopExternalLink,
-  isDesktopNotification,
-  type DesktopRecoveryDiagnostic,
-  type DesktopStartupResult,
-  type FolderSelectionResult,
-} from '../shared/desktop-api.ts'
 import { createBrowserHandoffTransport } from './browser-handoff-transport.ts'
+import { registerDesktopIpc } from './desktop-ipc.ts'
 import { DesktopReadiness } from './readiness.ts'
 import {
   RuntimeDashboardController,
   type DesktopStartupResult as ControllerStartupResult,
 } from './runtime-dashboard.ts'
+import { WindowStartupFlights } from './window-startup-flights.ts'
 import { createWindowOptions, desktopIconPath } from './window-options.ts'
 
 const runtimeConnector = createRuntimeConnector()
 const desktopReadiness = new DesktopReadiness()
 const runtimeControllers = new Set<RuntimeDashboardController>()
 const windowControllers = new WeakMap<BrowserWindow, RuntimeDashboardController>()
-const startupTasks = new Set<Promise<void>>()
+const startupTasks = new Set<Promise<unknown>>()
 const recoveryDiagnostics = new WeakMap<BrowserWindow, RedactedRuntimeDiagnostic>()
+const windowStartups = new WindowStartupFlights(startupTasks, startDesktopWindow)
 let shutdownFlight: Promise<void> | undefined
 let quitAfterShutdown = false
 
@@ -50,10 +45,9 @@ function createWindow(): BrowserWindow {
 
   window.once('ready-to-show', () => {
     window.show()
-    const startup = startDesktopWindow(window).then(() => {}).finally(() => {
-      startupTasks.delete(startup)
+    void windowStartups.run(window).catch(() => {
+      // Application shutdown may close startup admission before this one-shot event runs.
     })
-    startupTasks.add(startup)
   })
 
   void loadRecoveryDocument(window)
@@ -93,7 +87,7 @@ async function startDesktopWindow(window: BrowserWindow): Promise<ControllerStar
 
 async function retryDesktopWindow(window: BrowserWindow): Promise<ControllerStartupResult> {
   const controller = windowControllers.get(window)
-  if (controller === undefined) return await startDesktopWindow(window)
+  if (controller === undefined) return await windowStartups.run(window)
   return await publishStartupResult(window, await controller.retryAfterUserAction(window))
 }
 
@@ -129,7 +123,7 @@ function loadRecoveryDocument(window: BrowserWindow): Promise<void> {
 }
 
 async function closeDesktopRuntime(): Promise<void> {
-  await Promise.allSettled([...startupTasks])
+  await windowStartups.close()
   const results = await Promise.allSettled([...runtimeControllers].map(controller => controller.close()))
   const failures = results
     .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -138,73 +132,20 @@ async function closeDesktopRuntime(): Promise<void> {
 }
 
 app.setAppUserModelId(productMetadata.appId)
-ipcMain.handle(desktopChannels.readRecoveryDiagnostic, (event, ...args: unknown[]) => {
-  requireNoPayload(args)
-  const diagnostic = recoveryDiagnostics.get(requireSenderWindow(event))
-  return diagnostic === undefined ? undefined : toDesktopRecoveryDiagnostic(diagnostic)
-})
-ipcMain.handle(desktopChannels.retryDashboard, async (event, ...args: unknown[]) => {
-  requireNoPayload(args)
-  const window = requireSenderWindow(event)
-  try {
-    return toDesktopStartupResult(await retryDesktopWindow(window))
-  } catch {
-    throw desktopError('desktop:retry-failed')
-  }
-})
-ipcMain.handle(desktopChannels.copyRecoveryDiagnostic, async (event, ...args: unknown[]) => {
-  requireNoPayload(args)
-  const diagnostic = recoveryDiagnostics.get(requireSenderWindow(event))
-  if (diagnostic === undefined) throw desktopError('desktop:no-recovery-diagnostic')
-  try {
-    await copyText(formatRecoveryDiagnostic(toDesktopRecoveryDiagnostic(diagnostic)))
-  } catch {
-    throw desktopError('desktop:copy-failed')
-  }
-})
-ipcMain.handle(desktopChannels.selectFolder, async (event, ...args: unknown[]): Promise<FolderSelectionResult> => {
-  requireNoPayload(args)
-  const window = requireSenderWindow(event)
-  let focusedWindow: BrowserWindow | null
-  try {
-    focusedWindow = BrowserWindow.getFocusedWindow()
-  } catch {
-    throw desktopError('desktop:window-not-focused')
-  }
-  if (focusedWindow !== window) throw desktopError('desktop:window-not-focused')
-  try {
-    const selection = await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
-    if (selection.canceled) return { kind: 'cancelled' }
-    const path = selection.filePaths[0]
-    if (typeof path !== 'string' || path.trim().length === 0) {
-      throw desktopError('desktop:folder-selection-failed')
-    }
-    return { kind: 'selected', path }
-  } catch {
-    throw desktopError('desktop:folder-selection-failed')
-  }
-})
-ipcMain.handle(desktopChannels.showNotification, (event, ...args: unknown[]) => {
-  requireSenderWindow(event)
-  if (args.length !== 1 || !isDesktopNotification(args[0])) {
-    throw desktopError('desktop:invalid-notification')
-  }
-  try {
-    new Notification(args[0]).show()
-  } catch {
-    throw desktopError('desktop:notification-failed')
-  }
-})
-ipcMain.handle(desktopChannels.openExternalLink, async (event, ...args: unknown[]) => {
-  requireSenderWindow(event)
-  if (args.length !== 1 || !isAllowedDesktopExternalLink(args[0])) {
-    throw desktopError('desktop:external-link-denied')
-  }
-  try {
-    await shell.openExternal(args[0])
-  } catch {
-    throw desktopError('desktop:external-link-failed')
-  }
+registerDesktopIpc<BrowserWindow, IpcMainInvokeEvent>({
+  handle: (channel, handler) => {
+    ipcMain.handle(channel, (event, ...args: unknown[]) => handler(event, ...args))
+  },
+}, {
+  windowFromEvent: event => BrowserWindow.fromWebContents(event.sender),
+  isWindowDestroyed: window => window.isDestroyed(),
+  getFocusedWindow: () => BrowserWindow.getFocusedWindow(),
+  readRecoveryDiagnostic: window => recoveryDiagnostics.get(window),
+  retryDashboard: retryDesktopWindow,
+  copyText,
+  selectFolder: window => dialog.showOpenDialog(window, { properties: ['openDirectory'] }),
+  showNotification: (notification) => { new Notification(notification).show() },
+  openExternalLink: url => shell.openExternal(url),
 })
 
 void app.whenReady().then(() => {
@@ -242,55 +183,7 @@ app.on('will-quit', () => {
   })
 })
 
-function requireNoPayload(args: readonly unknown[]): void {
-  if (args.length !== 0) throw desktopError('desktop:invalid-invocation')
-}
-
-function requireSenderWindow(event: IpcMainInvokeEvent): BrowserWindow {
-  try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window === null || window.isDestroyed()) throw desktopError('desktop:window-unavailable')
-    return window
-  } catch {
-    throw desktopError('desktop:window-unavailable')
-  }
-}
-
-/**
- * Copies only the five renderer-safe diagnostic fields into a new IPC value.
- * @param diagnostic - Foundation diagnostic retained by Main.
- * @returns a value without Runtime authority or internal fields.
- */
-function toDesktopRecoveryDiagnostic(diagnostic: RedactedRuntimeDiagnostic): DesktopRecoveryDiagnostic {
-  return {
-    code: diagnostic.code,
-    subject: diagnostic.subject,
-    message: diagnostic.message,
-    correction: diagnostic.correction,
-    diagnosticId: diagnostic.diagnosticId,
-  }
-}
-
-function toDesktopStartupResult(result: ControllerStartupResult): DesktopStartupResult {
-  return result.kind === 'dashboard-loaded'
-    ? { kind: 'dashboard-loaded' }
-    : { kind: 'recovery', diagnostic: toDesktopRecoveryDiagnostic(result.diagnostic) }
-}
-
-function formatRecoveryDiagnostic(diagnostic: DesktopRecoveryDiagnostic): string {
-  return [
-    `${diagnostic.subject}: ${diagnostic.code}`,
-    diagnostic.message,
-    diagnostic.correction,
-    `Diagnostic ID: ${diagnostic.diagnosticId}`,
-  ].join('\n')
-}
-
 function copyText(text: string): Promise<void> {
   clipboard.writeText(text)
   return Promise.resolve()
-}
-
-function desktopError(code: string): Error {
-  return new Error(code)
 }
