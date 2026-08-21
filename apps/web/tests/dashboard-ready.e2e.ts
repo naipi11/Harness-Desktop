@@ -61,6 +61,7 @@ describe('Dashboard authenticated ready marker', () => {
         workbench: boolean
       }>
       expect(observations).toContainEqual({ value: 'true', workbench: true })
+      expect(observations).not.toContainEqual({ value: 'true', workbench: false })
       expect(await root.evaluate(element => [...element.attributes].map(attribute => [attribute.name, attribute.value])))
         .toEqual([['id', 'root'], ['data-harness-dashboard-ready', 'true']])
       const cookie = (await browserContext.cookies(scaffold.baseUrl)).find(value => value.name === 'harness_session')

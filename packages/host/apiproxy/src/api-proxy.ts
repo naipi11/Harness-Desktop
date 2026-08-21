@@ -2527,8 +2527,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           let execution: Awaited<ReturnType<NonNullable<typeof commands>['execute']>> = undefined
           if (commands !== undefined) {
             try {
-              execution = await commands.execute(agent, commandLine, new AbortController().signal)
+              execution = await commands.execute(agent, commandLine, signal ?? new AbortController().signal)
             } catch (error: unknown) {
+              if (signal?.aborted) return cancelledPrompt(request)
               return err(request, {
                 code: 'command-error',
                 message: error instanceof Error ? error.message : 'command execution failed',

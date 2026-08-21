@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-authenticated-dashboard-workbench.md
-2026-08-21-authenticated-dashboard-workbench.md: d802fbc434928c974e09c3c79094860c62bd177f
-2026-08-21-authenticated-dashboard-workbench.zh.md: b13eff5a1c2f12299d0dbc3d9942a38a76abfa43
+2026-08-21-authenticated-dashboard-workbench.md: b6722a20d2349c77f9024aa0c58f523ca983931a
+2026-08-21-authenticated-dashboard-workbench.zh.md: 0266fb18a16e2b5d128463173d0507946411c838

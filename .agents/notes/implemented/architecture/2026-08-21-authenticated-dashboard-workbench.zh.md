@@ -16,7 +16,7 @@ app-shell 在构建 Dashboard 前 inject `workspaces`。`EngineeringWorkbench` �
 
 client-module 声明支持 `includeWhenDisabled`，供 Host 侧由其他生命周期所有者管理的浏览器侧使用。Client connection 使用该声明：它在本地 Runtime 中的 Loader 行保持禁用，Runtime 挂载已认证 Host 路由，而浏览器 bundle 仍加入启动图。普通 Web 组合则直接启用 Host 行。
 
-已认证 connection 会包装完成 schema 校验的 unary dispatch。对于 `session.prompt`，Runtime 从 HttpOnly cookie 派生单向 owner，在 ApiProxy 准入前保留 Session writer，并记录请求 `rpcId`。现有 inbox 事件会关联已发布的用户消息和已领取的 Turn。被拒绝的请求、只执行命令的结果、handler 失败，以及未发布关联消息的已接受请求都会释放该保留；关联过程只在有界事件间隔内等待。在关联前停止工作或关闭 Runtime 会中止 invocation，并保留关联 tombstone，直到 carrier 结算，或发生竞态的迟到消息从 inbox 中被移除。对应的精确 `turn/end` 会释放已接受工作。`observe-active-work` 与 `stop-own-ui-work` 使用同一个 cookie 派生 owner，因此其他 Dashboard cookie 无法观察或停止这些工作。
+已认证 connection 会包装完成 schema 校验的 unary dispatch。对于 `session.prompt`，Runtime 从 HttpOnly cookie 派生单向 owner，在 ApiProxy 准入前保留 Session writer，并记录请求 `rpcId`。现有 inbox 事件会关联已发布的用户消息和已领取的 Turn。被拒绝的请求、只执行命令的结果、handler 失败，以及未发布关联消息的已接受请求都会释放该保留；关联过程只在有界事件间隔内等待。在关联前停止工作或关闭 Runtime 会中止 invocation，包括正在执行的已识别 slash command，并保留关联 tombstone，直到 carrier 结算，或发生竞态的迟到消息从 inbox 中被移除。对应的精确 `turn/end` 会释放已接受工作。`observe-active-work` 与 `stop-own-ui-work` 使用同一个 cookie 派生 owner，因此其他 Dashboard cookie 无法观察或停止这些工作。
 
 工作台会在 Terminal 和 Task prompt 操作后刷新活动工作。只要工作仍处于活动状态，它就会按固定间隔轮询已认证操作，最多尝试 30 次；工作结算或 focus 变化不会重新连接浏览器客户端。无秘密的 ready marker 仍由成功完成认证的 `AppWebEntry` settle 拥有，详见 [Desktop Runtime Dashboard 所有权](2026-08-21-desktop-runtime-dashboard-ownership.md)。
 

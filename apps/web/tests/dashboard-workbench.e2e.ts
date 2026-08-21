@@ -13,6 +13,8 @@ import { launchWebScaffold, seedSession, watchConsole, type WebScaffold } from '
 let browser: Browser
 let scaffold: WebScaffold
 const SESSION_ID = 'authenticated-workbench-session'
+const TERMINAL_FOLLOWUP = 'Run the terminal follow-up.'
+const COMPLETE_TASK_PROMPT = 'Mark the task "Ship workbench" completed with todo_write and preserve every other task.'
 
 function workbenchFixture(): string {
   const session = Session.create(SessionId('authenticated-workbench-source'))
@@ -130,38 +132,76 @@ describe('authenticated engineering workbench', () => {
       await workbench.waitFor({ timeout: 30_000 })
       const groupRow = page.locator('[role="treeitem"]').first()
       await groupRow.waitFor({ timeout: 15_000 })
-      if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
+      await expect.poll(async () => {
+        if (await groupRow.getAttribute('aria-expanded') === 'true') return true
+        await groupRow.click({ force: true, timeout: 2_000 }).catch(() => {})
+        return await groupRow.getAttribute('aria-expanded') === 'true'
+      }, { timeout: 15_000 }).toBe(true)
       const sessionRow = page.locator('[role="treeitem"]').nth(1)
       await sessionRow.waitFor({ timeout: 10_000 })
-      await sessionRow.click()
+      await sessionRow.click({ force: true })
       await page.getByText('Authenticated workbench', { exact: true }).first().waitFor()
       expect(await workbench.locator('[data-workbench-panel]').evaluateAll(nodes =>
         nodes.map(node => node.getAttribute('data-workbench-panel'))))
         .toEqual(['files', 'diff', 'terminal', 'artifacts', 'tasks'])
-
-      await page.getByRole('tab', { name: 'Diff' }).click()
-      await workbench.locator('[data-workbench-active-panel="diff"]').getByText('artifact', { exact: true }).waitFor()
-      await page.getByRole('tab', { name: 'Terminal' }).click()
-      await workbench.locator('[data-workbench-active-panel="terminal"]')
-        .getByText('48 tests passed', { exact: true }).waitFor()
-      await page.getByRole('tab', { name: 'Artifacts' }).click()
-      await workbench.locator('[data-workbench-active-panel="artifacts"]')
-        .getByText('artifact.txt', { exact: true }).waitFor()
-      await page.getByRole('tab', { name: 'Tasks' }).click()
-      await workbench.locator('[data-workbench-active-panel="tasks"]')
-        .getByText('Ship workbench', { exact: true }).waitFor()
-      await page.getByRole('tab', { name: 'Files' }).click()
-      await workbench.locator('[data-workbench-active-panel="files"]').getByText('src', { exact: true }).waitFor()
-
       const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath').mockImplementation(async request => ({
         rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } },
       }))
+      const prompt = vi.spyOn(scaffold.ctx.apiProxy.sessions, 'prompt').mockImplementation(async request => ({
+        rpcId: request.rpcId,
+        result: {
+          ok: true,
+          value: { accepted: true as const, command: { kind: 'success' as const, text: 'accepted' } },
+        },
+      }))
       try {
-        await page.getByRole('button', { name: 'Open src' }).click()
+        await page.getByRole('tab', { name: 'Diff' }).click()
+        const diffPanel = workbench.locator('[data-workbench-active-panel="diff"]')
+        await diffPanel.getByText('artifact', { exact: true }).waitFor()
+        await diffPanel.getByRole('button', { name: 'Open artifact.txt' }).click()
         await expect.poll(() => openPath.mock.calls.length).toBe(1)
-        expect(openPath.mock.calls[0]![0].payload).toEqual({ path: join(scaffold.workspaceCwd, 'src') })
+        expect(openPath.mock.calls[0]![0].payload).toEqual({ path: 'artifact.txt' })
+
+        await page.getByRole('tab', { name: 'Terminal' }).click()
+        const terminalPanel = workbench.locator('[data-workbench-active-panel="terminal"]')
+        await terminalPanel.getByText('48 tests passed', { exact: true }).waitFor()
+        await terminalPanel.getByRole('textbox', { name: 'Terminal input' }).fill(TERMINAL_FOLLOWUP)
+        await terminalPanel.getByRole('button', { name: 'Send terminal input' }).click()
+        await expect.poll(() => prompt.mock.calls.length).toBe(1)
+        expect(prompt.mock.calls[0]![0].payload).toMatchObject({
+          sessionId: SESSION_ID,
+          mode: 'queue',
+          content: [{ type: 'text', text: TERMINAL_FOLLOWUP }],
+        })
+
+        await page.getByRole('tab', { name: 'Artifacts' }).click()
+        const artifactsPanel = workbench.locator('[data-workbench-active-panel="artifacts"]')
+        await artifactsPanel.getByText('artifact.txt', { exact: true }).waitFor()
+        await artifactsPanel.getByRole('listitem').filter({ hasText: 'artifact.txt' })
+          .getByRole('button', { name: 'Open' }).click()
+        await expect.poll(() => openPath.mock.calls.length).toBe(2)
+        expect(openPath.mock.calls[1]![0].payload).toEqual({ path: 'artifact.txt' })
+
+        await page.getByRole('tab', { name: 'Tasks' }).click()
+        const tasksPanel = workbench.locator('[data-workbench-active-panel="tasks"]')
+        await tasksPanel.getByText('Ship workbench', { exact: true }).waitFor()
+        await tasksPanel.getByRole('button', { name: 'Complete Ship workbench' }).click()
+        await expect.poll(() => prompt.mock.calls.length).toBe(2)
+        expect(prompt.mock.calls[1]![0].payload).toMatchObject({
+          sessionId: SESSION_ID,
+          mode: 'queue',
+          content: [{ type: 'text', text: COMPLETE_TASK_PROMPT }],
+        })
+
+        await page.getByRole('tab', { name: 'Files' }).click()
+        const filesPanel = workbench.locator('[data-workbench-active-panel="files"]')
+        await filesPanel.getByText('src', { exact: true }).waitFor()
+        await page.getByRole('button', { name: 'Open src' }).click()
+        await expect.poll(() => openPath.mock.calls.length).toBe(3)
+        expect(openPath.mock.calls[2]![0].payload).toEqual({ path: join(scaffold.workspaceCwd, 'src') })
       } finally {
         openPath.mockRestore()
+        prompt.mockRestore()
       }
 
       await page.getByText('runtime-work', { exact: true }).waitFor()
