@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { posix, win32 } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
+import type { Branded } from '@harness-desktop/dsh-brand'
 import {
   createInstalledDesktopActivator,
   DesktopNotInstalledError,
@@ -11,6 +15,21 @@ import {
 import { runCli } from '../src/main.ts'
 import type { TerminalIO } from '../src/terminal-client.ts'
 
+interface BuilderIdentityConfig {
+  readonly executableName: string
+  readonly productName: string
+}
+
+const desktopManifest = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../../desktop/package.json', import.meta.url)), 'utf8'),
+) as { readonly name: string }
+const builderModule: unknown = await import(
+  pathToFileURL(fileURLToPath(new URL('../../desktop/electron-builder.config.mjs', import.meta.url))).href,
+)
+const builderConfig = (builderModule as { readonly default: BuilderIdentityConfig }).default
+const builderPackageRoot = desktopManifest.name.replaceAll('/', '')
+const builderExecutable = builderConfig.executableName
+
 function output(): { stream: PassThrough; text: () => string } {
   const stream = new PassThrough()
   let value = ''
@@ -19,7 +38,7 @@ function output(): { stream: PassThrough; text: () => string } {
 }
 
 function diagnosticId(value: string): DesktopDiagnosticId {
-  return value as DesktopDiagnosticId
+  return value as Branded<'DesktopDiagnosticId'>
 }
 
 function captureIO(): { io: TerminalIO; stderr: () => string; stdout: () => string } {
@@ -86,13 +105,15 @@ describe('installed Desktop activation', () => {
   })
 
   it.each([
-    ['win32', { LOCALAPPDATA: 'C:\\Users\\person\\AppData\\Local' }, 'C:\\Users\\person\\AppData\\Local\\Programs\\Harness Desktop\\harness-desktop.exe', []],
-    ['darwin', { HOME: '/Users/person' }, 'open', ['/Users/person/Applications/Harness Desktop.app']],
+    ['win32', { LOCALAPPDATA: 'C:\\Users\\person\\AppData\\Local' }, win32.join('C:\\Users\\person\\AppData\\Local', 'Programs', builderConfig.productName, `${builderExecutable}.exe`), []],
+    ['darwin', { HOME: '/Users/person' }, 'open', [posix.join('/Users/person/Applications', `${builderConfig.productName}.app`)]],
     ['linux', { HOME: '/home/person', XDG_DATA_HOME: '/home/person/.local/share' }, 'gio', ['launch', '/home/person/.local/share/applications/io.github.naipi11.harness-desktop.desktop']],
   ] as const)(
     'resolves and activates only the installed %s application',
     async (platform, env, expectedCommand, expectedArgs) => {
-      const launch = vi.fn(async () => {})
+      const launch = vi.fn(async () => platform === 'win32'
+        ? { kind: 'spawned' as const }
+        : { kind: 'exited' as const, exitCode: 0 })
       const exists = vi.fn(async (path: string) => path === (platform === 'win32'
         ? expectedCommand
         : expectedArgs.at(-1)))
@@ -106,13 +127,13 @@ describe('installed Desktop activation', () => {
 
       await expect(activator.activate()).resolves.toBe('activated')
       expect(launch).toHaveBeenCalledOnce()
-      expect(launch).toHaveBeenCalledWith(expectedCommand, expectedArgs)
+      expect(launch).toHaveBeenCalledWith(expectedCommand, expectedArgs, platform !== 'win32')
     },
   )
 
   it('resolves a machine-wide Windows installation without a per-user Programs segment', async () => {
-    const launch = vi.fn(async () => {})
-    const installed = 'C:\\Program Files\\Harness Desktop\\harness-desktop.exe'
+    const launch = vi.fn(async () => ({ kind: 'spawned' as const }))
+    const installed = win32.join('C:\\Program Files', builderConfig.productName, `${builderExecutable}.exe`)
     const activator = createInstalledDesktopActivator({
       platform: 'win32',
       env: { ProgramFiles: 'C:\\Program Files' },
@@ -122,7 +143,56 @@ describe('installed Desktop activation', () => {
     })
 
     await expect(activator.activate()).resolves.toBe('activated')
-    expect(launch).toHaveBeenCalledWith(installed, [])
+    expect(launch).toHaveBeenCalledWith(installed, [], false)
+  })
+
+  it.each([
+    [
+      'win32',
+      { LOCALAPPDATA: 'C:\\Users\\person\\AppData\\Local' },
+      win32.join('C:\\Users\\person\\AppData\\Local', 'Programs', builderPackageRoot, `${builderExecutable}.exe`),
+      win32.join('C:\\Users\\person\\AppData\\Local', 'Programs', builderPackageRoot, `${builderExecutable}.exe`),
+      [],
+      { kind: 'spawned' as const },
+    ],
+    [
+      'darwin',
+      { HOME: '/Users/person' },
+      posix.join('/Users/person/Applications', `${builderExecutable}.app`),
+      'open',
+      [posix.join('/Users/person/Applications', `${builderExecutable}.app`)],
+      { kind: 'exited' as const, exitCode: 0 },
+    ],
+  ] as const)(
+    'activates the electron-builder-derived %s artifact candidate',
+    async (platform, env, installed, expectedCommand, expectedArgs, result) => {
+      const launch = vi.fn(async () => result)
+      const activator = createInstalledDesktopActivator({
+        platform,
+        env,
+        exists: async path => path === installed,
+        launch,
+        diagnosticId: () => diagnosticId('44444444-4444-4444-8444-444444444444'),
+      })
+
+      await expect(activator.activate()).resolves.toBe('activated')
+      expect(launch).toHaveBeenCalledWith(expectedCommand, expectedArgs, platform !== 'win32')
+    },
+  )
+
+  it('rejects a resolved macOS helper whose process exits nonzero', async () => {
+    const installed = posix.join('/Users/person/Applications', `${builderExecutable}.app`)
+    const activator = createInstalledDesktopActivator({
+      platform: 'darwin',
+      env: { HOME: '/Users/person' },
+      exists: async path => path === installed,
+      launch: async () => ({ kind: 'exited', exitCode: 7 }),
+      diagnosticId: () => diagnosticId('55555555-5555-4555-8555-555555555555'),
+    })
+
+    await expect(activator.activate()).rejects.toMatchObject({
+      diagnosticId: '55555555-5555-4555-8555-555555555555',
+    })
   })
 
   it.each([
@@ -130,7 +200,7 @@ describe('installed Desktop activation', () => {
     ['darwin', 'Install Harness Desktop from the macOS universal DMG on GitHub Releases.'],
     ['linux', 'Install Harness Desktop with the Linux Deb package from GitHub Releases.'],
   ] as const)('does not launch a substitute when no %s installation resolves', async (platform, route) => {
-    const launch = vi.fn(async () => {})
+    const launch = vi.fn(async () => ({ kind: 'spawned' as const }))
     const activator = createInstalledDesktopActivator({
       platform,
       env: {},

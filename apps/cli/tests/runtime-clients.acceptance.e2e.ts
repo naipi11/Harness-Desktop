@@ -12,6 +12,7 @@ import {
   type DashboardAttachment,
   type RuntimeClient,
   type RuntimeId,
+  type SessionId,
   type TerminalConnection,
   type TerminalProtocolEvent,
 } from '@harness-desktop/dsh-host-local-runtime'
@@ -48,10 +49,22 @@ afterEach(async () => {
   replayRoot = undefined
 })
 
-async function startRuntimeWithHangingReplay(): Promise<RuntimeProcess> {
+function success(text: string): object {
+  return {
+    kind: 'chunks',
+    chunks: [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text },
+      { type: 'block-end', index: 0, block: { type: 'text', text } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ],
+  }
+}
+
+async function startRuntimeWithReplay(): Promise<RuntimeProcess> {
   replayRoot = await mkdtemp(join(tmpdir(), 'harness-client-acceptance-'))
   const override = join(replayRoot, 'replay.override.json')
-  await writeFile(override, '[{"kind":"hang"}]\n')
+  await writeFile(override, `${JSON.stringify([success('CLI_SESSION_READY'), { kind: 'hang' }], undefined, 2)}\n`)
   const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
   const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
   process.env.DSH_RUNTIME_TEST_REPLAY_FILE = `${override}.missing`
@@ -116,19 +129,32 @@ describe('shared Runtime client acceptance', () => {
   it.each(['harness', 'dsh'] as const)(
     'keeps %s terminal work active after releasing only the named Web lease',
     async (commandName) => {
-      runtime = await startRuntimeWithHangingReplay()
+      runtime = await startRuntimeWithReplay()
       const endpoint = await waitForEndpoint(runtime)
       const endpointPath = join(runtime.harnessHome, 'runtime-endpoint.json')
       const beforeEndpoint = JSON.parse(await readFile(endpointPath, 'utf8')) as { runtimeId: RuntimeId; port: number }
       const connector = createRuntimeConnector({
         input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
       })
+      const initial = await runProduct(runtime, commandName, ['run', `${commandName} opens shared session`, '--json'])
+      expect(initial.code, initial.stderr).toBe(0)
+      expect(initial.stderr).toBe('')
+      const initialEvents = initial.stdout.split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line) as {
+        readonly kind: string
+        readonly sessionId?: SessionId
+        readonly text?: string
+      })
+      const sessionId = initialEvents.find(event => event.kind === 'session-opened')?.sessionId
+      expect(sessionId).toBeDefined()
+      expect(initialEvents).toContainEqual({ kind: 'output', text: 'CLI_SESSION_READY' })
+      if (sessionId === undefined) throw new Error('terminal CLI did not open a session')
+
       client = await connector.connect({ start: false })
-      terminal = await client.openTerminal({ workspace: runtime.cwd })
+      terminal = await client.openTerminal({ workspace: runtime.cwd, sessionId })
       const events = terminal.events()[Symbol.asyncIterator]()
       const opened = await nextEvent(events, 'session-opened')
       if (opened.kind !== 'session-opened') throw new Error('expected session-opened')
-      expect(typeof opened.sessionId).toBe('string')
+      expect(opened.sessionId).toBe(sessionId)
       await terminal.submit({ kind: 'task', text: `${commandName} work survives Web stop` })
       let active = await client.observeActiveWork()
       for (let attempt = 0; attempt < 100 && active.ownUiWork.length === 0; attempt += 1) {

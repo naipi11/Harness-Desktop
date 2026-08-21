@@ -31,6 +31,7 @@
     "@harness-desktop/dsh-agent-tool-presentation": "workspace:^",
     "@harness-desktop/dsh-app-boot": "workspace:^",
     "@harness-desktop/dsh-base": "workspace:^",
+    "@harness-desktop/dsh-brand": "workspace:^",
     "@harness-desktop/dsh-client-ui-agent-preset": "workspace:^",
     "@harness-desktop/dsh-client-ui-cordis": "workspace:^",
     "@harness-desktop/dsh-cmdline": "workspace:^",
