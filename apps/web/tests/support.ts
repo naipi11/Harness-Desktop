@@ -74,17 +74,46 @@ export function probeFreePort(): Promise<number> {
 export async function connectFreshWorkspace(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
   await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+  const addWorkspace = page.getByRole('menu').getByText('Add workspace…', { exact: true })
+  if ((await addWorkspace.count()) > 0) await addWorkspace.click()
   const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
-  await dialog.waitFor({ timeout: 10_000 })
+  try {
+    await dialog.waitFor({ timeout: 10_000 })
+  } catch (error: unknown) {
+    throw new Error(
+      `Workspace dialog did not open; trigger=${await page.getByRole('textbox', { name: 'Choose workspace' }).evaluate(element => element.outerHTML)} menus=${JSON.stringify(await page.locator('[role="menu"]').allTextContents())} dialogs=${JSON.stringify(await page.locator('[role="dialog"]').allTextContents())}`,
+      { cause: error },
+    )
+  }
   await dialog.getByRole('button', { name: 'Edit path' }).click()
   const pathInput = dialog.getByRole('textbox', { name: 'Edit path' })
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
-  await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+  const open = dialog.getByRole('button', { name: 'Open', exact: true })
+  try {
+    await open.waitFor({ state: 'visible', timeout: 10_000 })
+    await open.click({ trial: true, timeout: 10_000 })
+  } catch (error: unknown) {
+    throw new Error(`Workspace path was not accepted: ${await dialog.innerText()}`, { cause: error })
+  }
+  await open.click()
   // The pick connected the workspace: the blank session's live composer
-  // replaces the locked placeholder and enables.
-  await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
-    .waitFor({ timeout: 15_000 })
+  // replaces the locked placeholder and enables. A composition that keeps
+  // creation and selection distinct returns to the menu for the explicit pick.
+  const composer = page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
+  await dialog.waitFor({ state: 'hidden' })
+  if (!(await composer.isEditable().catch(() => false))) {
+    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+    await page.getByRole('menu').getByText(name, { exact: true }).click()
+  }
+  try {
+    await composer.waitFor({ timeout: 15_000 })
+  } catch (error: unknown) {
+    throw new Error(
+      `Workspace connected without an enabled composer: ${JSON.stringify(await page.locator('textarea').evaluateAll(elements => elements.map(element => element.outerHTML)))} body=${await page.locator('body').innerText()}`,
+      { cause: error },
+    )
+  }
 }
 
 /**

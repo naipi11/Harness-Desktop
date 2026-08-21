@@ -31,6 +31,10 @@ async function bench() {
 }
 
 describe('app-shell assembly plugin', () => {
+  it('waits for the workspace service consumed by the workbench assembly', () => {
+    expect(AppShell.inject).toContain('workspaces')
+  })
+
   it('installs the renderer and provides the assembled appShell face', async () => {
     const { ctx, slots } = await bench()
     slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)

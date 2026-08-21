@@ -15,10 +15,10 @@ export const name = 'client-web-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: the vite entry shell — boot glue and module-table
- * seeding with no cordis events and no cross-plugin mutable state; the boot
- * chain (loading page → settled → one-flip UI) is asserted by the web smoke
- * e2e against the real carrier.
+ * No runtime invariant: workbench focus and panel selection are browser-local
+ * React state, while its Session, Workspace, deliverables, and Runtime-control
+ * relationships cross the authenticated browser carrier. Built AppWebEntry
+ * e2e and the real Runtime process suite assert those acceptance paths.
  */
 const install: InvariantInstaller = () => {}
 

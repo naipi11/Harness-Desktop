@@ -23,7 +23,7 @@ import {
   fitProducedFiles, ProducedFiles, type ProducedFilesProps,
 } from '../src/client/ProducedFiles.tsx'
 import {
-  basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
+  basename, deliverablePaths, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
   type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -173,6 +173,22 @@ function deliverablesOf(value: ConversationNodeAssembler, turn = 1): Readonly<De
 }
 
 describe('produced-file Turn data', () => {
+  it('projects artifacts from completed Turn data at each closing Assistant boundary', () => {
+    const first = turnLocation(1, produced([3, 'first.txt'], [5, 'late.txt']))
+    ;(first.data as TestTurnDataStore).set('turn-tail', {
+      seq: 6,
+      closing: { finalNode: { seq: 4 } },
+    } as never)
+    const second = turnLocation(2, produced([8, 'second.txt'], [9, 'first.txt']))
+    ;(second.data as TestTurnDataStore).set('turn-tail', {
+      seq: 10,
+      closing: { finalNode: { seq: 9 } },
+    } as never)
+
+    expect(deliverablePaths({ turnOrder: [1, 2], turns: new Map([[1, first], [2, second]]) }))
+      .toEqual(['first.txt', 'second.txt'])
+  })
+
   it('deduplicates paths in first-seen order and stops at the closing Assistant seq', () => {
     const data = produced(
       [3, 'out/index.html'],

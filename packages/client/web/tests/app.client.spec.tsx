@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Context } from '@harness-desktop/cordis'
 import { SlotTestRuntime } from '@harness-desktop/dsh-client-test-runtime'
+import { EMPTY_CHAT_SNAPSHOT } from '@harness-desktop/dsh-client-runtime/client'
 import type { SessionId } from '@harness-desktop/dsh-client-runtime/client'
+import { deliverablePaths } from '@harness-desktop/dsh-client-ui-deliverables/client'
 import { buildRenderApp } from '@harness-desktop/dsh-client-web/src/app.tsx'
 
 let runtime: SlotTestRuntime | undefined
@@ -30,11 +32,24 @@ async function workbench() {
   runtime = await SlotTestRuntime.create()
   await runtime.root.declare({}, () => <div data-testid="dashboard-chrome">conversation</div>)
   const prompt = vi.fn(async () => ({ ok: true as const, value: { accepted: true as const } }))
+  const turnData = new Map<string, unknown>([
+    ['deliverables', { produced: [{ seq: 4, path: 'C:\\workspace\\src\\app.ts' }] }],
+    ['turn-tail', { seq: 7, closing: { finalNode: { seq: 6 } } }],
+  ])
+  const timeline = {
+    turnOrder: [1],
+    turns: new Map([[1, {
+      turn: 1, start: undefined, end: undefined, status: 'closed' as const, steps: [],
+      data: { get: (key: string) => turnData.get(key) },
+    }]]),
+  }
+  runtime.provide('deliverables', { paths: deliverablePaths })
   await runtime.sessions.add({
     id: 'workbench-session',
     summary: { cwd: 'C:\\workspace', title: 'Workbench session' },
     session: { prompt },
     snapshot: {
+      chat: { ...EMPTY_CHAT_SNAPSHOT, timeline } as never,
       nodes: [
         {
           kind: 'tool-result', seq: 4, time: 4, callId: 'diff-call',
@@ -150,6 +165,7 @@ describe('buildRenderApp', () => {
     fireEvent.click(view.getByRole('button', { name: 'Send terminal input' }))
     await waitFor(() => {
       expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'run focused tests' }], 'queue')
+      expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
     })
 
     fireEvent.click(view.getByRole('tab', { name: 'Artifacts' }))
@@ -157,7 +173,10 @@ describe('buildRenderApp', () => {
     fireEvent.click(view.getByRole('tab', { name: 'Tasks' }))
     expect(view.getByText('Ship workbench')).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: 'Complete Ship workbench' }))
-    await waitFor(() => { expect(b.prompt).toHaveBeenCalledTimes(2) })
+    await waitFor(() => {
+      expect(b.prompt).toHaveBeenCalledTimes(2)
+      expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(3)
+    })
 
     expect(await view.findByText('workbench-operation')).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: 'Stop my active work' }))

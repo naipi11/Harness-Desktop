@@ -38,13 +38,17 @@ function writePackage(
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
-function constructWithRoute(packageNames: string[]): { service: ClientModuleRegistry; route: WebRoute } {
+function constructWithRoute(
+  packageNames: string[],
+  disabledNames: ReadonlySet<string> = new Set(),
+): { service: ClientModuleRegistry; route: WebRoute } {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
     *entries() {
       for (const packageName of packageNames) {
-        yield { options: { name: packageName }, fiber: {}, disabled: false }
+        const disabled = disabledNames.has(packageName)
+        yield { options: { name: packageName }, fiber: disabled ? undefined : {}, disabled }
       }
     },
   })
@@ -69,6 +73,19 @@ function construct(packageNames: string[]): ClientModuleRegistry {
 }
 
 describe('client bundle activation', () => {
+  it('includes an explicitly client-only package while its Host entry is disabled', () => {
+    const packageName = '@fixture/client-only-disabled-host'
+    const clientPath = writePackage(packageName, {
+      dsh: { client: { platform: 'web', includeWhenDisabled: true } },
+    })
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+
+    const { service } = constructWithRoute([packageName], new Set([packageName]))
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
   it('allows sibling dsh roles', () => {
     const currentName = '@fixture/current-client-field'
     const clientPath = writePackage(currentName, {

@@ -117,13 +117,15 @@ describe('authenticated engineering workbench', () => {
       await page.getByText('C:/workspace/src/app.ts', { exact: true }).waitFor()
       await page.getByRole('tab', { name: 'Tasks' }).click()
       await page.getByText('Ship workbench', { exact: true }).waitFor()
-      const requestsBeforeFocus = await page.evaluate(() => performance.getEntriesByType('resource').length)
+      const connectionRequests = (): Promise<number> => page.evaluate(() => performance.getEntriesByType('resource')
+        .filter(entry => entry.name.includes('/api/events.mux')).length)
+      const requestsBeforeFocus = await connectionRequests()
       await page.getByRole('button', { name: 'Enter focus mode' }).click()
       expect(await page.locator('[data-workbench-dashboard-chrome]').count()).toBe(0)
       expect(await page.getByText('Authenticated workbench', { exact: true }).count()).toBeGreaterThan(0)
       await page.getByRole('button', { name: 'Exit focus mode' }).click()
       expect(await page.locator('[data-workbench-dashboard-chrome]').count()).toBe(1)
-      expect(await page.evaluate(() => performance.getEntriesByType('resource').length)).toBe(requestsBeforeFocus)
+      expect(await connectionRequests()).toBe(requestsBeforeFocus)
       const evidence = await page.evaluate(() => ({
         actions: (globalThis as Record<string, unknown>).__WORKBENCH_ACTIONS__,
         text: document.querySelector('[aria-label="Engineering workbench"]')?.textContent,

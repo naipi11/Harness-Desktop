@@ -20,6 +20,8 @@ transport 在 dispatch 失败、exchange 成功或失败、以及 handoff 到期
 
 干净的 Dashboard 会先执行 cookie 认证的控制 preflight，再执行 `AppWebEntry.run()`。只有每个插件均激活且应用 UI 完成 settle 后，Web 启动才 resolve `true`；已经渲染启动失败报告时则 resolve `false`。只有 `true` 结果才会在 Web root 设置 `data-harness-dashboard-ready="true"`。Main 会在每次导航中验证精确的干净 URL 并等待该 marker；只有常量 `{"kind":"desktop-dashboard-ready","version":1}` JSONL 输出在每个 Desktop 进程中最多发出一次。在 marker probe 等待期间抢先结算的 abort 或导航失败不能发出 acknowledgement。
 
+[已认证 Dashboard 工作台](2026-08-21-authenticated-dashboard-workbench.md)会在此 ready 点之后拥有浏览器投影和按 cookie 划分作用域的 prompt 工作；它不会把 connection 或 attachment 生命周期移入 Renderer。
+
 每个 attachment、transport、导航、marker 和加载失败都会先经过 `normalizeRecoveryDiagnostic`，Main 才会将其保留给恢复 UI。结果不包含 URL、端口、进程标识、Runtime home、token、handoff、cookie 或 attachment 值。
 
 ## 考虑过的替代方案

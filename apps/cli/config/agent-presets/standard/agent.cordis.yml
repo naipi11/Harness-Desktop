@@ -30,6 +30,7 @@
 - id: agent-instructions
   name: '@harness-desktop/dsh-agent-instructions'
   config:
+    harnessHome: !!js harnessHome
     maxBytes: 65536
 
 # ── shell ───────────────────────────────────────────────────────────────────
@@ -82,6 +83,8 @@
 # carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@harness-desktop/dsh-skill-filesystem'
+  config:
+    harnessHome: !!js harnessHome
 
 - id: tool-skill
   name: '@harness-desktop/dsh-tool-skill'

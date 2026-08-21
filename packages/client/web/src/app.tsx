@@ -6,13 +6,15 @@
  * the program.
  */
 import {
-  useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode,
+  useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode,
 } from 'react'
 import type { Context } from '@harness-desktop/cordis'
 import { bindSnapshotSelector } from '@harness-desktop/dsh-client-web-react'
 import type {
   ConversationSnapshot, SessionFace, TodoItem, ToolCallBlock, ToolResultNode,
 } from '@harness-desktop/dsh-client-runtime/client'
+// Type-only: app-shell reads the optional projection service after plugin settlement.
+import type {} from '@harness-desktop/dsh-client-ui-deliverables/client'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import css from './AppRoot.module.css'
 // Type-only: pulls the runtime's SlotMap declaration merge (the 'root' key) into this program.
@@ -59,6 +61,8 @@ const PANELS: readonly { readonly id: WorkbenchPanel; readonly label: string }[]
 
 const EMPTY_SUBSCRIBE = (): (() => void) => () => {}
 const NO_SESSION = (): undefined => undefined
+const ACTIVE_WORK_REFRESH_MS = 1_000
+const ACTIVE_WORK_REFRESH_LIMIT = 30
 
 interface DashboardControlResponse<T> {
   readonly ok?: boolean
@@ -121,18 +125,6 @@ function lastCard(snapshot: ConversationSnapshot | undefined, card: 'diff' | 'te
   })
 }
 
-function artifacts(snapshot: ConversationSnapshot | undefined): readonly string[] {
-  const paths = new Set<string>()
-  for (const block of toolBlocks(snapshot)) {
-    if ('kind' in block && block.isError) continue
-    const callView = block.callView
-    if (callView?.card === 'diff' || (callView?.card === 'generic' && callView.kind === 'edit')) {
-      for (const location of callView.locations ?? []) paths.add(location.path)
-    }
-  }
-  return [...paths]
-}
-
 interface EngineeringWorkbenchProps {
   readonly ctx: Context
   readonly foundation: FoundationControl
@@ -163,7 +155,10 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     : sessionList.byId[currentId]?.title ?? sessionList.byId[currentId]?.displayTitle ?? currentId
   const diff = lastCard(snapshot, 'diff')
   const terminal = lastCard(snapshot, 'terminal')
-  const produced = useMemo(() => artifacts(snapshot), [snapshot])
+  const produced = useMemo(
+    () => snapshot === undefined ? [] : ctx.get('deliverables')?.paths(snapshot.chat.timeline) ?? [],
+    [ctx, snapshot],
+  )
 
   useEffect(() => {
     let currentRequest = true
@@ -178,15 +173,34 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     return () => { currentRequest = false }
   }, [cwd, workspaces])
 
+  const refreshActiveWork = useCallback(async (): Promise<void> => {
+    const status = await foundation.observeActiveWork()
+    setActiveWork(status)
+  }, [foundation])
+
   useEffect(() => {
     let currentRequest = true
-    void foundation.observeActiveWork().then((status) => {
-      if (currentRequest) setActiveWork(status)
-    }).catch(() => {
+    void refreshActiveWork().catch(() => {
       if (currentRequest) setActiveWork(undefined)
     })
     return () => { currentRequest = false }
-  }, [foundation])
+  }, [refreshActiveWork])
+
+  useEffect(() => {
+    if ((activeWork?.ownUiWork.length ?? 0) === 0) return
+    let remaining = ACTIVE_WORK_REFRESH_LIMIT
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = (): void => {
+      timer = setTimeout(() => {
+        remaining -= 1
+        void refreshActiveWork().catch(() => {}).finally(() => {
+          if (remaining > 0) poll()
+        })
+      }, ACTIVE_WORK_REFRESH_MS)
+    }
+    poll()
+    return () => { if (timer !== undefined) clearTimeout(timer) }
+  }, [activeWork?.ownUiWork.length, refreshActiveWork])
 
   const openPath = (path: string): void => {
     void workspaces.openPath(path).catch(() => {})
@@ -196,6 +210,8 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     const text = terminalInput.trim()
     if (current === undefined || text === '') return
     void current.prompt([{ type: 'text', text }], 'queue')
+      .then(() => refreshActiveWork())
+      .catch(() => {})
     setTerminalInput('')
   }
   const completeTask = (task: TodoItem): void => {
@@ -203,12 +219,10 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     void current.prompt([{
       type: 'text',
       text: `Mark the task "${task.content}" completed with todo_write and preserve every other task.`,
-    }], 'queue')
+    }], 'queue').then(() => refreshActiveWork()).catch(() => {})
   }
   const stopActiveWork = (): void => {
-    void foundation.stopOwnUiWork().then(async () => {
-      setActiveWork(await foundation.observeActiveWork())
-    }).catch(() => {})
+    void foundation.stopOwnUiWork().then(refreshActiveWork).catch(() => {})
   }
 
   return (

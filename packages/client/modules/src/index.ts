@@ -49,6 +49,8 @@ interface DshClientDeclaration {
   platform: string
   /** Boot phase-one prefetch mark; absent means lazy (fetched on demand). */
   immediately?: boolean
+  /** Include the browser half when another owner mounts the disabled Host half. */
+  includeWhenDisabled?: boolean
 }
 
 /** Resolved package metadata for one `dsh.client` package (cached per name, never expires). */
@@ -56,6 +58,7 @@ interface PkgMeta {
   clientPath: string
   inject?: string[]
   immediately: boolean
+  includeWhenDisabled: boolean
 }
 
 /** Recovery instruction shared by grouped startup and steady-state bundle diagnostics. */
@@ -121,10 +124,14 @@ function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration |
   if (decl.immediately !== undefined && typeof decl.immediately !== 'boolean') {
     throw new Error(`client-modules: ${pkgName} dsh.client.immediately must be a boolean`)
   }
+  if (decl.includeWhenDisabled !== undefined && typeof decl.includeWhenDisabled !== 'boolean') {
+    throw new Error(`client-modules: ${pkgName} dsh.client.includeWhenDisabled must be a boolean`)
+  }
   return {
     platform: decl.platform,
     ...(decl.inject !== undefined ? { inject: decl.inject as string[] } : {}),
     ...(decl.immediately !== undefined ? { immediately: decl.immediately } : {}),
+    ...(decl.includeWhenDisabled !== undefined ? { includeWhenDisabled: decl.includeWhenDisabled } : {}),
   }
 }
 
@@ -359,6 +366,7 @@ export class ClientModuleRegistry extends Service {
       clientPath: join(dirname(pkgPath), clientRel),
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
       immediately: decl.immediately === true,
+      includeWhenDisabled: decl.includeWhenDisabled === true,
     }
     this.pkgMeta.set(pkgName, meta)
     return meta
@@ -382,17 +390,18 @@ export class ClientModuleRegistry extends Service {
 
   /** Reconcile one entry name against the live loader entries. @returns whether the table changed. */
   private processOne(entryName: string): boolean {
+    const meta = this.resolveMeta(entryName)
+    if (meta === null) return false
     let qualifies = false
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.name === entryName && entry.fiber !== undefined && !entry.disabled) {
+      if (entry.options.name !== entryName) continue
+      if ((!entry.disabled && entry.fiber !== undefined) || (entry.disabled && meta.includeWhenDisabled)) {
         qualifies = true
         break
       }
     }
     if (!qualifies) return this.table.delete(entryName)
     if (this.table.has(entryName)) return false
-    const meta = this.resolveMeta(entryName)
-    if (meta === null) return false
     // The rev rides the row from here on: a fiber restart reuses the row (and
     // its rev) untouched; only rebuilt() re-reads the bundle.
     const rev = this.initialBundleRevision(entryName, meta.clientPath)

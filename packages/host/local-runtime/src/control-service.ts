@@ -43,6 +43,7 @@ import type { HarnessHomeResolution } from './data-root.ts'
 
 const WEB_LEASE_ID = 'web' as Branded<'BackgroundLeaseId'>
 const BUSY_OPTIONS = ['observe', 'new-session', 'wait'] as const
+const DASHBOARD_PROMPT_CORRELATION_TIMEOUT_MS = 1_000
 
 interface ChildAttachment {
   readonly owner: RuntimeClientId
@@ -52,11 +53,12 @@ interface ChildAttachment {
 interface WorkRecord {
   readonly id: ActiveWorkId
   readonly owner: RuntimeClientId
-  readonly terminalId: RuntimeClientId
+  readonly terminalId?: RuntimeClientId
   readonly runtimeLease: RuntimeWorkLease
   readonly agent: Agent
   readonly rpcId: RpcId
   readonly finished: PromiseWithResolvers<void>
+  readonly messageInserted?: PromiseWithResolvers<void>
   messageId?: UserMessage['id']
   turn?: number
   settlement?: Promise<void>
@@ -102,6 +104,16 @@ export interface RuntimeControlService {
     owner: RuntimeClientId,
     request: DashboardControlRequest,
   ): Promise<LegacyMigrationState | ActiveWorkStatus | OwnUiWorkStopResult>
+  /**
+   * Reserve one Dashboard-authenticated prompt before ApiProxy admission.
+   * @param owner - one-way identity of the authenticated browser session.
+   * @param request - validated Session and RPC correlation.
+   * @returns admission settlement owned by the physical request carrier.
+   */
+  ownDashboardPrompt(
+    owner: RuntimeClientId,
+    request: { readonly sessionId: SessionId; readonly rpcId: RpcId },
+  ): Promise<DashboardPromptOwnership>
   observeActiveWork(owner: RuntimeClientId): Promise<ActiveWorkStatus>
   stopOwnUiWork(owner: RuntimeClientId): Promise<OwnUiWorkStopResult>
   openTerminal(owner: RuntimeClientId, terminalId: RuntimeClientId, request: TerminalOpenRequest): Promise<OpenTerminalResult>
@@ -118,6 +130,14 @@ export interface RuntimeControlService {
   handleSessionEvent(session: Session, event: SessionEvent): Promise<void>
   handleApprovalRequest(request: RuntimeApprovalRequest, next: () => Promise<RuntimeApprovalOutcome>): Promise<RuntimeApprovalOutcome>
   close(): Promise<void>
+}
+
+/** Carrier-side settlement for one Dashboard prompt admission. */
+export interface DashboardPromptOwnership {
+  /** Keep ownership after the accepted prompt published its correlated inbox message. */
+  commit(): Promise<void>
+  /** Release ownership after a rejected, command-only, or failed API request. */
+  release(): Promise<void>
 }
 
 /** Minimal approval fields borrowed from the existing approval service. */
@@ -217,8 +237,10 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       await options.runtime.endAgentWork(record.runtimeLease)
       if (work.get(record.id) !== record) return
       work.delete(record.id)
-      const terminal = terminals.get(record.terminalId)
-      if (terminal?.workId === record.id) delete terminal.workId
+      if (record.terminalId !== undefined) {
+        const terminal = terminals.get(record.terminalId)
+        if (terminal?.workId === record.id) delete terminal.workId
+      }
     })()
     void record.settlement.then(record.finished.resolve, record.finished.reject)
     return record.settlement
@@ -229,6 +251,18 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     }
     record.agent.cancel({ kind: 'user' }, { keepInbox: true })
     return record.finished.promise
+  }
+  const waitForDashboardMessage = async (record: WorkRecord): Promise<void> => {
+    if (record.messageId !== undefined || record.messageInserted === undefined) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, DASHBOARD_PROMPT_CORRELATION_TIMEOUT_MS)
+    })
+    try {
+      await Promise.race([record.messageInserted.promise, record.finished.promise, timeout])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+    }
   }
   const startTask = async (owner: RuntimeClientId, terminalId: RuntimeClientId, text: string): Promise<TerminalSubmitResult> => {
     const terminal = requireTerminal(owner, terminalId)
@@ -340,6 +374,36 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
           return service.observeActiveWork(owner)
         case 'stop-own-ui-work':
           return service.stopOwnUiWork(owner)
+      }
+    },
+    async ownDashboardPrompt(owner, request) {
+      const agent = requireAgents(options).get(request.sessionId)
+      if (agent === undefined) throw new Error('host-local-runtime: Dashboard prompt session has no live Agent')
+      const runtimeLease = await options.runtime.beginAgentWork(request.sessionId)
+      const finished = Promise.withResolvers<void>()
+      void finished.promise.catch(() => {
+        // The carrier and stop operation observe the same settlement failure.
+      })
+      const record: WorkRecord = {
+        id: randomUUID() as ActiveWorkId,
+        owner,
+        runtimeLease,
+        agent,
+        rpcId: request.rpcId,
+        finished,
+        messageInserted: Promise.withResolvers<void>(),
+      }
+      work.set(record.id, record)
+      return {
+        async commit() {
+          if (work.get(record.id) !== record) return
+          await waitForDashboardMessage(record)
+          if (work.get(record.id) !== record) return
+          if (record.messageId !== undefined) return
+          await finishWork(record)
+          throw new Error('host-local-runtime: accepted Dashboard prompt published no correlated message')
+        },
+        release: () => finishWork(record),
       }
     },
     observeActiveWork(owner) {
@@ -483,6 +547,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       for (const record of work.values()) {
         if (record.agent === agent && record.rpcId === rpcId && record.messageId === undefined) {
           record.messageId = message.id
+          record.messageInserted?.resolve()
           return
         }
       }
@@ -506,7 +571,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
     handleApprovalRequest(request, next) {
       const record = [...work.values()].find(candidate => candidate.agent === request.agent)
       if (record === undefined) return next()
-      const terminal = terminals.get(record.terminalId)
+      const terminalId = record.terminalId
+      if (terminalId === undefined) return next()
+      const terminal = terminals.get(terminalId)
       if (terminal === undefined || terminal.owner !== record.owner) return next()
       const approvalId = randomUUID() as ApprovalId
       terminal.events.push({ kind: 'approval-requested', approvalId, prompt: request.reason ?? `Approve ${request.toolName}?` })
@@ -517,7 +584,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
           resolve(outcome)
         }
         const onAbort = () => { settle('cancelled') }
-        approvals.set(approvalId, { owner: record.owner, terminalId: record.terminalId, resolve: settle })
+        approvals.set(approvalId, { owner: record.owner, terminalId, resolve: settle })
         request.signal?.addEventListener('abort', onAbort, { once: true })
       })
     },

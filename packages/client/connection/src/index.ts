@@ -5,7 +5,7 @@ import z from '@harness-desktop/schemastery'
 import type {} from '@harness-desktop/dsh-attachment'
 // Activates the webServer Context merge used below.
 import type { WebRoute, WebUpgradeRoute } from '@harness-desktop/dsh-host-webserver'
-import { toFetchHandler } from '@harness-desktop/dsh-host-apiproxy'
+import { toFetchHandler, type FetchUnaryInvocation } from '@harness-desktop/dsh-host-apiproxy'
 import { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
@@ -28,6 +28,12 @@ export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 export interface ConnectionAuthentication {
   /** @returns true only when the carrier may reach the browser API or event stream. */
   authorize(request: IncomingMessage | Request): boolean
+  /**
+   * Wrap one already authorized and schema-validated unary API dispatch.
+   * @param invocation - validated method, payload, and ordinary dispatch.
+   * @returns the response exposed through the carrier.
+   */
+  intercept?(invocation: FetchUnaryInvocation): ReturnType<FetchUnaryInvocation['invoke']>
 }
 
 /** Stable Cordis plugin name. */
@@ -164,7 +170,11 @@ export function apply(ctx: Context, config?: ConnectionConfig, authentication?: 
       }
       const apiProxy = ctx.get('apiProxy')
       if (apiProxy === undefined) return new Response('not found', { status: 404 })
-      return toFetchHandler(apiProxy).fetch(request)
+      return toFetchHandler(apiProxy, {
+        ...authentication?.intercept === undefined
+          ? {}
+          : { intercept: invocation => authentication.intercept?.(invocation) as ReturnType<FetchUnaryInvocation['invoke']> },
+      }).fetch(request)
     },
   }, authentication)
   const route: WebRoute = {

@@ -6,7 +6,7 @@ import { sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@harness-desktop/cordis'
 import type { Branded } from '@harness-desktop/dsh-brand'
-import type { ApiProxy } from '@harness-desktop/dsh-host-apiproxy'
+import type { ApiProxy, FetchUnaryInvocation, RpcResponse } from '@harness-desktop/dsh-host-apiproxy'
 import type { HarnessHomeProvider } from './harness-home-provider.ts'
 import {
   createRuntimeControlService,
@@ -149,7 +149,10 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
         apply: (
           context: Context,
           config: { trustedHosts: readonly string[] },
-          authentication: { authorize(request: unknown): boolean },
+          authentication: {
+            authorize(request: unknown): boolean
+            intercept(invocation: FetchUnaryInvocation): Promise<RpcResponse<unknown>>
+          },
         ) => void
       }
       const sessions = ctx.get('sessions') as RuntimeControlService['sessions']
@@ -200,6 +203,44 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
             mountAuthenticatedDashboard(auth) {
               connectionModule.apply(controlCtx, { trustedHosts: ['127.0.0.1'] }, {
                 authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
+                async intercept(invocation) {
+                  if (invocation.method !== 'session.prompt') return invocation.invoke()
+                  const owner = auth.dashboardOwner(invocation.carrier) as RuntimeClientId | undefined
+                  if (owner === undefined) throw new Error('host-local-runtime: Dashboard prompt lost authentication')
+                  const payload = invocation.request.payload as { readonly sessionId: SessionId }
+                  let ownership
+                  try {
+                    ownership = await controlService.ownDashboardPrompt(owner, {
+                      sessionId: payload.sessionId,
+                      rpcId: invocation.request.rpcId,
+                    })
+                  } catch (error: unknown) {
+                    if (error instanceof RuntimeSessionBusyError) {
+                      return {
+                        rpcId: invocation.request.rpcId,
+                        result: {
+                          ok: false,
+                          error: {
+                            code: 'agent-busy',
+                            message: 'prompt rejected',
+                            details: { reason: error.message },
+                          },
+                        },
+                      }
+                    }
+                    throw error
+                  }
+                  let response: RpcResponse<unknown>
+                  try {
+                    response = await invocation.invoke()
+                  } catch (error: unknown) {
+                    await ownership.release()
+                    throw error
+                  }
+                  if (!response.result.ok || responseHasCommand(response)) await ownership.release()
+                  else await ownership.commit()
+                  return response
+                },
               })
             },
           })
@@ -222,6 +263,11 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
     if (cleanup !== undefined) throw new AggregateError([error, cleanup], 'host-local-runtime: Runtime startup and cleanup both failed')
     throw error
   }
+}
+
+function responseHasCommand(response: RpcResponse<unknown>): boolean {
+  if (!response.result.ok || typeof response.result.value !== 'object' || response.result.value === null) return false
+  return (response.result.value as { command?: unknown }).command !== undefined
 }
 
 /**

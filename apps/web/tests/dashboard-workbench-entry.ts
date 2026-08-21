@@ -21,6 +21,17 @@ const EMPTY_CHAT_SNAPSHOT = {
   legacy: { nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [] },
 }
 const EMPTY_CONVERSATION_VIEWS = { get: () => undefined }
+const turnData = new Map<string, unknown>([
+  ['deliverables', { produced: [{ seq: 4, path: 'C:/workspace/src/app.ts' }] }],
+  ['turn-tail', { seq: 7, closing: { finalNode: { seq: 6 } } }],
+])
+const timeline = {
+  turnOrder: [1],
+  turns: new Map([[1, {
+    turn: 1, start: undefined, end: undefined, status: 'closed' as const, steps: [],
+    data: { get: (key: string) => turnData.get(key) },
+  }]]),
+}
 
 const actions: { method: string; args: unknown[] }[] = []
 ;(globalThis as Record<string, unknown>).__WORKBENCH_ACTIONS__ = actions
@@ -47,7 +58,7 @@ const list = createSnapshotStore({
 const snapshot = createSnapshotStore({
   sessionId,
   views: EMPTY_CONVERSATION_VIEWS,
-  chat: EMPTY_CHAT_SNAPSHOT,
+  chat: { ...EMPTY_CHAT_SNAPSHOT, timeline },
   nodes: [
     {
       kind: 'tool-result' as const,
@@ -149,6 +160,7 @@ export class AppWebEntry {
     const ctx = new Context()
     ctx.provide('sessions', sessions as never)
     ctx.provide('workspaces', workspaces as never)
+    ctx.provide('deliverables', { paths: () => ['C:/workspace/src/app.ts'] } as never)
     createRoot(this.root).render(React.createElement(EngineeringWorkbench, {
       ctx,
       foundation: {

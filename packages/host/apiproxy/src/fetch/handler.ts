@@ -87,6 +87,25 @@ type UnaryRoutes = {
   }
 }
 
+/** One schema-validated unary invocation available to a physical carrier wrapper. */
+export interface FetchUnaryInvocation {
+  /** Physical carrier request that supplied the validated envelope. */
+  readonly carrier: Request
+  readonly method: keyof RpcMethodMap
+  readonly request: RpcRequest<unknown>
+  /** @returns the ordinary ApiProxy response; call exactly once. */
+  invoke(): Promise<RpcResponse<unknown>>
+}
+
+/** Optional wrapper around schema-validated unary dispatch. */
+export interface FetchHandlerOptions {
+  /**
+   * @param invocation - validated method, payload, and ordinary dispatch.
+   * @returns the response exposed through the carrier.
+   */
+  intercept?(invocation: FetchUnaryInvocation): Promise<RpcResponse<unknown>>
+}
+
 const UNARY_ROUTES: UnaryRoutes = {
   'session.list': { schema: sessionListRequestSchema, invoke: (api, r) => api.sessions.list(r) },
   'session.search': { schema: sessionSearchRequestSchema, invoke: (api, r, signal) => api.sessions.search(r, signal) },
@@ -176,7 +195,7 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
 // schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
 // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
-  api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
+  api: ApiProxy, method: K, message: ClientRequest, carrier: Request, options: FetchHandlerOptions,
 ): Promise<Response> {
   const route = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
@@ -184,7 +203,12 @@ async function handleUnary<K extends keyof RpcMethodMap>(
     return errorResponse(message.rpcId, { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } })
   }
   try {
-    return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal))
+    const request = { rpcId: message.rpcId, payload: payload.data } as RpcRequest<RequestPayload<K>>
+    const invoke = (): Promise<RpcResponse<ResponseValue<K>>> => route.invoke(api, request, carrier.signal)
+    const response = options.intercept === undefined
+      ? await invoke()
+      : await options.intercept({ carrier, method, request, invoke })
+    return fullResponse(response)
   } catch (error: unknown) {
     // The impl never throws business errors; reaching here means the implementation itself crashed — 500, carrier layer.
     return new Response(`handler failure: ${String(error)}`, { status: 500 })
@@ -238,9 +262,10 @@ function sseResponse(frames: AsyncIterable<RpcRequest<MuxFrame | HostFrame>>): R
 /**
  * Wraps an ApiProxy into a pure fetch function (isomorphic point: feed the returned fetch straight to InProcessApiClient).
  * @param api - the host-side ApiProxy implementation.
+ * @param options - optional wrapper around validated unary dispatch.
  * @returns an object holding `fetch(Request)`; paths outside /api/ return 404.
  */
-export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
+export function toFetchHandler(api: ApiProxy, options: FetchHandlerOptions = {}): { fetch: typeof fetch } {
   return {
     // Signature matches global fetch: the isomorphic point hands this function to InProcessApiClient as its transport aspect,
     // Clients call in (url, init) form — normalize to Request before handling.
@@ -314,7 +339,7 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       if (message.method !== method) {
         return errorResponse(message.rpcId, { code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] } })
       }
-      return handleUnary(api, method, message, req.signal)
+      return handleUnary(api, method, message, req, options)
     },
   }
 }

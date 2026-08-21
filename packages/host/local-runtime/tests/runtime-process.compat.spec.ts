@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createRuntimeConnector, type RuntimeClient } from '../src/runtime-client.ts'
 import {
-  cleanupRuntimeProcess,
+  cleanupRuntimeProcess, dashboardControl,
   mintBrowserCookie,
   releaseRuntime,
   runtimeRpc,
@@ -68,6 +68,60 @@ describe.each([
 })
 
 describe('clean-source real terminal operation', () => {
+  it('attributes browser prompt work to its authenticated Dashboard cookie and stops only that owner', async () => {
+    const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+    const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+    process.env.DSH_RUNTIME_TEST_REPLAY_FILE = `${replayOverride}.missing`
+    process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = replayOverride
+    try {
+      runtime = await startRuntimeProcess({ mode: 'src', entry: 'source-backend-fixture', denyWorkspaceLib: true })
+    } finally {
+      if (previousFile === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_FILE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_FILE = previousFile
+      if (previousOverride === undefined) delete process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE
+      else process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = previousOverride
+    }
+    const endpoint = await waitForEndpoint(runtime)
+    const ownerCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const otherCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const workspace = await runtimeRpc<{ workspace: { workspaceId: string } }>(
+      endpoint.port, ownerCookie, 'workspace.create', { path: runtime.cwd },
+    )
+    const sessionId = 'dashboard-owned-browser-prompt'
+    await runtimeRpc(endpoint.port, ownerCookie, 'session.create', {
+      workspaceId: workspace.workspace.workspaceId, sessionId, agentPreset: 'standard',
+    })
+    await runtimeRpc(endpoint.port, ownerCookie, 'session.prompt', {
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'complete first' }],
+    })
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const sessions = await runtimeRpc<{ items: Array<{ sessionId: string; running: boolean }> }>(
+        endpoint.port, ownerCookie, 'session.list', {},
+      )
+      if (sessions.items.find(item => item.sessionId === sessionId)?.running === false) break
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+
+    await runtimeRpc(endpoint.port, ownerCookie, 'session.prompt', {
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'hang for owner stop' }],
+    })
+    let status: { ownUiWork: readonly string[] } = { ownUiWork: [] }
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      status = await dashboardControl(endpoint.port, ownerCookie, 'observe-active-work')
+      if (status.ownUiWork.length === 1) break
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    expect(status.ownUiWork).toHaveLength(1)
+    expect(await dashboardControl(endpoint.port, otherCookie, 'observe-active-work'))
+      .toEqual({ ownUiWork: [] })
+    expect(await dashboardControl(endpoint.port, ownerCookie, 'stop-own-ui-work'))
+      .toEqual({ kind: 'stopped', work: status.ownUiWork })
+    expect(await dashboardControl(endpoint.port, ownerCookie, 'observe-active-work'))
+      .toEqual({ ownUiWork: [] })
+    expect(await dashboardControl(endpoint.port, otherCookie, 'stop-own-ui-work'))
+      .toEqual({ kind: 'none-active' })
+  }, 120_000)
+
   it('logs and streams a real task, then cancels the exact hanging Agent operation to quiescence', async () => {
     const previousFile = process.env.DSH_RUNTIME_TEST_REPLAY_FILE
     const previousOverride = process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE

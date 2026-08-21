@@ -1,6 +1,7 @@
 /** Shared real-process harness for source and built Runtime-bin acceptance. */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -286,7 +287,7 @@ export async function runtimeRpc<T>(
   const response = await fetch(`${origin}/api/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie, origin },
-    body: JSON.stringify({ type: 'client-request', rpcId: `task5-${method}`, method, payload }),
+    body: JSON.stringify({ type: 'client-request', rpcId: `runtime-${randomUUID()}`, method, payload }),
   })
   const body = await response.json() as {
     result: { ok: true; value: T } | { ok: false; error: { message: string } }
@@ -294,4 +295,28 @@ export async function runtimeRpc<T>(
   if (!response.ok) throw new Error(`Runtime ${method} carrier failed with HTTP ${String(response.status)}`)
   if (!body.result.ok) throw new Error(`Runtime ${method} failed: ${body.result.error.message}`)
   return body.result.value
+}
+
+/** Invoke one cookie-authenticated Dashboard control operation. */
+export async function dashboardControl<T>(
+  port: number,
+  cookie: string,
+  operation: 'observe-active-work' | 'stop-own-ui-work',
+): Promise<T> {
+  const origin = `http://127.0.0.1:${String(port)}`
+  const response = await fetch(`${origin}/_harness/dashboard-control`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie, origin },
+    body: JSON.stringify({ operation }),
+  })
+  const body = await response.json() as {
+    ok: true
+    value: T
+  } | {
+    ok: false
+    result: { kind: string }
+  }
+  if (!response.ok) throw new Error(`Dashboard control carrier failed with HTTP ${String(response.status)}`)
+  if (!body.ok) throw new Error(`Dashboard control failed: ${body.result.kind}`)
+  return body.value
 }

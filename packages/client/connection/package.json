@@ -33,7 +33,8 @@
     "client": {
       "inject": [],
       "platform": "web",
-      "immediately": true
+      "immediately": true,
+      "includeWhenDisabled": true
     }
   },
   "license": "MIT",

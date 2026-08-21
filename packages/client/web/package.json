@@ -40,6 +40,7 @@
   "devDependencies": {
     "@harness-desktop/cordis-plugin-loader": "workspace:^",
     "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-deliverables": "workspace:^",
     "@harness-desktop/dsh-client-test-runtime": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",

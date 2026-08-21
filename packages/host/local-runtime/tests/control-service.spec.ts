@@ -154,6 +154,61 @@ async function start(
 }
 
 describe('Runtime control service', () => {
+  it('owns an authenticated Dashboard prompt through exact turn settlement and stop', async () => {
+    const { agents } = await start()
+    const nativeOwner = client('dashboard-admission-native')
+    const dashboardOwner = client('dashboard-admission-cookie')
+    const terminal = client('dashboard-admission-terminal')
+    const sessionId = makeSessionId('dashboard-admission-session')
+    await control!.attachClient(nativeOwner)
+    await control!.openTerminal(nativeOwner, terminal, { workspace: root!, sessionId })
+    const agent = agents.get(sessionId)
+    if (agent === undefined) throw new Error('expected Dashboard admission Agent')
+    let keepInbox: boolean | undefined
+    ;(agent as unknown as { cancel: (_cause: unknown, options?: { keepInbox?: boolean }) => void }).cancel = (_cause, options) => {
+      keepInbox = options?.keepInbox
+    }
+    const rpcId = 'dashboard-owned-rpc' as never
+    const ownership = await control!.ownDashboardPrompt(dashboardOwner, { sessionId, rpcId })
+    const message = { id: 'dashboard-message', source: { kind: 'user', rpcId } } as never
+    const committing = ownership.commit()
+    queueMicrotask(() => { control!.handleAgentInboxInserted(agent, message) })
+    await committing
+    control!.handleAgentInboxClaimed(agent, message, 1)
+    expect((await control!.observeActiveWork(dashboardOwner)).ownUiWork).toHaveLength(1)
+
+    const stopping = control!.handleDashboard(dashboardOwner, { operation: 'stop-own-ui-work' })
+    await control!.handleSessionEvent(agent.session, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } },
+    } as never)
+
+    expect(await stopping).toMatchObject({ kind: 'stopped' })
+    expect(keepInbox).toBe(true)
+    expect(await control!.handleDashboard(dashboardOwner, { operation: 'observe-active-work' }))
+      .toEqual({ ownUiWork: [] })
+  })
+
+  it('releases Dashboard admission when the API rejects before publishing a message', async () => {
+    const { agents } = await start()
+    const nativeOwner = client('dashboard-reject-native')
+    const dashboardOwner = client('dashboard-reject-cookie')
+    const terminal = client('dashboard-reject-terminal')
+    const sessionId = makeSessionId('dashboard-reject-session')
+    await control!.attachClient(nativeOwner)
+    await control!.openTerminal(nativeOwner, terminal, { workspace: root!, sessionId })
+    expect(agents.get(sessionId)).toBeDefined()
+    const ownership = await control!.ownDashboardPrompt(dashboardOwner, {
+      sessionId, rpcId: 'dashboard-rejected-rpc' as never,
+    })
+
+    await ownership.release()
+
+    expect(await control!.handleDashboard(dashboardOwner, { operation: 'observe-active-work' }))
+      .toEqual({ ownUiWork: [] })
+    const replacement = await runtime!.beginAgentWork(sessionId)
+    await runtime!.endAgentWork(replacement)
+  })
+
   it('rejects a second writer for one live session without creating another session record', async () => {
     const { sessions } = await start()
     const first = client('first-client')

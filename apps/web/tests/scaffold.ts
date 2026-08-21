@@ -444,9 +444,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
     { id: 'web-runtime', config: { printUrl: false, surfaceContext } },
-    ...options.remoteAuthority === undefined
-      ? []
-      : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
+    {
+      id: 'connection',
+      disabled: false,
+      config: { trustedHosts: options.remoteAuthority === undefined ? [] : [options.remoteAuthority] },
+    },
     { id: 'settings', config: { harnessHome } },
     { id: 'credentials', config: { harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves
@@ -542,6 +544,47 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       throw new Error('web e2e scaffold: webServer service missing after settled boot')
     }
     port = boundPort
+
+    // The in-process Web lane predates the local Runtime process and has no
+    // native client that can mint a browser handoff. Admit only same-origin
+    // Dashboard control probes so the built AppWebEntry/Loader graph runs;
+    // dashboard-ready.e2e.ts owns the real handoff and HttpOnly-cookie proof.
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/_harness/dashboard-control',
+      async handler(request, response) {
+        const host = request.headers.host
+        if (request.method !== 'POST' || host === undefined || request.headers.origin !== `http://${host}`) {
+          response.writeHead(403)
+          response.end('forbidden')
+          return
+        }
+        const chunks: Uint8Array[] = []
+        for await (const chunk of request as AsyncIterable<Uint8Array>) chunks.push(chunk)
+        let operation: unknown
+        try {
+          operation = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { operation?: unknown }).operation
+        } catch {
+          response.writeHead(400)
+          response.end('invalid request')
+          return
+        }
+        const value = operation === 'get-legacy-migration'
+          ? { kind: 'not-needed' }
+          : operation === 'observe-active-work'
+            ? { ownUiWork: [] }
+            : operation === 'stop-own-ui-work'
+              ? { kind: 'none-active' }
+              : undefined
+        if (value === undefined) {
+          response.writeHead(400)
+          response.end('invalid request')
+          return
+        }
+        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+        response.end(JSON.stringify({ ok: true, value }))
+      },
+    })
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
