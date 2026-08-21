@@ -4,6 +4,9 @@
 import { once } from 'node:events'
 import { createLocalRuntimePlugin } from './data-root.ts'
 import { startCanonicalRuntime } from './runtime.ts'
+import { consumeElectronRunAsNodeEnvironment } from './runtime-client.ts'
+
+consumeElectronRunAsNodeEnvironment(process.env)
 
 let restoreOutput = (): void => {}
 try {

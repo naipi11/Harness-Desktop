@@ -1116,6 +1116,14 @@ export function runtimeChildEnvironment(
   }
 }
 
+/**
+ * Consume Electron's child-only Node-mode marker before Runtime composition or subprocess launch.
+ * @param environment - mutable Runtime process environment.
+ */
+export function consumeElectronRunAsNodeEnvironment(environment: NodeJS.ProcessEnv): void {
+  delete environment.ELECTRON_RUN_AS_NODE
+}
+
 const SOURCE_FLAGS_WITH_VALUE = new Set([
   '--conditions',
   '--experimental-loader',

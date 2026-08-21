@@ -47,7 +47,7 @@ Ordered shutdown closes private control and settles its operations, flushes dura
 
 Built full-product evidence boots the canonical base-and-Web composition through the declared `lib/bin.js`, loads the built Runtime artifact, and exercises public `RuntimeConnector` status and background-lease control against that process.
 
-`RuntimeConnector` launches the matching Runtime entry with the caller's Node executable. When Electron Main is the caller, the child environment alone sets `ELECTRON_RUN_AS_NODE=1`, so Electron's executable runs the Runtime script as Node; ordinary Node callers retain their existing environment. This setting never reaches Renderer and does not change unrelated Electron child processes.
+`RuntimeConnector` launches the matching Runtime entry with the caller's Node executable. When Electron Main is the caller, the child environment alone sets `ELECTRON_RUN_AS_NODE=1`, so Electron's executable runs the Runtime script as Node; ordinary Node callers retain their existing environment. The Runtime bin consumes that marker before composition, so agent subprocesses and applications opened later cannot inherit Electron's Node mode. This setting never reaches Renderer or unrelated Electron child processes.
 
 The declared source entry `src/bin.ts` boots the same composition after `pnpm run build:lib`, because Typert contributions and browser bundles remain generated `lib/` artifacts. Its direct-bin process evidence observes source module loading, the generated-artifact boundary, endpoint publication, redacted startup failure, and ownership cleanup on shutdown; it does not by itself prove public connector parity.
 

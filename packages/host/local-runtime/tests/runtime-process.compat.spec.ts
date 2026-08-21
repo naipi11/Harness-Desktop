@@ -1,5 +1,6 @@
 /** Source and built Runtime processes share the public private-control protocol. */
 
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createRuntimeConnector, type RuntimeClient } from '../src/runtime-client.ts'
@@ -41,10 +42,35 @@ async function nextEvent(
   }
 }
 
+async function waitForTraceValue(process: RuntimeProcess, event: string): Promise<string | undefined> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    const text = await readFile(process.tracePath, 'utf8').catch(() => '')
+    const row = text.split(/\r?\n/u).filter(Boolean)
+      .map(line => JSON.parse(line) as { event: string; value?: string })
+      .find(candidate => candidate.event === event)
+    if (row !== undefined) return row.value
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for Runtime trace ${event}`)
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+}
+
 describe.each([
   { label: 'source', mode: 'src' as const },
   { label: 'built', mode: 'lib' as const },
 ])('$label Runtime public-control compatibility', ({ mode }) => {
+  it('consumes Electron Node mode before a descendant process inherits the Runtime environment', async () => {
+    runtime = await startRuntimeProcess({
+      mode,
+      electronRunAsNode: '1',
+      probeDescendantEnvironment: true,
+    })
+    await waitForEndpoint(runtime)
+
+    expect(await waitForTraceValue(runtime, 'descendant-environment')).toBe('absent')
+    expect((await releaseRuntime(runtime)).exitCode).toBe(0)
+  }, 90_000)
+
   it('discovers status and releases the one named Web lease through the public client', async () => {
     runtime = await startRuntimeProcess(mode === 'src'
       ? { mode, entry: 'source-backend-fixture', denyWorkspaceLib: true }

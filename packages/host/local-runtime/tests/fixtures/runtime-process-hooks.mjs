@@ -1,6 +1,7 @@
 /** Process-level observation and failure injection for the Runtime bin tests. */
 
 import fs, { appendFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { registerHooks, syncBuiltinESMExports } from 'node:module'
 import { Server } from 'node:net'
 import { basename, isAbsolute, relative, sep } from 'node:path'
@@ -19,6 +20,15 @@ Server.prototype.listen = function (...args) {
     const address = this.address()
     if (address !== null && typeof address !== 'string') {
       record('listener-open', { address: address.address, port: address.port })
+      if (process.env.HARNESS_RUNTIME_TEST_PROBE_DESCENDANT_ENV === '1') {
+        execFile(process.execPath, ['-e', "process.stdout.write(process.env.ELECTRON_RUN_AS_NODE ?? 'absent')"], {
+          windowsHide: true,
+        }, (error, stdout) => {
+          record('descendant-environment', {
+            value: error === null ? stdout : `error:${error.name}`,
+          })
+        })
+      }
     }
   })
   this.once('close', () => record('listener-close'))

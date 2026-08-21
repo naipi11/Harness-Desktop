@@ -10,6 +10,7 @@ import WebServer from '@harness-desktop/dsh-host-webserver'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import {
   createRuntimeConnector,
+  consumeElectronRunAsNodeEnvironment,
   normalizeRecoveryDiagnostic,
   probeRuntimeStatus,
   runtimeChildEnvironment,
@@ -71,10 +72,13 @@ describe('public Runtime connector', () => {
     const nodeEnvironment = { EXISTING: 'value', ELECTRON_RUN_AS_NODE: 'preserved' }
 
     expect(runtimeChildEnvironment(nodeEnvironment, undefined)).toEqual(nodeEnvironment)
-    expect(runtimeChildEnvironment(nodeEnvironment, '43.4.0')).toEqual({
+    const electronChild = runtimeChildEnvironment(nodeEnvironment, '43.4.0')
+    expect(electronChild).toEqual({
       EXISTING: 'value',
       ELECTRON_RUN_AS_NODE: '1',
     })
+    consumeElectronRunAsNodeEnvironment(electronChild)
+    expect(electronChild).toEqual({ EXISTING: 'value' })
   })
 
   it('does not create a file, lock, endpoint, or process when no-start discovery finds no Runtime', async () => {

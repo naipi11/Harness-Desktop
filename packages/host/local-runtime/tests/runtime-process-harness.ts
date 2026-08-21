@@ -35,6 +35,7 @@ export interface RuntimeTraceEvent {
   readonly code?: number
   readonly url?: string
   readonly plane?: 'src' | 'lib' | 'other'
+  readonly value?: string
 }
 
 /** Running Runtime bin plus its isolated writable roots and captured streams. */
@@ -79,6 +80,10 @@ export interface StartRuntimeProcessOptions {
   readonly terminalUnavailable?: boolean
   /** Rewrite every terminal open to one fixed session for real busy-process coverage. */
   readonly fixedTerminalSessionId?: string
+  /** Start with Electron's Node-mode marker so the Runtime entry must consume it. */
+  readonly electronRunAsNode?: string
+  /** Spawn one post-listen descendant that reports whether the marker survived. */
+  readonly probeDescendantEnvironment?: boolean
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -149,6 +154,8 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
     ...(options.failureMessage === undefined
       ? {}
       : { HARNESS_RUNTIME_TEST_FAILURE_MESSAGE: options.failureMessage.replace('{HARNESS_HOME}', harnessHome) }),
+    ...(options.electronRunAsNode === undefined ? {} : { ELECTRON_RUN_AS_NODE: options.electronRunAsNode }),
+    ...(options.probeDescendantEnvironment === true ? { HARNESS_RUNTIME_TEST_PROBE_DESCENDANT_ENV: '1' } : {}),
   }
   const child = spawn(launch.command, args, { cwd, env, windowsHide: true })
   let stdout = ''
