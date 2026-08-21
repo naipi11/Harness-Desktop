@@ -92,7 +92,7 @@ describe('Desktop Dashboard readiness', () => {
   })
 
   it.each([
-    ['an unauthenticated Dashboard document', false, undefined],
+    ['a resolved Web boot failure without the marker', false, undefined],
     ['a marker evaluation failure', true, new Error('marker failed')],
   ])('emits nothing for %s', async (_name, marker, markerFailure) => {
     const chunks: string[] = []

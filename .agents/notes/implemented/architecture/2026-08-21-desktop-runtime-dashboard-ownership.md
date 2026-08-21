@@ -18,7 +18,7 @@ Each startup mints a fresh Foundation `DashboardNavigation`. The Main-only trans
 
 The transport removes its document and directory through one idempotent cleanup operation after dispatch failure, exchange success or failure, or handoff expiry. A reused transport rejects a second dispatch of the same handoff.
 
-The clean Dashboard performs its cookie-authenticated control preflight before `AppWebEntry.run()`. Only after both succeed does the Web root set `data-harness-dashboard-ready="true"`. Main validates the exact clean URL and waits for that marker on every navigation; only the constant `{"kind":"desktop-dashboard-ready","version":1}` JSONL output is limited to once per Desktop process. An abort or navigation failure that wins while the marker probe is pending cannot emit the acknowledgement.
+The clean Dashboard performs its cookie-authenticated control preflight before `AppWebEntry.run()`. The Web boot resolves `true` only after every plugin activates and the application UI settles; a rendered boot failure resolves `false`. Only a `true` result sets `data-harness-dashboard-ready="true"` on the Web root. Main validates the exact clean URL and waits for that marker on every navigation; only the constant `{"kind":"desktop-dashboard-ready","version":1}` JSONL output is limited to once per Desktop process. An abort or navigation failure that wins while the marker probe is pending cannot emit the acknowledgement.
 
 Every attachment, transport, navigation, marker, and load failure is converted through `normalizeRecoveryDiagnostic` before Main retains it for recovery UI. The result contains no URL, port, process identity, Runtime home, token, handoff, cookie, or attachment value.
 

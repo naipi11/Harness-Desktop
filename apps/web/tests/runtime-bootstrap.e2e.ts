@@ -152,7 +152,17 @@ beforeAll(async () => {
       resolveId(id) { return id === '@harness-desktop/dsh-client-web' ? '\0dashboard-stub' : undefined },
       load(id) {
         if (id !== '\0dashboard-stub') return undefined
-        return 'export class AppWebEntry { constructor(root) { this.root = root } async run() { this.root.textContent = \'Protected Dashboard\' } }'
+        return `export class AppWebEntry {
+          constructor(root) { this.root = root }
+          async run() {
+            if (globalThis.__HARNESS_TEST_WEB_BOOT_FAIL__ === true) {
+              this.root.textContent = 'Failed to load plugins'
+              return false
+            }
+            this.root.textContent = 'Protected Dashboard'
+            return true
+          }
+        }`
       },
     }],
   })
@@ -285,6 +295,22 @@ describe('Runtime Dashboard bootstrap', () => {
         sessionStorage: Object.fromEntries(Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)])),
       })))
         .toEqual({ localStorage: {}, sessionStorage: {} })
+    } finally {
+      await browserContext.close()
+    }
+  }, 60_000)
+
+  it('renders recovery without readiness when authenticated Web boot resolves false', async () => {
+    runtimeNow = Date.now()
+    const handoff = auth.mintBrowserHandoff()
+    const browserContext = await browser.newContext()
+    const page = await browserContext.newPage()
+    await page.addInitScript(() => { (globalThis as Record<string, unknown>).__HARNESS_TEST_WEB_BOOT_FAIL__ = true })
+    try {
+      await openBootstrap(navigation(handoff.id, handoff.expiresAt), page)
+      await page.getByText(RECOVERY, { exact: true }).waitFor()
+      expect(await page.locator('#root').getAttribute('data-harness-dashboard-ready')).toBeNull()
+      expect(await page.getByText('Protected Dashboard', { exact: true }).count()).toBe(0)
     } finally {
       await browserContext.close()
     }

@@ -92,9 +92,9 @@ export class AppWebEntry {
    * reject): the loading page stays up and renders the failure report (the
    * fail-loud surface the kernel owns). Rejects only when the boot manifest
    * is missing or malformed — there is nothing to boot against.
-   * @returns resolves once the UI settled or the failure report rendered.
+   * @returns whether the application UI settled; `false` means the failure report rendered.
    */
-  async run(): Promise<void> {
+  async run(): Promise<boolean> {
     this.manifest = parseBootManifest((globalThis as DshWindow).__DSH_BOOT__)
 
     this.modules = new ClientModuleSystem({
@@ -135,10 +135,12 @@ export class AppWebEntry {
     try {
       await this.runPluginBoot(prefetching)
       this.settled.set(true)
+      return true
     } catch (reason) {
       // Stay on the loading page; surface the sweep report (fail loud).
       console.error(reason)
       this.error.set(reason instanceof Error ? reason.message : String(reason))
+      return false
     }
   }
 

@@ -6,14 +6,16 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const run = vi.fn(async (root: HTMLElement) => {
-  root.replaceChildren(document.createTextNode('Protected Dashboard'))
+let bootResult = true
+const run = vi.fn(async (root: HTMLElement): Promise<boolean> => {
+  root.replaceChildren(document.createTextNode(bootResult ? 'Protected Dashboard' : 'Failed to load plugins'))
+  return bootResult
 })
 
 vi.mock('@harness-desktop/dsh-client-web', () => ({
   AppWebEntry: class {
     constructor(private readonly root: HTMLElement) {}
-    run(): Promise<void> { return run(this.root) }
+    run(): Promise<boolean> { return run(this.root) }
   },
 }))
 
@@ -29,6 +31,7 @@ async function importEntry(): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  bootResult = true
   run.mockClear()
   localStorage.clear()
   sessionStorage.clear()
@@ -88,6 +91,17 @@ it('redacts a rejected cookie request from DOM, storage, console, and snapshot t
   expect(evidence).not.toMatch(/handoff|session_value/u)
   consoleError.mockRestore()
   consoleLog.mockRestore()
+})
+
+it('renders recovery without a ready marker when Web boot resolves as failed', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { status: 200 })))
+  bootResult = false
+
+  const root = await importEntry()
+
+  expect(run).toHaveBeenCalledOnce()
+  expect(root.hasAttribute('data-harness-dashboard-ready')).toBe(false)
+  expect(root.textContent).toBe('Dashboard connection expired. Run harness web to reconnect.')
 })
 
 it.runIf(process.env.DSH_EXAMPLE_MODE === 'lib')('ships the reconnect-only failure surface in the built Web entry', async () => {
