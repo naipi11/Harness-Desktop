@@ -40,6 +40,7 @@ it('configures Electron Builder to package the generated native icons', () => {
 })
 
 it('verifies generated icons before each Desktop packaging command', () => {
-  expect(desktopManifest.scripts.prepackage).toBe('pnpm --dir ../.. run verify:icons')
-  expect(desktopManifest.scripts['prepackage:dir']).toBe('pnpm --dir ../.. run verify:icons')
+  const checks = 'pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure'
+  expect(desktopManifest.scripts.prepackage).toBe(checks)
+  expect(desktopManifest.scripts['prepackage:dir']).toBe(checks)
 })
