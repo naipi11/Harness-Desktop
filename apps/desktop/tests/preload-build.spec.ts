@@ -1,8 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { rm, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { afterAll, beforeAll, expect, it } from 'vitest'
-import { resolveUnpackedDesktopExecutable } from './support/runtime-fixture.ts'
+import { beforeAll, expect, it } from 'vitest'
+import {
+  resolveUnpackedDesktopDirectory,
+  resolveUnpackedDesktopExecutable,
+} from './support/runtime-fixture.ts'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const outDir = fileURLToPath(new URL('../out', import.meta.url))
@@ -17,10 +20,6 @@ beforeAll(async () => {
     stdio: 'pipe',
   })
 }, 30_000)
-
-afterAll(async () => {
-  await rm(outDir, { recursive: true, force: true })
-})
 
 it('builds one CommonJS preload and makes the main process load it', async () => {
   expect(await readdir(fileURLToPath(new URL('../out/preload', import.meta.url))))
@@ -49,6 +48,12 @@ it('resolves the platform unpacked executable under the clean release root', () 
   )
   expect(resolveUnpackedDesktopExecutable(releaseRoot, 'linux')).toBe(
     fileURLToPath(new URL('../release/linux-unpacked/harness-desktop', import.meta.url)),
+  )
+  expect(resolveUnpackedDesktopDirectory(releaseRoot, 'win32', 'arm64')).toBe(
+    fileURLToPath(new URL('../release/win-arm64-unpacked', import.meta.url)),
+  )
+  expect(resolveUnpackedDesktopDirectory(releaseRoot, 'linux', 'arm64')).toBe(
+    fileURLToPath(new URL('../release/linux-arm64-unpacked', import.meta.url)),
   )
 })
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-desktop-packaged-runtime-dependency-closure.md
-2026-08-23-desktop-packaged-runtime-dependency-closure.md: ac6d842ac8f929584754ab6eadb3e246433116d6
-2026-08-23-desktop-packaged-runtime-dependency-closure.zh.md: a3aca5a8a2773a3db11148d4d651282d126f907b
+2026-08-23-desktop-packaged-runtime-dependency-closure.md: 1c6222054fed6b31ee2d6bda592483c50338141f
+2026-08-23-desktop-packaged-runtime-dependency-closure.zh.md: 96195e83f89286137f7b766d0b31e9d0b2059cf5

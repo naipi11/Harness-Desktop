@@ -8,9 +8,10 @@ export default {
   directories: { output: 'release' },
   files: ['out/**', 'package.json', 'resources/icons/**'],
   asar: true,
-  // The Runtime's target-native N-API payload is selected during pnpm install;
-  // rebuilding it here mutates the shared pnpm store and breaks linked worktrees.
-  npmRebuild: false,
+  // Windows keeps pnpm's target-native payload because electron-builder's rebuild
+  // of the patched node-pty dependency mutates the shared linked-worktree store;
+  // macOS/Linux retain builder rebuilds for their target and universal payloads.
+  npmRebuild: process.platform !== 'win32',
   publish: null,
   win: { target: ['nsis'], icon: 'resources/icons/win/harness-desktop.ico' },
   mac: {

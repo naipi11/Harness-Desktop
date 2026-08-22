@@ -8,9 +8,9 @@ import {
   type Response,
 } from '@playwright/test'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const mainEntry = fileURLToPath(new URL('../../out/main/index.js', import.meta.url))
@@ -36,31 +36,60 @@ const llmModule = fileURLToPath(new URL('../../../../packages/llm/llm/lib/index.
 const processTimeoutMs = 45_000
 
 /**
+ * Resolve Electron Builder's unpacked directory for one native target.
+ * @param releaseRoot Clean Desktop release output root.
+ * @param platform Native target produced by the current runner.
+ * @param arch Native architecture produced by the current runner.
+ * @returns Absolute path to the unpacked Harness Desktop directory.
+ */
+export function resolveUnpackedDesktopDirectory(
+  releaseRoot: string,
+  platform: NodeJS.Platform,
+  arch: NodeJS.Architecture = 'x64',
+): string {
+  switch (platform) {
+    case 'win32':
+      return join(releaseRoot, `win${unpackedArchitectureSuffix(arch)}-unpacked`)
+    case 'darwin':
+      return join(releaseRoot, 'mac-universal')
+    case 'linux':
+      return join(releaseRoot, `linux${unpackedArchitectureSuffix(arch)}-unpacked`)
+    default:
+      throw new Error(`Unsupported Desktop package platform: ${platform}`)
+  }
+}
+
+/**
  * Resolve Electron Builder's unpacked executable for one native target.
  * @param releaseRoot Clean Desktop release output root.
  * @param platform Native target produced by the current runner.
+ * @param arch Native architecture produced by the current runner.
  * @returns Absolute path to the unpacked Harness Desktop executable.
  */
 export function resolveUnpackedDesktopExecutable(
   releaseRoot: string,
   platform: NodeJS.Platform,
+  arch: NodeJS.Architecture = 'x64',
 ): string {
-  switch (platform) {
-    case 'win32':
-      return join(releaseRoot, 'win-unpacked', 'harness-desktop.exe')
-    case 'darwin':
-      return join(
-        releaseRoot,
-        'mac-universal',
-        'Harness Desktop.app',
-        'Contents',
-        'MacOS',
-        'harness-desktop',
-      )
-    case 'linux':
-      return join(releaseRoot, 'linux-unpacked', 'harness-desktop')
+  const directory = resolveUnpackedDesktopDirectory(releaseRoot, platform, arch)
+  if (platform === 'darwin') {
+    return join(directory, 'Harness Desktop.app', 'Contents', 'MacOS', 'harness-desktop')
+  }
+  return join(directory, platform === 'win32' ? 'harness-desktop.exe' : 'harness-desktop')
+}
+
+function unpackedArchitectureSuffix(arch: NodeJS.Architecture): string {
+  switch (arch) {
+    case 'x64':
+      return ''
+    case 'arm64':
+      return '-arm64'
+    case 'ia32':
+      return '-ia32'
+    case 'arm':
+      return '-armv7l'
     default:
-      throw new Error(`Unsupported Desktop package platform: ${platform}`)
+      throw new Error(`Unsupported Desktop package architecture: ${arch}`)
   }
 }
 
@@ -129,14 +158,32 @@ export async function launchDesktopRuntimeFixture(): Promise<DesktopRuntimeFixtu
 
 /** Start the canonical Runtime and the native unpacked Desktop executable. */
 export async function launchUnpackedDesktopRuntimeFixture(): Promise<DesktopRuntimeFixture> {
-  return launchDesktopRuntimeFixtureWith({
-    executablePath: resolveUnpackedDesktopExecutable(releaseRoot, process.platform),
-    args: ['--lang=en-US'],
-  })
+  const isolatedReleaseRoot = await mkdtemp(join(tmpdir(), 'harness-desktop-unpacked-'))
+  try {
+    const sourceDirectory = resolveUnpackedDesktopDirectory(releaseRoot, process.platform, process.arch)
+    const isolatedDirectory = join(isolatedReleaseRoot, basename(sourceDirectory))
+    await cp(sourceDirectory, isolatedDirectory, { recursive: true })
+    return await launchDesktopRuntimeFixtureWith({
+      cwd: isolatedReleaseRoot,
+      executablePath: resolveUnpackedDesktopExecutable(isolatedReleaseRoot, process.platform, process.arch),
+      args: ['--lang=en-US'],
+      async cleanup() {
+        await rm(isolatedReleaseRoot, { recursive: true, force: true })
+      },
+    })
+  } catch (error) {
+    await rm(isolatedReleaseRoot, { recursive: true, force: true })
+    throw error
+  }
 }
 
 async function launchDesktopRuntimeFixtureWith(
-  launch: { readonly executablePath?: string; readonly args: readonly string[] },
+  launch: {
+    readonly args: readonly string[]
+    readonly cleanup?: () => Promise<void>
+    readonly cwd?: string
+    readonly executablePath?: string
+  },
 ): Promise<DesktopRuntimeFixture> {
   const runtime = await startCanonicalRuntimeProcess()
   let application: ElectronApplication | undefined
@@ -144,6 +191,7 @@ async function launchDesktopRuntimeFixtureWith(
     const endpoint = await waitForEndpoint(runtime)
     application = await electron.launch({
       ...(launch.executablePath === undefined ? {} : { executablePath: launch.executablePath }),
+      ...(launch.cwd === undefined ? {} : { cwd: launch.cwd }),
       args: [...launch.args],
       env: {
         ...process.env,
@@ -190,6 +238,7 @@ async function launchDesktopRuntimeFixtureWith(
         await application?.close().catch((error: unknown) => failures.push(error))
         await releaseRuntime(runtime).catch((error: unknown) => failures.push(error))
         await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+        if (launch.cleanup !== undefined) await launch.cleanup().catch((error: unknown) => failures.push(error))
         if (failures.length === 1) throw failures[0]
         if (failures.length > 1) throw new AggregateError(failures, 'Desktop fixture cleanup failed')
       },
@@ -197,6 +246,7 @@ async function launchDesktopRuntimeFixtureWith(
   } catch (error) {
     await application?.close().catch(() => {})
     await cleanupRuntimeProcess(runtime)
+    if (launch.cleanup !== undefined) await launch.cleanup().catch(() => {})
     throw error
   }
 }

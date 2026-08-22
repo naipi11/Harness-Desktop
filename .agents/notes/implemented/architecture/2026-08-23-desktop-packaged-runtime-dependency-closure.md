@@ -10,9 +10,9 @@ Electron Builder copies the external Main imports reachable from the Desktop pac
 
 ## Decision
 
-`apps/desktop/package.json` declares the workspace modules imported by the assembled App-Boot, local Runtime, base, and Web production graph, including their peer-provided Runtime helpers. `pnpm-lock.yaml` records the same closure. Electron Builder continues to package only `out/**`, the Desktop manifest, and product icons with `--publish never`; it does not copy a second Runtime, persistence provider, credential store, or Dashboard asset owner.
+`apps/desktop/package.json` declares the complete workspace peer closure imported by the assembled App-Boot, local Runtime, base, and Web production graph. The repository closure verifier reports the Desktop manifest as a closed graph of 180 workspace packages, and `pnpm-lock.yaml` records the same closure. Electron Builder continues to package only `out/**`, the Desktop manifest, and product icons with `--publish never`; it does not copy a second Runtime, persistence provider, credential store, or Dashboard asset owner.
 
-The Desktop package sets `npmRebuild: false` because the installed target-native payload is the native dependency selection for this workspace and an Electron Builder rebuild mutates the shared pnpm store. The unpacked Windows artifact carries the target-native payload and is exercised through the real Electron Dashboard journey rather than accepted from process existence alone.
+The Desktop Builder keeps pnpm's target-native payload on Windows because rebuilding the patched `node-pty` dependency mutates the shared linked-worktree store; macOS and Linux retain Builder's rebuild step for target-specific and universal native payloads. The unpacked artifact is copied to an external temporary release root before launch, so repository `node_modules` cannot satisfy a missing package. Each artifact is exercised through the real Electron Dashboard journey rather than accepted from process existence alone.
 
 ## Alternatives considered
 

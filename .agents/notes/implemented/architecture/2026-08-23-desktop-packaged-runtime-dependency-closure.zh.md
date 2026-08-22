@@ -10,9 +10,9 @@ Electron Builder 会复制从 Desktop 包生产依赖图可达的外部 Main 导
 
 ## 决策
 
-`apps/desktop/package.json` 声明由组装后的 App-Boot、local Runtime、base 和 Web 生产图导入的工作区模块，包括由 peer 提供的 Runtime 辅助模块。`pnpm-lock.yaml` 记录相同的闭包。Electron Builder 继续只用 `--publish never` 打包 `out/**`、Desktop manifest 和产品图标；它不会复制第二个 Runtime、持久化 provider、credential store 或 Dashboard 资源所有者。
+`apps/desktop/package.json` 声明由组装后的 App-Boot、local Runtime、base 和 Web 生产图导入的完整工作区 peer 闭包。仓库闭包 verifier 报告 Desktop manifest 形成包含 180 个工作区包的闭合图，`pnpm-lock.yaml` 记录相同闭包。Electron Builder 继续只用 `--publish never` 打包 `out/**`、Desktop manifest 和产品图标；它不会复制第二个 Runtime、持久化 provider、credential store 或 Dashboard 资源所有者。
 
-Desktop 包设置 `npmRebuild: false`，因为已安装的 target-native payload 就是该工作区选择的原生依赖，而 Electron Builder 的重建会修改共享 pnpm store。解包 Windows 产物携带 target-native payload，并通过真实 Electron Dashboard journey 验证，而不是仅凭 Electron 进程存在就接受。
+Desktop Builder 在 Windows 上保留 pnpm 选择的 target-native payload，因为重建打过补丁的 `node-pty` 会修改共享 linked-worktree store；macOS 和 Linux 保留 Builder 的重建步骤，以准备 target-specific 和 universal 原生 payload。解包产物会先复制到外部临时 release 根目录再启动，因此仓库 `node_modules` 无法补齐缺失包。每个产物都通过真实 Electron Dashboard journey 验证，而不是仅凭 Electron 进程存在就接受。
 
 ## 考虑过的替代方案
 

@@ -382,75 +382,285 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@harness-desktop/cordis':
+        specifier: workspace:^
+        version: link:../../vendor/cordis
       '@harness-desktop/cordis-plugin-group':
         specifier: workspace:^
         version: link:../../vendor/group
+      '@harness-desktop/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../vendor/include
+      '@harness-desktop/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../vendor/loader
+      '@harness-desktop/cordis-plugin-timer':
+        specifier: workspace:^
+        version: link:../../vendor/timer
+      '@harness-desktop/dsh-agent':
+        specifier: workspace:^
+        version: link:../../packages/core/agent
+      '@harness-desktop/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../packages/preset/agent-presets
       '@harness-desktop/dsh-anonymous-user-id':
         specifier: workspace:^
         version: link:../../packages/identity/anonymous-user-id
+      '@harness-desktop/dsh-api-gateway':
+        specifier: workspace:^
+        version: link:../../packages/api/gateway
+      '@harness-desktop/dsh-api-remotes':
+        specifier: workspace:^
+        version: link:../../packages/api/remotes
       '@harness-desktop/dsh-app-boot':
         specifier: workspace:^
         version: link:../../packages/boot/app-boot
       '@harness-desktop/dsh-atomic-write':
         specifier: workspace:^
         version: link:../../packages/util/atomic-write
+      '@harness-desktop/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../packages/attachment/attachment
       '@harness-desktop/dsh-bash-local':
         specifier: workspace:^
         version: link:../../packages/shell/bash-local
+      '@harness-desktop/dsh-brand':
+        specifier: workspace:^
+        version: link:../../packages/util/brand
+      '@harness-desktop/dsh-client-connection':
+        specifier: workspace:^
+        version: link:../../packages/client/connection
+      '@harness-desktop/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../../packages/client/locale
+      '@harness-desktop/dsh-client-modules':
+        specifier: workspace:^
+        version: link:../../packages/client/modules
+      '@harness-desktop/dsh-client-runtime':
+        specifier: workspace:^
+        version: link:../../packages/client/runtime
+      '@harness-desktop/dsh-client-schema-form':
+        specifier: workspace:^
+        version: link:../../packages/client/schema-form
+      '@harness-desktop/dsh-client-ui-attachment':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-attachment
+      '@harness-desktop/dsh-client-ui-commands':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-commands
+      '@harness-desktop/dsh-client-ui-conversation':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-conversation
+      '@harness-desktop/dsh-client-ui-directory-picker-browse':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-directory-picker-browse
+      '@harness-desktop/dsh-client-ui-directory-picker-native':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-directory-picker-native
+      '@harness-desktop/dsh-client-ui-input-trigger':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-input-trigger
+      '@harness-desktop/dsh-client-ui-primitives':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-primitives
+      '@harness-desktop/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-settings
+      '@harness-desktop/dsh-client-ui-sidebar':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-sidebar
+      '@harness-desktop/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-slots
+      '@harness-desktop/dsh-client-ui-theme':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-theme
+      '@harness-desktop/dsh-client-ui-tool':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-tool
+      '@harness-desktop/dsh-client-ui-workspace':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-workspace
+      '@harness-desktop/dsh-client-web-react':
+        specifier: workspace:^
+        version: link:../../packages/client/web-react
       '@harness-desktop/dsh-code-runtime':
         specifier: workspace:^
         version: link:../../packages/code-runtime/code-runtime
+      '@harness-desktop/dsh-command-feedback':
+        specifier: workspace:^
+        version: link:../../packages/feedback/command-feedback
+      '@harness-desktop/dsh-commands':
+        specifier: workspace:^
+        version: link:../../packages/interaction/commands
       '@harness-desktop/dsh-compaction':
         specifier: workspace:^
         version: link:../../packages/compaction/compaction
+      '@harness-desktop/dsh-cordis-client-runner':
+        specifier: workspace:^
+        version: link:../../packages/extensions/cordis-client-runner
+      '@harness-desktop/dsh-cordis-host-runner':
+        specifier: workspace:^
+        version: link:../../packages/extensions/cordis-host-runner
+      '@harness-desktop/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../packages/credentials/credentials
       '@harness-desktop/dsh-fs':
         specifier: workspace:^
         version: link:../../packages/fs/fs
+      '@harness-desktop/dsh-fs-local':
+        specifier: workspace:^
+        version: link:../../packages/fs/fs-local
+      '@harness-desktop/dsh-goal':
+        specifier: workspace:^
+        version: link:../../packages/goal/goal
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@harness-desktop/dsh-host-directory-picker-browse':
+        specifier: workspace:^
+        version: link:../../packages/host/directory-picker-browse
+      '@harness-desktop/dsh-host-directory-picker-native':
+        specifier: workspace:^
+        version: link:../../packages/host/directory-picker-native
       '@harness-desktop/dsh-host-local-runtime':
         specifier: workspace:^
         version: link:../../packages/host/local-runtime
+      '@harness-desktop/dsh-host-plugin-inventory':
+        specifier: workspace:^
+        version: link:../../packages/host/plugin-inventory
+      '@harness-desktop/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../packages/host/webserver
+      '@harness-desktop/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../packages/runtime-diagnostics/invariants
+      '@harness-desktop/dsh-jobs':
+        specifier: workspace:^
+        version: link:../../packages/jobs/jobs
       '@harness-desktop/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../packages/util/launch-environment
+      '@harness-desktop/dsh-llm':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm
+      '@harness-desktop/dsh-llm-retry':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm-retry
+      '@harness-desktop/dsh-message-feedback':
+        specifier: workspace:^
+        version: link:../../packages/feedback/message-feedback
       '@harness-desktop/dsh-output-retention':
         specifier: workspace:^
         version: link:../../packages/util/output-retention
+      '@harness-desktop/dsh-permission-presets':
+        specifier: workspace:^
+        version: link:../../packages/interaction/permission-presets
+      '@harness-desktop/dsh-plan-mode':
+        specifier: workspace:^
+        version: link:../../packages/plan/plan-mode
       '@harness-desktop/dsh-pwsh-local':
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local
       '@harness-desktop/dsh-sandbox':
         specifier: workspace:^
         version: link:../../packages/sandbox/sandbox
+      '@harness-desktop/dsh-sandbox-policy':
+        specifier: workspace:^
+        version: link:../../packages/sandbox/sandbox-policy
       '@harness-desktop/dsh-scope':
         specifier: workspace:^
         version: link:../../packages/core/scope
+      '@harness-desktop/dsh-session':
+        specifier: workspace:^
+        version: link:../../packages/core/session
+      '@harness-desktop/dsh-session-persistence':
+        specifier: workspace:^
+        version: link:../../packages/session/session-persistence
+      '@harness-desktop/dsh-session-projection':
+        specifier: workspace:^
+        version: link:../../packages/session/session-projection
+      '@harness-desktop/dsh-session-query':
+        specifier: workspace:^
+        version: link:../../packages/session-query/session-query
+      '@harness-desktop/dsh-session-stats':
+        specifier: workspace:^
+        version: link:../../packages/session/session-stats
       '@harness-desktop/dsh-session-telemetry':
         specifier: workspace:^
         version: link:../../packages/session/session-telemetry
+      '@harness-desktop/dsh-session-title':
+        specifier: workspace:^
+        version: link:../../packages/session/session-title
       '@harness-desktop/dsh-session-title-llm':
         specifier: workspace:^
         version: link:../../packages/session/session-title-llm
+      '@harness-desktop/dsh-settings':
+        specifier: workspace:^
+        version: link:../../packages/settings/settings
       '@harness-desktop/dsh-shell':
         specifier: workspace:^
         version: link:../../packages/shell/shell
+      '@harness-desktop/dsh-shell-env':
+        specifier: workspace:^
+        version: link:../../packages/shell/shell-env
+      '@harness-desktop/dsh-skill':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill
       '@harness-desktop/dsh-spill':
         specifier: workspace:^
         version: link:../../packages/spill/spill
+      '@harness-desktop/dsh-storage':
+        specifier: workspace:^
+        version: link:../../packages/storage/storage
+      '@harness-desktop/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../packages/storage/storage-domain
+      '@harness-desktop/dsh-subagent':
+        specifier: workspace:^
+        version: link:../../packages/subagent/subagent
       '@harness-desktop/dsh-subagent-in-process-driver':
         specifier: workspace:^
         version: link:../../packages/subagent/subagent-in-process-driver
       '@harness-desktop/dsh-subprocess':
         specifier: workspace:^
         version: link:../../packages/subprocess/subprocess
+      '@harness-desktop/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../packages/core/system-prompt
       '@harness-desktop/dsh-timeout':
         specifier: workspace:^
         version: link:../../packages/util/timeout
+      '@harness-desktop/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../packages/llm/token-meter
+      '@harness-desktop/dsh-tool-workflow':
+        specifier: workspace:^
+        version: link:../../packages/workflow/tool-workflow
+      '@harness-desktop/dsh-tools':
+        specifier: workspace:^
+        version: link:../../packages/core/tools
+      '@harness-desktop/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../packages/typert/protocol
+      '@harness-desktop/dsh-typert-registry':
+        specifier: workspace:^
+        version: link:../../packages/typert/registry
+      '@harness-desktop/dsh-user-approval':
+        specifier: workspace:^
+        version: link:../../packages/interaction/user-approval
+      '@harness-desktop/dsh-user-questions':
+        specifier: workspace:^
+        version: link:../../packages/interaction/user-questions
+      '@harness-desktop/dsh-web':
+        specifier: workspace:^
+        version: link:../../packages/web/web
       '@harness-desktop/dsh-workflow':
         specifier: workspace:^
         version: link:../../packages/workflow/workflow
+      '@harness-desktop/schemastery':
+        specifier: link:../../vendor/schemastery
+        version: link:../../vendor/schemastery
       react:
         specifier: 18.2.0
         version: 18.2.0
