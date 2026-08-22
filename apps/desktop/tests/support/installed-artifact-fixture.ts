@@ -1,0 +1,278 @@
+/** Matching-runner native installer ownership for Desktop release acceptance. */
+
+import { extractFile } from '@electron/asar'
+import { createHash } from 'node:crypto'
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { execa } from 'execa'
+import {
+  launchDesktopExecutableRuntimeFixture,
+  type DesktopRuntimeFixture,
+} from './runtime-fixture.ts'
+
+const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
+const desktopRoot = join(repoRoot, 'apps', 'desktop')
+const sentinelName = 'installed-smoke-sentinel.txt'
+
+/** Native installer discovery inputs for the current runner. */
+export interface InstalledArtifactInput {
+  readonly platform: NodeJS.Platform
+  readonly releaseDirectory: string
+}
+
+/** One installed, copied, or extracted native Desktop artifact. */
+export interface InstalledDesktopArtifact {
+  readonly name: string
+  readonly sentinelPath: string
+  launch(): Promise<DesktopRuntimeFixture>
+  writeSentinel(harnessHome: string): Promise<void>
+  verifyGeneratedIcon(): Promise<void>
+  remove(): Promise<void>
+  cleanup(): Promise<void>
+}
+
+interface PreparedArtifact {
+  readonly name: string
+  readonly executable: string
+  readonly cwd: string
+  readonly asar: string
+  readonly iconMember: string
+  readonly generatedIcon: string
+  remove(): Promise<void>
+}
+
+/**
+ * Install or mount every artifact format owned by the current native runner.
+ * @param input - runner platform and Electron Builder release directory.
+ * @returns prepared artifacts; callers launch, remove, verify the sentinel, then clean up.
+ */
+export async function prepareInstalledDesktopArtifacts(
+  input: InstalledArtifactInput,
+): Promise<readonly InstalledDesktopArtifact[]> {
+  const prepared = await prepareNativeArtifacts(input)
+  return prepared.map(subject => wrapPreparedArtifact(subject))
+}
+
+async function prepareNativeArtifacts(input: InstalledArtifactInput): Promise<readonly PreparedArtifact[]> {
+  switch (input.platform) {
+    case 'win32':
+      return [await prepareWindows(input.releaseDirectory)]
+    case 'darwin':
+      return [await prepareMac(input.releaseDirectory)]
+    case 'linux':
+      return await prepareLinux(input.releaseDirectory)
+    default:
+      throw new Error(`installed desktop artifact: unsupported platform ${input.platform}`)
+  }
+}
+
+function wrapPreparedArtifact(subject: PreparedArtifact): InstalledDesktopArtifact {
+  let runtimeRoot: string | undefined
+  let sentinelPath = ''
+  return {
+    name: subject.name,
+    get sentinelPath() {
+      if (sentinelPath === '') throw new Error(`installed desktop artifact: ${subject.name} sentinel was not written`)
+      return sentinelPath
+    },
+    launch: async () => launchDesktopExecutableRuntimeFixture({
+      executablePath: subject.executable,
+      cwd: subject.cwd,
+    }),
+    async writeSentinel(harnessHome) {
+      runtimeRoot = dirname(harnessHome)
+      sentinelPath = join(harnessHome, sentinelName)
+      await writeFile(sentinelPath, 'preserve installed smoke home\n')
+    },
+    async verifyGeneratedIcon() {
+      const expected = await readFile(subject.generatedIcon)
+      const actual = extractFile(subject.asar, subject.iconMember.replaceAll('/', sep))
+      if (sha256(actual) !== sha256(expected)) {
+        throw new Error(`installed desktop artifact: ${subject.name} generated icon digest mismatch`)
+      }
+    },
+    remove: async () => subject.remove(),
+    async cleanup() {
+      if (runtimeRoot !== undefined) await removeTree(runtimeRoot)
+      await removeTree(subject.cwd)
+    },
+  }
+}
+
+async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifact> {
+  const installer = await exactlyOneFile(
+    releaseDirectory,
+    /^Harness Desktop Setup \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.exe$/u,
+    'Windows NSIS installer',
+  )
+  const root = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-win32-'))
+  const installation = join(root, 'Harness Desktop')
+  const result = await execa(installer, ['/S', `/D=${installation}`], { cwd: root, reject: false })
+  if (result.exitCode !== 0) {
+    await rm(root, { recursive: true, force: true })
+    throw new Error(`installed desktop artifact: NSIS install exited ${String(result.exitCode)}: ${result.stderr}`)
+  }
+  const executable = join(installation, 'harness-desktop.exe')
+  const asar = join(installation, 'resources', 'app.asar')
+  await requireFile(executable, 'installed Windows executable')
+  await requireFile(asar, 'installed Windows app.asar')
+  return {
+    name: 'Windows NSIS',
+    executable,
+    cwd: root,
+    asar,
+    iconMember: 'resources/icons/win/harness-desktop.ico',
+    generatedIcon: join(desktopRoot, 'resources', 'icons', 'win', 'harness-desktop.ico'),
+    async remove() {
+      const uninstaller = (await readdir(installation)).find(name => /^Uninstall .*\.exe$/u.test(name))
+      if (uninstaller === undefined) throw new Error('installed desktop artifact: NSIS uninstaller is missing')
+      const uninstall = await execa(join(installation, uninstaller), ['/S'], { cwd: root, reject: false })
+      if (uninstall.exitCode !== 0) {
+        throw new Error(`installed desktop artifact: NSIS uninstall exited ${String(uninstall.exitCode)}: ${uninstall.stderr}`)
+      }
+      await waitForRemoval(installation)
+    },
+  }
+}
+
+async function prepareMac(releaseDirectory: string): Promise<PreparedArtifact> {
+  const dmg = await exactlyOneFile(
+    releaseDirectory,
+    /^Harness Desktop-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-universal\.dmg$/u,
+    'macOS universal DMG',
+  )
+  const root = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-darwin-'))
+  const mount = join(root, 'mount')
+  const applications = join(root, 'Applications')
+  await mkdir(mount)
+  await mkdir(applications)
+  let attached = false
+  try {
+    await execa('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg], { reject: true })
+    attached = true
+    const source = join(mount, 'Harness Desktop.app')
+    const destination = join(applications, 'Harness Desktop.app')
+    await cp(source, destination, { recursive: true })
+  } finally {
+    if (attached) await execa('hdiutil', ['detach', mount], { reject: true })
+  }
+  const app = join(applications, 'Harness Desktop.app')
+  const executable = join(app, 'Contents', 'MacOS', 'harness-desktop')
+  const asar = join(app, 'Contents', 'Resources', 'app.asar')
+  const lipo = await execa('lipo', ['-info', executable], { reject: true })
+  if (!/\bx86_64\b/u.test(lipo.stdout) || !/\barm64\b/u.test(lipo.stdout)) {
+    throw new Error(`installed desktop artifact: copied macOS app is not universal: ${lipo.stdout}`)
+  }
+  return {
+    name: 'macOS universal DMG',
+    executable,
+    cwd: root,
+    asar,
+    iconMember: 'resources/icons/mac/harness-desktop.icns',
+    generatedIcon: join(desktopRoot, 'resources', 'icons', 'mac', 'harness-desktop.icns'),
+    async remove() {
+      await rm(app, { recursive: true, force: true })
+    },
+  }
+}
+
+async function prepareLinux(releaseDirectory: string): Promise<readonly PreparedArtifact[]> {
+  const appImage = await exactlyOneFile(
+    releaseDirectory,
+    /^Harness Desktop-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.AppImage$/u,
+    'Linux AppImage',
+  )
+  const deb = await exactlyOneFile(
+    releaseDirectory,
+    /^harness-desktop_\d+\.\d+\.\d+(?:[+~.-][0-9A-Za-z.-]+)?_(?:amd64|arm64)\.deb$/u,
+    'Linux Deb installer',
+  )
+  const appImageRoot = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-appimage-'))
+  await chmod(appImage, 0o755)
+  await execa(appImage, ['--appimage-extract'], { cwd: appImageRoot, reject: true })
+  const extractedAppImage = join(appImageRoot, 'squashfs-root')
+  const appImageExecutable = await findFile(extractedAppImage, 'harness-desktop')
+  const appImageAsar = await findFile(extractedAppImage, 'app.asar')
+
+  const debRoot = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-deb-'))
+  await execa('dpkg-deb', ['--extract', deb, debRoot], { reject: true })
+  const debExecutable = await findFile(debRoot, 'harness-desktop')
+  const debAsar = await findFile(debRoot, 'app.asar')
+  const icon = join(desktopRoot, 'resources', 'icons', 'linux', 'harness-desktop-512.png')
+  return [
+    {
+      name: 'Linux AppImage',
+      executable: appImageExecutable,
+      cwd: appImageRoot,
+      asar: appImageAsar,
+      iconMember: 'resources/icons/linux/harness-desktop-512.png',
+      generatedIcon: icon,
+      async remove() { await rm(extractedAppImage, { recursive: true, force: true }) },
+    },
+    {
+      name: 'Linux Deb',
+      executable: debExecutable,
+      cwd: debRoot,
+      asar: debAsar,
+      iconMember: 'resources/icons/linux/harness-desktop-512.png',
+      generatedIcon: icon,
+      async remove() {
+        for (const entry of await readdir(debRoot)) await rm(join(debRoot, entry), { recursive: true, force: true })
+      },
+    },
+  ]
+}
+
+async function exactlyOneFile(directory: string, pattern: RegExp, label: string): Promise<string> {
+  const matches = (await readdir(directory, { withFileTypes: true }))
+    .filter(entry => entry.isFile() && pattern.test(entry.name))
+  if (matches.length !== 1) {
+    throw new Error(`installed desktop artifact: expected exactly one ${label}, found ${String(matches.length)}`)
+  }
+  return join(directory, matches[0]!.name)
+}
+
+async function findFile(directory: string, filename: string): Promise<string> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isFile() && basename(path) === filename) return path
+    if (entry.isDirectory()) {
+      const found = await findFile(path, filename).catch(() => undefined)
+      if (found !== undefined) return found
+    }
+  }
+  throw new Error(`installed desktop artifact: ${filename} is missing below ${directory}`)
+}
+
+async function requireFile(path: string, label: string): Promise<void> {
+  if (!(await access(path).then(() => true, () => false))) {
+    throw new Error(`installed desktop artifact: ${label} is missing at ${path}`)
+  }
+}
+
+async function waitForRemoval(path: string): Promise<void> {
+  const deadline = Date.now() + 30_000
+  while (await access(path).then(() => true, () => false)) {
+    if (Date.now() >= deadline) throw new Error(`installed desktop artifact: removal timed out for ${path}`)
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+}
+
+async function removeTree(path: string): Promise<void> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EBUSY' || Date.now() >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  }
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}

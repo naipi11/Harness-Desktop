@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "../..",
     "jsx": "react-jsx",
     "lib": [
       "ES2024",
@@ -16,7 +16,8 @@
   "include": [
     "electron.vite.config.ts",
     "src",
-    "tests"
+    "tests",
+    "../../scripts/release/verify-desktop-artifacts.ts"
   ],
   "references": [
     {

@@ -136,7 +136,7 @@ export interface DesktopRuntimeFixture {
   readonly responses: DesktopResponseCapture[]
   readonly rendererErrors: string[]
   readonly desktopOutput: () => string
-  close(): Promise<void>
+  close(options?: { readonly preserveRuntimeRoot?: boolean }): Promise<void>
 }
 
 /** Desktop launched while another live process owns its selected Runtime home. */
@@ -154,6 +154,28 @@ export interface DesktopFailureFixture {
 /** Start the built canonical Runtime and real built Electron application. */
 export async function launchDesktopRuntimeFixture(): Promise<DesktopRuntimeFixture> {
   return launchDesktopRuntimeFixtureWith({ args: [mainEntry, '--lang=en-US'] })
+}
+
+/** Native executable launch parameters for installed-artifact fixtures. */
+export interface DesktopExecutableLaunch {
+  readonly executablePath: string
+  readonly cwd: string
+  readonly args?: readonly string[]
+}
+
+/**
+ * Start the canonical Runtime and a native Desktop executable owned by another fixture.
+ * @param launch Native executable, working directory, and optional arguments.
+ * @returns Running authenticated Desktop fixture; the caller retains artifact removal ownership.
+ */
+export async function launchDesktopExecutableRuntimeFixture(
+  launch: DesktopExecutableLaunch,
+): Promise<DesktopRuntimeFixture> {
+  return launchDesktopRuntimeFixtureWith({
+    executablePath: launch.executablePath,
+    cwd: launch.cwd,
+    args: [...(launch.args ?? []), '--lang=en-US'],
+  })
 }
 
 /** Start the canonical Runtime and the native unpacked Desktop executable. */
@@ -233,11 +255,13 @@ async function launchDesktopRuntimeFixtureWith(
       responses,
       rendererErrors,
       desktopOutput: () => desktopOutput,
-      async close() {
+      async close(options = {}) {
         const failures: unknown[] = []
         await application?.close().catch((error: unknown) => failures.push(error))
         await releaseRuntime(runtime).catch((error: unknown) => failures.push(error))
-        await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+        if (options.preserveRuntimeRoot !== true) {
+          await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+        }
         if (launch.cleanup !== undefined) await launch.cleanup().catch((error: unknown) => failures.push(error))
         if (failures.length === 1) throw failures[0]
         if (failures.length > 1) throw new AggregateError(failures, 'Desktop fixture cleanup failed')

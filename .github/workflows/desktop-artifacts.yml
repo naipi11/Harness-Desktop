@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PRIMARY_NODE_VERSION: '24'
+  PRIMARY_NODE_VERSION: '24.19.0'
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
@@ -63,15 +63,61 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
-      - name: Build desktop app
-        run: pnpm run desktop:build
+      - name: Acquire pinned local Node distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${PRIMARY_NODE_VERSION}"
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Windows-X64) filename="node-v${version}-win-x64.zip" ;;
+            Windows-ARM64) filename="node-v${version}-win-arm64.zip" ;;
+            macOS-X64) filename="node-v${version}-darwin-x64.tar.gz" ;;
+            macOS-ARM64) filename="node-v${version}-darwin-arm64.tar.gz" ;;
+            Linux-X64) filename="node-v${version}-linux-x64.tar.gz" ;;
+            Linux-ARM64) filename="node-v${version}-linux-arm64.tar.gz" ;;
+            *) echo "Unsupported Node runtime target: ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+          runtime_root="${RUNNER_TEMP}/harness-node-runtime"
+          mkdir -p "${runtime_root}"
+          curl --fail --silent --show-error --location \
+            "https://nodejs.org/dist/v${version}/${filename}" \
+            --output "${runtime_root}/${filename}"
+          echo "DSH_NODE_RUNTIME_ROOT=${runtime_root}" >> "${GITHUB_ENV}"
+          echo "DSH_NODE_RUNTIME_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Generate product icons
+        run: pnpm run generate:icons
+
+      - name: Verify generated product icons
+        run: pnpm run verify:icons
+
+      - name: Build repository and Desktop app
+        run: pnpm run build
 
       - name: Package installer
         run: pnpm --filter @harness-desktop/dsh-desktop run package --publish never
 
+      - name: Inspect native Desktop artifacts
+        run: pnpm run release:verify-desktop-artifacts
+
+      - name: Verify packed CLI from an empty offline prefix
+        run: pnpm run release:verify-packed-cli
+
+      - name: Build standalone CLI archives
+        run: pnpm run release:build-cli-standalone
+
+      - name: Verify standalone CLI archives
+        run: pnpm run release:verify-cli-standalone
+
+      - name: Smoke installed Desktop artifacts
+        run: pnpm run release:smoke-installed-desktop
+
       - uses: actions/upload-artifact@v4
         with:
           name: harness-desktop-${{ matrix.label }}
-          path: apps/desktop/release/*
+          path: |
+            apps/desktop/release/*
+            dist/cli-standalone/*
+            apps/desktop/test-results/**
           if-no-files-found: error
           retention-days: 7

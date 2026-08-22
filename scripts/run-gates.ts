@@ -25,6 +25,7 @@ export type Mode =
   | 'ci-windows-complete'
   | 'ci-windows-observational'
   | 'node-compat'
+  | 'release-smoke'
   | 'check-all'
   | 'doc-sync'
 
@@ -110,12 +111,13 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-windows-complete':
     case 'ci-windows-observational':
     case 'node-compat':
+    case 'release-smoke':
     case 'check-all':
     case 'doc-sync':
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | release-smoke | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -218,6 +220,8 @@ export function gatesForMode(selected: Mode): Gate[] {
       return ciWindowsObservationalGates()
     case 'node-compat':
       return nodeCompatGates()
+    case 'release-smoke':
+      return releaseSmokeGates()
     case 'check-all':
       return [
         pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
@@ -406,6 +410,26 @@ function ciArtifactGates(): Gate[] {
     }),
     builtPackageInvariantsGate(['build']),
     builtBinSmokeGate(),
+  ]
+}
+
+function releaseSmokeGates(): Gate[] {
+  return [
+    pnpmScript('build', 'build'),
+    pnpmScript('generate-icons', 'generate:icons', { needs: ['build'] }),
+    pnpmScript('verify-icons', 'verify:icons', { needs: ['generate-icons'] }),
+    {
+      id: 'desktop-package',
+      label: 'native Desktop package',
+      displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
+      ...pnpmInvocation(['--filter', '@harness-desktop/dsh-desktop', 'run', 'package', '--publish', 'never']),
+      needs: ['verify-icons'],
+    },
+    pnpmScript('desktop-artifacts', 'release:verify-desktop-artifacts', { needs: ['desktop-package'] }),
+    pnpmScript('packed-cli', 'release:verify-packed-cli', { needs: ['desktop-artifacts'] }),
+    pnpmScript('standalone-build', 'release:build-cli-standalone', { needs: ['packed-cli'] }),
+    pnpmScript('standalone-verify', 'release:verify-cli-standalone', { needs: ['standalone-build'] }),
+    pnpmScript('installed-desktop', 'release:smoke-installed-desktop', { needs: ['standalone-verify'] }),
   ]
 }
 

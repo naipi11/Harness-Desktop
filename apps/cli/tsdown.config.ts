@@ -12,6 +12,8 @@ export default defineConfig({
   format: ['esm'],
   platform: 'node',
   target: 'es2024',
+  deps: { alwaysBundle: [/.*/u], onlyBundle: false },
+  outputOptions: { chunkFileNames: '[name].js' },
   fixedExtension: false,
   dts: false,
   clean: false,

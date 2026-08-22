@@ -68,6 +68,7 @@ describe('gate graph validation', () => {
     'ci-windows-complete',
     'ci-windows-observational',
     'node-compat',
+    'release-smoke',
     'check-all',
     'doc-sync',
   ] as const)('constructs and executes preflight for a valid non-empty %s graph', async (mode) => {
@@ -75,6 +76,27 @@ describe('gate graph validation', () => {
     const execute = vi.fn(async (item: Gate) => resultFor(item))
 
     await expect(runGates(subject, subject.length, execute)).resolves.toHaveLength(subject.length)
+  })
+
+  it('orders the non-publishing release smoke from build through installed Desktop evidence', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('release-smoke'))
+
+    expect(subject.map(item => item.id)).toEqual([
+      'build',
+      'generate-icons',
+      'verify-icons',
+      'desktop-package',
+      'desktop-artifacts',
+      'packed-cli',
+      'standalone-build',
+      'standalone-verify',
+      'installed-desktop',
+    ])
+    expect(subject.find(item => item.id === 'desktop-package')).toMatchObject({
+      displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
+      needs: ['verify-icons'],
+    })
+    expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['standalone-verify'])
   })
 
   it('keeps the public repository link policy in the documentation gate', () => {

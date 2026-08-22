@@ -15,15 +15,24 @@ importers:
 
   .:
     devDependencies:
+      7zip-bin:
+        specifier: 5.2.0
+        version: 5.2.0
       '@agentclientprotocol/sdk':
         specifier: 0.25.1
         version: 0.25.1(zod@4.4.3)
+      '@electron/asar':
+        specifier: 3.4.1
+        version: 3.4.1
       '@fiahfy/icns':
         specifier: 0.0.7
         version: 0.0.7
       '@harness-desktop/dsh-tool-session-query':
         specifier: workspace:^
         version: link:packages/session-query/tool-session-query
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
       '@stylistic/eslint-plugin':
         specifier: ^5.10.0
         version: 5.10.0(eslint@10.5.0(jiti@2.7.0)(supports-color@9.4.0))
@@ -63,6 +72,9 @@ importers:
       fast-check:
         specifier: ^4.8.0
         version: 4.8.0
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       istanbul-lib-report:
         specifier: ^3.0.1
         version: 3.0.1
@@ -117,6 +129,9 @@ importers:
       spdx-expression-parse:
         specifier: ^5.0.0
         version: 5.0.0
+      tar:
+        specifier: 7.5.22
+        version: 7.5.22
       tsdown:
         specifier: ^0.22.2
         version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
@@ -134,7 +149,7 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1(@noble/hashes@2.3.0))(vite@8.0.16(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   apps/cli:
-    dependencies:
+    devDependencies:
       '@harness-desktop/cordis':
         specifier: workspace:^
         version: link:../../vendor/cordis
@@ -150,6 +165,9 @@ importers:
       '@harness-desktop/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../vendor/timer
+      '@harness-desktop/dsh-agent':
+        specifier: workspace:^
+        version: link:../../packages/core/agent
       '@harness-desktop/dsh-agent-instructions':
         specifier: workspace:^
         version: link:../../packages/context/agent-instructions
@@ -204,15 +222,33 @@ importers:
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@harness-desktop/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../../packages/host/apiproxy
+      '@harness-desktop/dsh-host-frontend-static':
+        specifier: workspace:^
+        version: link:../../packages/host/frontend-static
       '@harness-desktop/dsh-host-local-runtime':
         specifier: workspace:^
         version: link:../../packages/host/local-runtime
+      '@harness-desktop/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../packages/host/webserver
       '@harness-desktop/dsh-jobs-local':
         specifier: workspace:^
         version: link:../../packages/jobs/jobs-local
       '@harness-desktop/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../packages/util/launch-environment
+      '@harness-desktop/dsh-llm':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm
+      '@harness-desktop/dsh-llm-mock-server':
+        specifier: workspace:^
+        version: link:../../packages/test-support/llm-mock-server
+      '@harness-desktop/dsh-loader-smoke':
+        specifier: workspace:^
+        version: link:../../packages/test-support/loader-smoke
       '@harness-desktop/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
@@ -231,18 +267,30 @@ importers:
       '@harness-desktop/dsh-schedule':
         specifier: workspace:^
         version: link:../../packages/schedule/schedule
+      '@harness-desktop/dsh-session':
+        specifier: workspace:^
+        version: link:../../packages/core/session
       '@harness-desktop/dsh-session-projection':
         specifier: workspace:^
         version: link:../../packages/session/session-projection
       '@harness-desktop/dsh-session-reference':
         specifier: workspace:^
         version: link:../../packages/context/session-reference
+      '@harness-desktop/dsh-settings':
+        specifier: workspace:^
+        version: link:../../packages/settings/settings
       '@harness-desktop/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
       '@harness-desktop/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      '@harness-desktop/dsh-subagent':
+        specifier: workspace:^
+        version: link:../../packages/subagent/subagent
+      '@harness-desktop/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../packages/core/system-prompt
       '@harness-desktop/dsh-terminal':
         specifier: workspace:^
         version: link:../../packages/terminal/terminal
@@ -309,15 +357,27 @@ importers:
       '@harness-desktop/dsh-tool-workflow':
         specifier: workspace:^
         version: link:../../packages/workflow/tool-workflow
+      '@harness-desktop/dsh-tools':
+        specifier: workspace:^
+        version: link:../../packages/core/tools
       '@harness-desktop/dsh-web-app':
         specifier: workspace:^
         version: link:../../packages/bundle/web-app
       '@harness-desktop/dsh-workflow-worker-thread':
         specifier: workspace:^
         version: link:../../packages/workflow/workflow-worker-thread
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+      '@types/react':
+        specifier: ~18.3.31
+        version: 18.3.31
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      execa:
+        specifier: ^10.0.0
+        version: 10.0.0
       ink:
         specifier: ^5.1.0
         version: 5.1.0(@types/react@18.3.31)(react@18.3.1)
@@ -327,58 +387,12 @@ importers:
       node-addon-require-builtin:
         specifier: ^0.1.4
         version: 0.1.4
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-    devDependencies:
-      '@harness-desktop/dsh-agent':
-        specifier: workspace:^
-        version: link:../../packages/core/agent
-      '@harness-desktop/dsh-host-apiproxy':
-        specifier: workspace:^
-        version: link:../../packages/host/apiproxy
-      '@harness-desktop/dsh-host-frontend-static':
-        specifier: workspace:^
-        version: link:../../packages/host/frontend-static
-      '@harness-desktop/dsh-host-webserver':
-        specifier: workspace:^
-        version: link:../../packages/host/webserver
-      '@harness-desktop/dsh-llm':
-        specifier: workspace:^
-        version: link:../../packages/llm/llm
-      '@harness-desktop/dsh-llm-mock-server':
-        specifier: workspace:^
-        version: link:../../packages/test-support/llm-mock-server
-      '@harness-desktop/dsh-loader-smoke':
-        specifier: workspace:^
-        version: link:../../packages/test-support/loader-smoke
-      '@harness-desktop/dsh-session':
-        specifier: workspace:^
-        version: link:../../packages/core/session
-      '@harness-desktop/dsh-settings':
-        specifier: workspace:^
-        version: link:../../packages/settings/settings
-      '@harness-desktop/dsh-subagent':
-        specifier: workspace:^
-        version: link:../../packages/subagent/subagent
-      '@harness-desktop/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../packages/core/system-prompt
-      '@harness-desktop/dsh-tools':
-        specifier: workspace:^
-        version: link:../../packages/core/tools
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
-      '@types/react':
-        specifier: ~18.3.31
-        version: 18.3.31
-      execa:
-        specifier: ^10.0.0
-        version: 10.0.0
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0(patch_hash=7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
 
   apps/desktop:
     dependencies:
@@ -9248,6 +9262,9 @@ importers:
 
 packages:
 
+  7zip-bin@5.2.0:
+    resolution: {integrity: sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A==}
+
   '@agentclientprotocol/sdk@0.25.1':
     resolution: {integrity: sha512-jx2rF3bdpGwZ75Q/meyEDLLbYmbtxk82Uh9hDCdxDvcEedBnNSF5hZAnL/kJR5VNz56JqwOmqnAqasC84MwwkQ==}
     peerDependencies:
@@ -15663,6 +15680,8 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  7zip-bin@5.2.0: {}
 
   '@agentclientprotocol/sdk@0.25.1(zod@4.4.3)':
     dependencies:

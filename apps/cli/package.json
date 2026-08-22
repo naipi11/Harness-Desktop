@@ -16,12 +16,18 @@
     "dsh": "lib/dsh-bin.js"
   },
   "files": [
-    "lib/*.js",
+    "lib/bin.js",
+    "lib/dsh-bin.js",
+    "lib/main.js",
     "browser-cleanup.mjs",
     "config"
   ],
+  "scripts": {
+    "test:e2e:packed": "pnpm --dir ../.. exec vitest run --config vitest.e2e.config.ts apps/cli/tests/packed-install.e2e.ts",
+    "test:e2e:standalone": "pnpm --dir ../.. exec vitest run --config vitest.e2e.config.ts apps/cli/tests/standalone-archive.e2e.ts"
+  },
   "license": "MIT",
-  "dependencies": {
+  "devDependencies": {
     "@harness-desktop/cordis": "workspace:^",
     "@harness-desktop/cordis-plugin-hmr": "workspace:^",
     "@harness-desktop/cordis-plugin-include": "workspace:^",
@@ -86,9 +92,7 @@
     "ink": "^5.1.0",
     "js-yaml": "^4.2.0",
     "node-addon-require-builtin": "^0.1.4",
-    "react": "^18.3.1"
-  },
-  "devDependencies": {
+    "react": "^18.3.1",
     "@harness-desktop/dsh-agent": "workspace:^",
     "@harness-desktop/dsh-host-apiproxy": "workspace:^",
     "@harness-desktop/dsh-host-frontend-static": "workspace:^",
