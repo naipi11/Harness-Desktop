@@ -382,12 +382,75 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@harness-desktop/cordis-plugin-group':
+        specifier: workspace:^
+        version: link:../../vendor/group
+      '@harness-desktop/dsh-anonymous-user-id':
+        specifier: workspace:^
+        version: link:../../packages/identity/anonymous-user-id
       '@harness-desktop/dsh-app-boot':
         specifier: workspace:^
         version: link:../../packages/boot/app-boot
+      '@harness-desktop/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../packages/util/atomic-write
+      '@harness-desktop/dsh-bash-local':
+        specifier: workspace:^
+        version: link:../../packages/shell/bash-local
+      '@harness-desktop/dsh-code-runtime':
+        specifier: workspace:^
+        version: link:../../packages/code-runtime/code-runtime
+      '@harness-desktop/dsh-compaction':
+        specifier: workspace:^
+        version: link:../../packages/compaction/compaction
+      '@harness-desktop/dsh-fs':
+        specifier: workspace:^
+        version: link:../../packages/fs/fs
+      '@harness-desktop/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../packages/util/home-paths
       '@harness-desktop/dsh-host-local-runtime':
         specifier: workspace:^
         version: link:../../packages/host/local-runtime
+      '@harness-desktop/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../packages/util/launch-environment
+      '@harness-desktop/dsh-output-retention':
+        specifier: workspace:^
+        version: link:../../packages/util/output-retention
+      '@harness-desktop/dsh-pwsh-local':
+        specifier: workspace:^
+        version: link:../../packages/shell/pwsh-local
+      '@harness-desktop/dsh-sandbox':
+        specifier: workspace:^
+        version: link:../../packages/sandbox/sandbox
+      '@harness-desktop/dsh-scope':
+        specifier: workspace:^
+        version: link:../../packages/core/scope
+      '@harness-desktop/dsh-session-telemetry':
+        specifier: workspace:^
+        version: link:../../packages/session/session-telemetry
+      '@harness-desktop/dsh-session-title-llm':
+        specifier: workspace:^
+        version: link:../../packages/session/session-title-llm
+      '@harness-desktop/dsh-shell':
+        specifier: workspace:^
+        version: link:../../packages/shell/shell
+      '@harness-desktop/dsh-spill':
+        specifier: workspace:^
+        version: link:../../packages/spill/spill
+      '@harness-desktop/dsh-subagent-in-process-driver':
+        specifier: workspace:^
+        version: link:../../packages/subagent/subagent-in-process-driver
+      '@harness-desktop/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../packages/subprocess/subprocess
+      '@harness-desktop/dsh-timeout':
+        specifier: workspace:^
+        version: link:../../packages/util/timeout
+      '@harness-desktop/dsh-workflow':
+        specifier: workspace:^
+        version: link:../../packages/workflow/workflow
       react:
         specifier: 18.2.0
         version: 18.2.0

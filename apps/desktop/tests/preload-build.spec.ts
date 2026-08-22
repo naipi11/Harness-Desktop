@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { rm, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { resolveUnpackedDesktopExecutable } from './support/runtime-fixture.ts'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const outDir = fileURLToPath(new URL('../out', import.meta.url))
@@ -31,7 +32,24 @@ it('builds one CommonJS preload and makes the main process load it', async () =>
 
   const main = await readFile(fileURLToPath(new URL('../out/main/index.js', import.meta.url)), 'utf8')
   expect(main).toContain('../preload/index.cjs')
+  expect(main).toContain('from "@harness-desktop/dsh-host-local-runtime"')
   expect(main).not.toContain('@harness-desktop/dsh-app-boot/product-metadata')
+  expect(main).not.toContain('HARNESS_HOME')
+  expect(main).not.toContain('DesktopShell')
+  expect(main).not.toMatch(/credentials-(?:local|file)|credential-provider/u)
+})
+
+it('resolves the platform unpacked executable under the clean release root', () => {
+  const releaseRoot = fileURLToPath(new URL('../release', import.meta.url))
+  expect(resolveUnpackedDesktopExecutable(releaseRoot, 'win32')).toBe(
+    fileURLToPath(new URL('../release/win-unpacked/harness-desktop.exe', import.meta.url)),
+  )
+  expect(resolveUnpackedDesktopExecutable(releaseRoot, 'darwin')).toBe(
+    fileURLToPath(new URL('../release/mac-universal/Harness Desktop.app/Contents/MacOS/harness-desktop', import.meta.url)),
+  )
+  expect(resolveUnpackedDesktopExecutable(releaseRoot, 'linux')).toBe(
+    fileURLToPath(new URL('../release/linux-unpacked/harness-desktop', import.meta.url)),
+  )
 })
 
 it('builds a network-isolated recovery bootstrap without a copied product name', async () => {

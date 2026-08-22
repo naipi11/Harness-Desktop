@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const mainEntry = fileURLToPath(new URL('../../out/main/index.js', import.meta.url))
+const releaseRoot = fileURLToPath(new URL('../../release', import.meta.url))
 const runtimeEntry = fileURLToPath(new URL('./runtime-live-entry.mjs', import.meta.url))
 const runtimeLockHolder = fileURLToPath(new URL('./runtime-lock-holder.mjs', import.meta.url))
 const tsxLoader = import.meta.resolve('tsx')
@@ -33,6 +34,35 @@ const persistenceModule = fileURLToPath(new URL(
 ))
 const llmModule = fileURLToPath(new URL('../../../../packages/llm/llm/lib/index.js', import.meta.url))
 const processTimeoutMs = 45_000
+
+/**
+ * Resolve Electron Builder's unpacked executable for one native target.
+ * @param releaseRoot Clean Desktop release output root.
+ * @param platform Native target produced by the current runner.
+ * @returns Absolute path to the unpacked Harness Desktop executable.
+ */
+export function resolveUnpackedDesktopExecutable(
+  releaseRoot: string,
+  platform: NodeJS.Platform,
+): string {
+  switch (platform) {
+    case 'win32':
+      return join(releaseRoot, 'win-unpacked', 'harness-desktop.exe')
+    case 'darwin':
+      return join(
+        releaseRoot,
+        'mac-universal',
+        'Harness Desktop.app',
+        'Contents',
+        'MacOS',
+        'harness-desktop',
+      )
+    case 'linux':
+      return join(releaseRoot, 'linux-unpacked', 'harness-desktop')
+    default:
+      throw new Error(`Unsupported Desktop package platform: ${platform}`)
+  }
+}
 
 /** Canonical Runtime process roots and captured diagnostics owned by this fixture. */
 export interface RuntimeProcess {
@@ -94,12 +124,27 @@ export interface DesktopFailureFixture {
 
 /** Start the built canonical Runtime and real built Electron application. */
 export async function launchDesktopRuntimeFixture(): Promise<DesktopRuntimeFixture> {
+  return launchDesktopRuntimeFixtureWith({ args: [mainEntry, '--lang=en-US'] })
+}
+
+/** Start the canonical Runtime and the native unpacked Desktop executable. */
+export async function launchUnpackedDesktopRuntimeFixture(): Promise<DesktopRuntimeFixture> {
+  return launchDesktopRuntimeFixtureWith({
+    executablePath: resolveUnpackedDesktopExecutable(releaseRoot, process.platform),
+    args: ['--lang=en-US'],
+  })
+}
+
+async function launchDesktopRuntimeFixtureWith(
+  launch: { readonly executablePath?: string; readonly args: readonly string[] },
+): Promise<DesktopRuntimeFixture> {
   const runtime = await startCanonicalRuntimeProcess()
   let application: ElectronApplication | undefined
   try {
     const endpoint = await waitForEndpoint(runtime)
     application = await electron.launch({
-      args: [mainEntry, '--lang=en-US'],
+      ...(launch.executablePath === undefined ? {} : { executablePath: launch.executablePath }),
+      args: [...launch.args],
       env: {
         ...process.env,
         HARNESS_HOME: runtime.harnessHome,

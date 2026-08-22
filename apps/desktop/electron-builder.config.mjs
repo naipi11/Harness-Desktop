@@ -8,6 +8,9 @@ export default {
   directories: { output: 'release' },
   files: ['out/**', 'package.json', 'resources/icons/**'],
   asar: true,
+  // The Runtime's target-native N-API payload is selected during pnpm install;
+  // rebuilding it here mutates the shared pnpm store and breaks linked worktrees.
+  npmRebuild: false,
   publish: null,
   win: { target: ['nsis'], icon: 'resources/icons/win/harness-desktop.ico' },
   mac: {

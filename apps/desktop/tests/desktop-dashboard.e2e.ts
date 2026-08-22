@@ -2,7 +2,11 @@
 
 import { expect, test } from '@playwright/test'
 import { createServer, type Server } from 'node:net'
-import { launchDesktopRuntimeFixture, seedDesktopWorkspace } from './support/runtime-fixture.ts'
+import {
+  launchDesktopRuntimeFixture,
+  launchUnpackedDesktopRuntimeFixture,
+  seedDesktopWorkspace,
+} from './support/runtime-fixture.ts'
 
 async function foreignLoopbackServer(): Promise<{
   readonly url: string
@@ -256,6 +260,65 @@ test('preserves Dashboard workbench focus through close to tray and restore', as
       }
       delete state.__HARNESS_CLOSE_TEST_TRACE__
     }).catch(() => {})
+    await fixture.close()
+  }
+})
+
+test('unpacked package boots the same authenticated Dashboard and closes its Runtime attachment', async () => {
+  const fixture = await launchUnpackedDesktopRuntimeFixture()
+  try {
+    const page = fixture.page
+    const workbench = page.getByRole('region', { name: 'Engineering workbench' })
+    await workbench.waitFor({ timeout: 45_000 })
+    await expect(page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
+    await expect.poll(() => fixture.desktopOutput().split(/\r?\n/u).filter(
+      line => line === '{"kind":"desktop-dashboard-ready","version":1}',
+    ).length).toBe(1)
+    await expect(page.getByRole('tab', { name: 'Files' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Diff' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Terminal' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Artifacts' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Tasks' })).toBeVisible()
+    expect(await page.evaluate(() => ({
+      require: typeof Reflect.get(window, 'require'),
+      process: typeof Reflect.get(globalThis, 'process'),
+      Buffer: typeof Reflect.get(globalThis, 'Buffer'),
+      bridge: Object.keys(window.harnessDesktop).sort(),
+    }))).toEqual({
+      require: 'undefined',
+      process: 'undefined',
+      Buffer: 'undefined',
+      bridge: [
+        'copyRecoveryDiagnostic',
+        'openExternalLink',
+        'readRecoveryDiagnostic',
+        'retryDashboard',
+        'selectFolder',
+        'showNotification',
+        'version',
+      ],
+    })
+
+    const handoffs = fixture.requests.filter(request => request.url === `${fixture.origin}/_harness/handoff`)
+    expect(handoffs).toHaveLength(1)
+    expect(handoffs[0]).toMatchObject({ method: 'POST', referrer: undefined })
+    expect(handoffs[0]!.body).toMatch(/^handoff=[A-Za-z0-9_-]{32,}$/)
+    const handoffResponse = fixture.responses.find(response => response.url === `${fixture.origin}/_harness/handoff`)
+    expect(handoffResponse?.status).toBe(303)
+    expect(handoffResponse?.headers).not.toHaveProperty('access-control-allow-origin')
+    const csp = await page.evaluate(async () =>
+      (await fetch(location.href)).headers.get('content-security-policy') ?? '')
+    expect(csp).not.toMatch(/(?:^|\s)ws:(?:\s|;|$)/u)
+    expect(csp).toContain(`ws://127.0.0.1:${new URL(fixture.origin).port}`)
+
+    const pageClosed = page.waitForEvent('close')
+    const applicationClosed = fixture.application.waitForEvent('close')
+    await fixture.application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.close()
+    })
+    await pageClosed
+    await applicationClosed
+  } finally {
     await fixture.close()
   }
 })
