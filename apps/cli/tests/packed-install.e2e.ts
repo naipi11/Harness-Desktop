@@ -9,6 +9,7 @@ import { packCliForRelease } from '../../../scripts/release/build-cli-standalone
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const builtBin = join(cliRoot, 'lib', 'bin.js')
+const npmExecutable = join(dirname(process.execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm')
 const roots: string[] = []
 const nodeLoaderEnvironmentNames = new Set(['NODE_OPTIONS', 'NODE_PATH', 'TSX_TSCONFIG_PATH'])
 
@@ -52,23 +53,43 @@ function packedChildEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.P
 
 it('removes checkout Node loader hooks from installed child processes', async () => {
   const checkoutBin = join(repoRoot, 'node_modules', '.bin')
-  const environment = packedChildEnvironment({
-    ...process.env,
-    NODE_PATH: join(repoRoot, 'node_modules'),
-    NODE_OPTIONS: `--require=${join(repoRoot, 'package.json')}`,
-    TSX_TSCONFIG_PATH: join(repoRoot, 'tsconfig.base.json'),
-    PATH: [checkoutBin, process.env.PATH ?? ''].join(delimiter),
-  })
-  const probe = await execa(process.execPath, [
-    '--input-type=module',
-    '--eval',
-    'process.stdout.write(JSON.stringify({ NODE_PATH: process.env.NODE_PATH, NODE_OPTIONS: process.env.NODE_OPTIONS, TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH, PATH: process.env.PATH }))',
-  ], { env: environment, reject: false })
+  const inherited = {
+    NODE_PATH: process.env.NODE_PATH,
+    NODE_OPTIONS: process.env.NODE_OPTIONS,
+    TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH,
+    TS_NODE_PROJECT: process.env.TS_NODE_PROJECT,
+    PATH: process.env.PATH,
+  }
+  try {
+    process.env.NODE_PATH = join(repoRoot, 'node_modules')
+    process.env.NODE_OPTIONS = '--no-warnings'
+    process.env.TSX_TSCONFIG_PATH = join(repoRoot, 'tsconfig.base.json')
+    process.env.TS_NODE_PROJECT = join(repoRoot, 'tsconfig.base.json')
+    process.env.PATH = [checkoutBin, inherited.PATH ?? ''].join(delimiter)
+    const environment = packedChildEnvironment()
+    const probe = await execa(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      'process.stdout.write(JSON.stringify({ NODE_PATH: process.env.NODE_PATH, NODE_OPTIONS: process.env.NODE_OPTIONS, TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH, TS_NODE_PROJECT: process.env.TS_NODE_PROJECT, PATH: process.env.PATH }))',
+    ], { env: environment, extendEnv: false, reject: false })
 
-  expect(probe.exitCode, probe.stderr).toBe(0)
-  expect(JSON.parse(probe.stdout)).toEqual({ PATH: environment.PATH })
-  expect(environment.PATH?.split(delimiter)).toContain(dirname(process.execPath))
-  expect(environment.PATH?.split(delimiter)).not.toContain(checkoutBin)
+    expect(probe.exitCode, probe.stderr).toBe(0)
+    const childEnvironment = JSON.parse(probe.stdout) as NodeJS.ProcessEnv
+    expect(childEnvironment).toEqual({ PATH: environment.PATH })
+    expect(childEnvironment.PATH?.split(delimiter)).toContain(dirname(process.execPath))
+    expect(childEnvironment.PATH?.split(delimiter)).not.toContain(checkoutBin)
+  } finally {
+    if (inherited.NODE_PATH === undefined) delete process.env.NODE_PATH
+    else process.env.NODE_PATH = inherited.NODE_PATH
+    if (inherited.NODE_OPTIONS === undefined) delete process.env.NODE_OPTIONS
+    else process.env.NODE_OPTIONS = inherited.NODE_OPTIONS
+    if (inherited.TSX_TSCONFIG_PATH === undefined) delete process.env.TSX_TSCONFIG_PATH
+    else process.env.TSX_TSCONFIG_PATH = inherited.TSX_TSCONFIG_PATH
+    if (inherited.TS_NODE_PROJECT === undefined) delete process.env.TS_NODE_PROJECT
+    else process.env.TS_NODE_PROJECT = inherited.TS_NODE_PROJECT
+    if (inherited.PATH === undefined) delete process.env.PATH
+    else process.env.PATH = inherited.PATH
+  }
 })
 
 describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed CLI offline installation', () => {
@@ -78,12 +99,19 @@ describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed
     const prefix = join(root, 'prefix')
     const cache = join(root, 'empty-cache')
     const tarball = process.env.DSH_PACKED_CLI_TARBALL ?? await packCliForRelease(packRoot)
-    const installed = await execa('npm', [
+    await access(npmExecutable)
+    const installEnvironment = {
+      ...packedChildEnvironment(),
+      npm_config_cache: cache,
+      npm_config_update_notifier: 'false',
+    }
+    const installed = await execa(npmExecutable, [
       'install', '--global', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
       '--prefix', prefix, tarball,
     ], {
       cwd: root,
-      env: { ...process.env, npm_config_cache: cache, npm_config_update_notifier: 'false' },
+      env: installEnvironment,
+      extendEnv: false,
       reject: false,
     })
     expect(installed.exitCode, installed.stderr).toBe(0)
@@ -110,16 +138,16 @@ describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed
       '--input-type=module',
       '--eval',
       "await import('./lib/main.js')",
-    ], { cwd: packageRoot, env: childEnv, reject: false })
+    ], { cwd: packageRoot, env: childEnv, extendEnv: false, reject: false })
     expect(imports.exitCode, imports.stderr).toBe(0)
 
     const binRoot = process.platform === 'win32' ? prefix : join(prefix, 'bin')
     const suffix = process.platform === 'win32' ? '.cmd' : ''
     const harness = await execa(join(binRoot, `harness${suffix}`), ['--help'], {
-      cwd: root, env: childEnv, reject: false,
+      cwd: root, env: childEnv, extendEnv: false, reject: false,
     })
     const dsh = await execa(join(binRoot, `dsh${suffix}`), ['--help'], {
-      cwd: root, env: childEnv, reject: false,
+      cwd: root, env: childEnv, extendEnv: false, reject: false,
     })
     expect(harness.exitCode, harness.stderr).toBe(0)
     expect(harness.stdout).toMatch(/^Usage: harness/mu)
@@ -143,6 +171,7 @@ describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed
       const start = await execa(join(binRoot, `harness${suffix}`), ['web', '--background', '--no-open'], {
         cwd: root,
         env: runtimeEnv,
+        extendEnv: false,
         reject: false,
         timeout: 90_000,
       })
@@ -155,14 +184,14 @@ describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed
       expect(runtimePid).not.toBe(process.pid)
 
       const status = await execa(join(binRoot, `dsh${suffix}`), ['web', '--status'], {
-        cwd: root, env: runtimeEnv, reject: false, timeout: 30_000,
+        cwd: root, env: runtimeEnv, extendEnv: false, reject: false, timeout: 30_000,
       })
       expect(status.exitCode, status.stderr).toBe(0)
       expect(status.stdout).toContain('Runtime: running')
       expect(status.stdout).toContain('Web lease: web present')
 
       const stopped = await execa(join(binRoot, `harness${suffix}`), ['web', '--stop'], {
-        cwd: root, env: runtimeEnv, reject: false, timeout: 30_000,
+        cwd: root, env: runtimeEnv, extendEnv: false, reject: false, timeout: 30_000,
       })
       expect(stopped.exitCode, stopped.stderr).toBe(0)
       expect(stopped.stdout).toBe('Web lease: web absent')

@@ -1,4 +1,8 @@
+import { access, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { wrapPreparedArtifact } from './support/installed-artifact-fixture.ts'
 import {
   cleanupPreparationRoots,
   isAppImageFuseUnavailable,
@@ -60,6 +64,39 @@ describe('runInstalledArtifactLifecycle', () => {
 
     await expect(runInstalledArtifactLifecycle(subject, async () => {})).rejects.toThrow('remove failed')
     expect(cleanup).toHaveBeenCalledOnce()
+  })
+
+  it('cleans the launched Runtime root when verification fails before the sentinel write', async () => {
+    const runtimeRoot = await mkdtemp(join(tmpdir(), 'harness-installed-runtime-unit-'))
+    const harnessHome = join(runtimeRoot, 'home')
+    const preparationRoot = await mkdtemp(join(tmpdir(), 'harness-installed-preparation-unit-'))
+    await mkdir(harnessHome)
+    try {
+      const subject = wrapPreparedArtifact({
+        name: 'fixture wrapper',
+        executable: 'unused',
+        cwd: preparationRoot,
+        asar: 'unused',
+        iconMember: 'unused',
+        generatedIcon: 'unused',
+        async launch() {
+          return {
+            runtime: { harnessHome },
+            close: vi.fn(async () => {}),
+          } as never
+        },
+        remove: vi.fn(async () => {}),
+      })
+
+      await expect(runInstalledArtifactLifecycle(subject, async () => {
+        throw new Error('verification failed before sentinel')
+      })).rejects.toThrow('verification failed before sentinel')
+      expect(() => subject.sentinelPath).toThrow('sentinel was not written')
+      await expect(access(runtimeRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await rm(runtimeRoot, { recursive: true, force: true })
+      await rm(preparationRoot, { recursive: true, force: true })
+    }
   })
 })
 

@@ -79,21 +79,30 @@ async function prepareNativeArtifacts(input: InstalledArtifactInput): Promise<re
   }
 }
 
-function wrapPreparedArtifact(subject: PreparedArtifact): InstalledDesktopArtifact {
+/**
+ * Add installed-smoke lifecycle ownership to one prepared native artifact.
+ * @param subject - prepared native artifact paths and operations.
+ * @returns artifact lifecycle with Runtime-root and preparation-root cleanup.
+ */
+export function wrapPreparedArtifact(subject: PreparedArtifact): InstalledDesktopArtifact {
   let runtimeRoot: string | undefined
   let sentinelPath = ''
+  const launch = subject.launch ?? (async () => launchDesktopExecutableRuntimeFixture({
+    executablePath: subject.executable,
+    cwd: subject.cwd,
+  }))
   return {
     name: subject.name,
     get sentinelPath() {
       if (sentinelPath === '') throw new Error(`installed desktop artifact: ${subject.name} sentinel was not written`)
       return sentinelPath
     },
-    launch: subject.launch ?? (async () => launchDesktopExecutableRuntimeFixture({
-      executablePath: subject.executable,
-      cwd: subject.cwd,
-    })),
+    async launch() {
+      const fixture = await launch()
+      runtimeRoot = dirname(fixture.runtime.harnessHome)
+      return fixture
+    },
     async writeSentinel(harnessHome) {
-      runtimeRoot = dirname(harnessHome)
       sentinelPath = join(harnessHome, sentinelName)
       await writeFile(sentinelPath, 'preserve installed smoke home\n')
     },
