@@ -125,6 +125,8 @@ export interface CrossClientStateClient {
 export interface CrossClientDashboardApiHandle {
   readonly api: CrossClientStateClient
   readonly dashboard: DashboardAttachment
+  /** @param text - candidate public output. @returns whether it contains an exact privately retained value. */
+  readonly containsPrivateValue: (text: string) => boolean
 }
 
 /** Injectable Dashboard handoff and authenticated API carrier owner. */
@@ -410,6 +412,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   private process: CrossClientRuntimeProcessHandle | undefined
   private runtime: CrossClientRuntimeClient | undefined
   private readonly runtimeClients = new Set<CrossClientRuntimeClient>()
+  private readonly closedOwners = new Set<object>()
   private apiHandle: CrossClientDashboardApiHandle | undefined
   private lastWorkspaceId: WorkspaceId | undefined
   private runtimeStopped = false
@@ -602,7 +605,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   stopRuntime(): Promise<void> {
     if (this.stopPromise !== undefined) return this.stopPromise
     if (this.state === 'ready') this.state = 'stopping'
-    this.stopPromise = this.closeClientsAndStopRuntime()
+    this.stopPromise = this.stopRuntimeFlight()
     return this.stopPromise
   }
 
@@ -617,7 +620,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   dispose(): Promise<void> {
     if (this.disposePromise !== undefined) return this.disposePromise
     this.state = 'disposing'
-    this.disposePromise = this.disposeOnce()
+    this.disposePromise = this.disposeFlight()
     return this.disposePromise
   }
 
@@ -671,6 +674,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     const output = `${result.stdout}\n${result.stderr}`
     const folded = output.toLowerCase()
     if ([this.home, this.platformHome, TEST_API_KEY].some(value => folded.includes(value.toLowerCase()))) return true
+    if (this.apiHandle?.containsPrivateValue(output) === true) return true
     return /\b(?:accesstoken|bearer|authorization|auth|cookie|handoff)\b/iu.test(output)
   }
 
@@ -718,31 +722,62 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   }
 
   private closeOwnedClients(): Promise<readonly Error[]> {
-    return (this.closeOwnedPromise ??= this.closeOwnedClientsOnce())
+    return (this.closeOwnedPromise ??= this.closeOwnedClientsFlight())
+  }
+
+  private async closeOwnedClientsFlight(): Promise<readonly Error[]> {
+    const errors = await this.closeOwnedClientsOnce()
+    if (errors.length > 0) this.closeOwnedPromise = undefined
+    return errors
   }
 
   private async closeOwnedClientsOnce(): Promise<readonly Error[]> {
     const errors: Error[] = []
     for (const handle of this.appHandles.toReversed()) {
-      await settleCleanup(errors, 'app-handle', () => handle.close())
+      await this.closeOwner(errors, 'app-handle', handle, () => handle.close())
     }
     for (const terminal of this.terminals.toReversed()) {
-      await settleCleanup(errors, 'terminal', () => terminal.close())
+      await this.closeOwner(errors, 'terminal', terminal, () => terminal.close())
     }
     const apiHandle = this.apiHandle
     if (apiHandle !== undefined) {
-      await settleCleanup(errors, 'dashboard', () => apiHandle.dashboard.close())
-      await settleCleanup(errors, 'api-client', () => apiHandle.api.close())
+      await this.closeOwner(errors, 'dashboard', apiHandle.dashboard, () => apiHandle.dashboard.close())
+      await this.closeOwner(errors, 'api-client', apiHandle.api, () => apiHandle.api.close())
     }
     for (const runtime of this.runtimeClients) {
-      await settleCleanup(errors, 'runtime-client', () => runtime.close())
+      await this.closeOwner(errors, 'runtime-client', runtime, () => runtime.close())
     }
     return errors
+  }
+
+  private async closeOwner(
+    errors: Error[],
+    stage: string,
+    owner: object,
+    close: () => Promise<void>,
+  ): Promise<void> {
+    if (this.closedOwners.has(owner)) return
+    try {
+      await close()
+      this.closedOwners.add(owner)
+    } catch (_privateFailure) {
+      errors.push(new Error(`cross-client cleanup failed at ${stage}`))
+    }
+  }
+
+  private async stopRuntimeFlight(): Promise<void> {
+    try {
+      await this.closeClientsAndStopRuntime()
+    } catch (error) {
+      this.stopPromise = undefined
+      throw error
+    }
   }
 
   private async closeClientsAndStopRuntime(): Promise<void> {
     await this.waitForAdmittedOperations()
     const errors = [...await this.closeOwnedClients()]
+    if (errors.length > 0) throw new AggregateError(errors, 'Cross-client fixture Runtime stop failed.')
     try {
       await this.stopRuntimeProcessOnce()
     } catch (_processStopFailure) {
@@ -774,22 +809,33 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     if (!forced && (result.exitCode !== 0 || result.signal !== null)) throw new FixtureTransportError()
   }
 
+  private async disposeFlight(): Promise<void> {
+    try {
+      await this.disposeOnce()
+    } catch (error) {
+      this.disposePromise = undefined
+      throw error
+    }
+  }
+
   private async disposeOnce(): Promise<void> {
     const errors: Error[] = []
     try {
       await this.stopRuntime()
     } catch (stopFailure) {
+      if (!this.runtimeStopped) throw stopFailure
       for (const error of (stopFailure as AggregateError).errors as Error[]) {
         errors.push(new Error(error.message))
       }
     }
     const mock = this.mock
     if (mock !== undefined) await settleCleanup(errors, 'mock-server', () => mock.close())
+    /* v8 ignore else -- successful stop with an owned process records runtimeStopped; stop failure returns above */
     if (this.process === undefined || this.runtimeStopped) {
       await settleCleanup(errors, 'temporary-root', () => this.dependencies.fileSystem.remove(this.root))
     }
-    this.state = 'disposed'
     if (errors.length > 0) throw new AggregateError(errors, 'Cross-client fixture cleanup failed.')
+    this.state = 'disposed'
   }
 }
 

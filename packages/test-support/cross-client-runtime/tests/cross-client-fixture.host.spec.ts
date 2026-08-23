@@ -205,6 +205,11 @@ async function dependencies(
   const api: CrossClientDashboardApiHandle = {
     api: state,
     dashboard,
+    containsPrivateValue: text => [
+      'handoff-private-sentinel',
+      'harness_session=cookie-private-sentinel',
+      'cookie-private-sentinel',
+    ].some(value => text.includes(value)),
   }
   const result: CrossClientFixtureDependencies = {
     fileSystem: {
@@ -418,6 +423,9 @@ describe('cross-client Runtime fixture', () => {
       'auth=private',
       'cookie=private',
       'handoff=private',
+      'handoff-private-sentinel',
+      'harness_session=cookie-private-sentinel',
+      'cookie-private-sentinel',
     ]) {
       cliOutput = leak
       const error = await fixture.runCli(['run', 'task']).catch((failure: unknown) => failure)
@@ -538,16 +546,10 @@ describe('cross-client Runtime fixture', () => {
     )
   })
 
-  it('stops new operations during cleanup and aggregates independent resource failures once', async () => {
+  it('retains Runtime, mock, and root while any active owner remains unclosed', async () => {
     const parent = await temporaryParent()
-    let releaseExit: (() => void) | undefined
-    const exit = new Promise<void>((resolve) => { releaseExit = resolve })
     const setup = await dependencies(parent, {
-      closeFailures: new Set(['runtime-client', 'dashboard', 'api', 'mock', 'app', 'terminal']),
-      waitForExit: async () => {
-        await exit
-        return { exitCode: 0, signal: null }
-      },
+      closeFailures: new Set(['runtime-client', 'dashboard', 'api', 'app', 'terminal']),
     })
     const fixture = await createCrossClientFixture({
       temporaryParent: parent,
@@ -572,20 +574,20 @@ describe('cross-client Runtime fixture', () => {
 
     const disposing = fixture.dispose()
     await expect(fixture.createWorkspace()).rejects.toBeInstanceOf(CrossClientFixtureClosedError)
-    releaseExit?.()
     const first = await disposing.catch((error: unknown) => error)
-    const second = await fixture.dispose().catch((error: unknown) => error)
+    const retry = fixture.dispose()
+    expect(retry).not.toBe(disposing)
+    const second = await retry.catch((error: unknown) => error)
 
     expect(first).toBeInstanceOf(AggregateError)
-    expect(second).toBe(first)
-    expect((first as AggregateError).errors).toHaveLength(6)
+    expect(second).toBeInstanceOf(AggregateError)
+    expect((first as AggregateError).errors).toHaveLength(5)
     expect((first as AggregateError).errors.map(error => (error as Error).message)).toEqual([
       'cross-client cleanup failed at app-handle',
       'cross-client cleanup failed at terminal',
       'cross-client cleanup failed at dashboard',
       'cross-client cleanup failed at api-client',
       'cross-client cleanup failed at runtime-client',
-      'cross-client cleanup failed at mock-server',
     ])
     const publicDiagnostic = [
       String(first),
@@ -602,16 +604,74 @@ describe('cross-client Runtime fixture', () => {
       'terminal secret failure',
     ]) expect(publicDiagnostic).not.toContain(secret)
     expect(setup.signals).toMatchObject({
-      runtimeInputEnded: 1,
-      runtimeWaited: 1,
-      runtimeClientClosed: 1,
+      runtimeInputEnded: 0,
+      runtimeWaited: 0,
+      runtimeClientClosed: 2,
+      dashboardClosed: 2,
+      apiClosed: 2,
+      mockClosed: 0,
+      appClosed: 2,
+      terminalClosed: 2,
+    })
+    expect(setup.signals.removedRoots).toEqual([])
+    expect(fixture.lifecycleSnapshot().state).toBe('disposing')
+    expect(fixture.lifecycleSnapshot().events).not.toContainEqual({ kind: 'stopped' })
+  })
+
+  it('retries transient app and terminal closes before stopping and removing exactly once', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent)
+    let terminalAttempts = 0
+    setup.terminal.close = async () => {
+      terminalAttempts += 1
+      setup.signals.terminalClosed += 1
+      if (terminalAttempts === 1) throw new Error('transient terminal close')
+    }
+    let appAttempts = 0
+    const fixture = await createCrossClientFixture({
+      temporaryParent: parent,
+      dependencies: setup.dependencies,
+      adapters: {
+        web: {
+          open: async () => ({
+            close: async () => {
+              appAttempts += 1
+              setup.signals.appClosed += 1
+              if (appAttempts === 1) throw new Error('transient app close')
+            },
+          }),
+        },
+      },
+    })
+    await fixture.openWeb()
+    await fixture.openTerminal()
+
+    const firstFlight = fixture.dispose()
+    const first = await firstFlight.catch((error: unknown) => error)
+    expect(first).toBeInstanceOf(AggregateError)
+    expect((first as AggregateError).errors).toHaveLength(2)
+    expect(setup.signals.runtimeInputEnded).toBe(0)
+    expect(setup.signals.mockClosed).toBe(0)
+    expect(setup.signals.removedRoots).toEqual([])
+
+    const secondFlight = fixture.dispose()
+    const concurrentFlight = fixture.dispose()
+    expect(secondFlight).not.toBe(firstFlight)
+    expect(concurrentFlight).toBe(secondFlight)
+    await secondFlight
+
+    expect(terminalAttempts).toBe(2)
+    expect(appAttempts).toBe(2)
+    expect(setup.signals).toMatchObject({
       dashboardClosed: 1,
       apiClosed: 1,
+      runtimeClientClosed: 1,
+      runtimeInputEnded: 1,
+      runtimeWaited: 1,
       mockClosed: 1,
-      appClosed: 1,
-      terminalClosed: 1,
     })
     expect(setup.signals.removedRoots).toHaveLength(1)
+    expect(fixture.lifecycleSnapshot().events.filter(event => event.kind === 'stopped')).toHaveLength(1)
   })
 
   it('force-stops after the bounded stdin-EOF wait and records one stop before removal', async () => {
@@ -643,6 +703,21 @@ describe('cross-client Runtime fixture', () => {
       { kind: 'health-confirmed' },
       { kind: 'stopped' },
     ])
+    expect(setup.signals.removedRoots).toHaveLength(1)
+  })
+
+  it('reports mock cleanup failure only after owners and Runtime are quiescent', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent, { closeFailures: new Set(['mock']) })
+    const fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+
+    await expect(fixture.dispose()).rejects.toBeInstanceOf(AggregateError)
+
+    expect(setup.signals).toMatchObject({
+      runtimeInputEnded: 1,
+      runtimeWaited: 1,
+      mockClosed: 1,
+    })
     expect(setup.signals.removedRoots).toHaveLength(1)
   })
 
@@ -704,17 +779,16 @@ describe('cross-client Runtime fixture', () => {
     }).catch((error: unknown) => error)
 
     expect(failure).toBeInstanceOf(AggregateError)
-    expect((failure as AggregateError).errors).toHaveLength(3)
+    expect((failure as AggregateError).errors).toHaveLength(2)
     expect((failure as AggregateError).errors[0]).toBeInstanceOf(CrossClientFixtureSetupError)
     expect(String((failure as AggregateError).errors[1])).toBe('Error: cross-client cleanup failed at runtime-client')
-    expect(String((failure as AggregateError).errors[2])).toBe('Error: cross-client cleanup failed at mock-server')
     expect(setup.signals).toMatchObject({
-      runtimeInputEnded: 1,
-      runtimeWaited: 1,
+      runtimeInputEnded: 0,
+      runtimeWaited: 0,
       runtimeClientClosed: 2,
-      mockClosed: 1,
+      mockClosed: 0,
     })
-    expect(setup.signals.removedRoots).toHaveLength(1)
+    expect(setup.signals.removedRoots).toEqual([])
     const publicDiagnostic = [
       String(failure),
       ...(failure as AggregateError).errors.map(error => String(error)),

@@ -85,6 +85,10 @@ describe('cross-client Dashboard carrier', () => {
     }
     const handle = await createCrossClientDashboardApiAdapter(fetcher).connect(runtime())
 
+    expect(handle.containsPrivateValue(handoff)).toBe(true)
+    expect(handle.containsPrivateValue(cookie)).toBe(true)
+    expect(handle.containsPrivateValue('cookie-private-sentinel')).toBe(true)
+    expect(handle.containsPrivateValue('public')).toBe(false)
     const workspaces = await handle.api.readWorkspaces()
     const workspace = await handle.api.createWorkspace('C:\\fixture')
     const sessionId = await handle.api.createSession(workspace.workspaceId)
@@ -101,6 +105,8 @@ describe('cross-client Dashboard carrier', () => {
     expect(new Headers(requests[1]?.init?.headers).get('cookie')).toBe(cookie)
     expect(new Headers(requests[1]?.init?.headers).get('origin')).toBe(origin)
     await handle.api.close()
+    expect(handle.containsPrivateValue(handoff)).toBe(false)
+    expect(handle.containsPrivateValue(cookie)).toBe(false)
     await handle.dashboard.close()
   })
 

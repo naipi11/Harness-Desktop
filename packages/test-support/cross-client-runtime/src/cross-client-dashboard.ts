@@ -99,7 +99,10 @@ function unwrap<T>(response: RpcResponse<T>): T {
 }
 
 class DashboardStateClient implements CrossClientStateClient {
-  constructor(private readonly client: IApiClient & { close(): void }) {}
+  constructor(
+    private readonly client: IApiClient & { close(): void },
+    private readonly clearPrivateValues: () => void,
+  ) {}
 
   async createWorkspace(path: string): Promise<WorkspaceView> {
     return unwrap(await this.client.workspace.create({ path })).workspace
@@ -130,7 +133,11 @@ class DashboardStateClient implements CrossClientStateClient {
   }
 
   close(): Promise<void> {
-    this.client.close()
+    try {
+      this.client.close()
+    } finally {
+      this.clearPrivateValues()
+    }
     return Promise.resolve()
   }
 }
@@ -146,18 +153,29 @@ export function createCrossClientDashboardApiAdapter(
   return {
     async connect(runtime) {
       const dashboard = await runtime.attachDashboard()
+      const privateValues = new Set<string>()
       try {
         const navigation = await dashboard.createBrowserHandoff()
         const origin = exactLoopbackOrigin(navigation.origin)
+        privateValues.add(navigation.handoff.id)
         const exchanged = await fetcher(`${origin}/_harness/handoff`, {
           method: 'POST',
           redirect: 'manual',
           headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
           body: new URLSearchParams({ handoff: navigation.handoff.id }),
         })
-        const client = new DashboardCookieApiClient(origin, cookiePair(exchanged), fetcher)
-        return { api: new DashboardStateClient(client), dashboard }
+        const cookie = cookiePair(exchanged)
+        privateValues.add(cookie)
+        privateValues.add(cookie.slice(cookie.indexOf('=') + 1))
+        const client = new DashboardCookieApiClient(origin, cookie, fetcher)
+        const clearPrivateValues = (): void => { privateValues.clear() }
+        return {
+          api: new DashboardStateClient(client, clearPrivateValues),
+          dashboard,
+          containsPrivateValue: text => [...privateValues].some(value => text.includes(value)),
+        }
       } catch (_privateFailure) {
+        privateValues.clear()
         await dashboard.close().catch(() => {})
         throw new CrossClientDashboardCarrierError()
       }
