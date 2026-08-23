@@ -102,6 +102,8 @@ jobs:
         run: pnpm run release:verify-desktop-artifacts
 
       - name: Verify packed CLI from an empty offline prefix
+        env:
+          DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
         run: pnpm run release:verify-packed-cli
 
       - name: Build standalone CLI archives

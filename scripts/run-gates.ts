@@ -426,7 +426,10 @@ function releaseSmokeGates(): Gate[] {
       needs: ['build'],
     },
     pnpmScript('desktop-artifacts', 'release:verify-desktop-artifacts', { needs: ['desktop-package'] }),
-    pnpmScript('packed-cli', 'release:verify-packed-cli', { needs: ['desktop-artifacts'] }),
+    pnpmScript('packed-cli', 'release:verify-packed-cli', {
+      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
+      needs: ['desktop-artifacts'],
+    }),
     pnpmScript('standalone-build', 'release:build-cli-standalone', { needs: ['packed-cli'] }),
     pnpmScript('standalone-verify', 'release:verify-cli-standalone', { needs: ['standalone-build'] }),
     pnpmScript('installed-desktop', 'release:smoke-installed-desktop', { needs: ['standalone-verify'] }),

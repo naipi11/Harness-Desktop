@@ -154,6 +154,16 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   if (!workflowStepUsesShell(files.desktopArtifactsWorkflow, 'Configure pnpm store path', 'bash')) {
     violations.push('desktopArtifactsWorkflow: Configure pnpm store path must use shell bash')
   }
+  if (!workflowStepHasEnvironment(
+    files.desktopArtifactsWorkflow,
+    'Verify packed CLI from an empty offline prefix',
+    'DSH_REQUIRE_BUILT_CLI_SMOKE',
+    '1',
+  )) {
+    violations.push(
+      'desktopArtifactsWorkflow: Verify packed CLI from an empty offline prefix must set DSH_REQUIRE_BUILT_CLI_SMOKE=1',
+    )
+  }
   for (const marker of desktopArtifactsForbiddenMarkers) {
     if (files.desktopArtifactsWorkflow.includes(marker)) {
       violations.push(`desktopArtifactsWorkflow: forbidden publish marker ${marker}`)
@@ -189,6 +199,25 @@ function workflowStepUsesShell(workflowText: string, name: string, shell: string
     if (!isRecord(packageJob) || !Array.isArray(packageJob.steps)) return false
     return packageJob.steps.some(step => (
       isRecord(step) && step.name === name && step.shell === shell
+    ))
+  } catch {
+    return false
+  }
+}
+
+function workflowStepHasEnvironment(
+  workflowText: string,
+  name: string,
+  key: string,
+  value: string,
+): boolean {
+  try {
+    const workflow: unknown = load(workflowText)
+    if (!isRecord(workflow) || !isRecord(workflow.jobs)) return false
+    const packageJob = workflow.jobs.package
+    if (!isRecord(packageJob) || !Array.isArray(packageJob.steps)) return false
+    return packageJob.steps.some(step => (
+      isRecord(step) && step.name === name && isRecord(step.env) && step.env[key] === value
     ))
   } catch {
     return false

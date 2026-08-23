@@ -53,6 +53,10 @@ jobs:
         shell: bash
         run: pnpm store path
       - run: pnpm --filter desktop run package --publish never
+      - name: Verify packed CLI from an empty offline prefix
+        env:
+          DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
+        run: pnpm run release:verify-packed-cli
 `,
     releaseWorkflow: 'name: Release dsh (legacy pack audit)',
   }
@@ -108,6 +112,7 @@ describe('desktop release config gate', () => {
       'desktopArtifactsWorkflow: missing runner macos-15',
       'desktopArtifactsWorkflow: missing runner ubuntu-24.04',
       'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
+      'desktopArtifactsWorkflow: Verify packed CLI from an empty offline prefix must set DSH_REQUIRE_BUILT_CLI_SMOKE=1',
       'desktopArtifactsWorkflow: forbidden publish marker NODE_AUTH_TOKEN',
       'desktopArtifactsWorkflow: forbidden publish marker release:publish',
       'desktopArtifactsWorkflow: forbidden publish marker gh release',
@@ -152,6 +157,21 @@ describe('desktop release config gate', () => {
 
     expect(violations).toContain(
       'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
+    )
+  })
+
+  it('rejects formal packed CLI verification without the required-build signal', () => {
+    const files = conformingFiles()
+    const violations = collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace(
+        "        env:\n          DSH_REQUIRE_BUILT_CLI_SMOKE: '1'\n",
+        '',
+      ),
+    })
+
+    expect(violations).toContain(
+      'desktopArtifactsWorkflow: Verify packed CLI from an empty offline prefix must set DSH_REQUIRE_BUILT_CLI_SMOKE=1',
     )
   })
 

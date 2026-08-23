@@ -97,6 +97,9 @@ describe('gate graph validation', () => {
       needs: ['build'],
     })
     expect(subject.find(item => item.id === 'build')?.needs).toEqual(['verify-icons'])
+    expect(subject.find(item => item.id === 'packed-cli')?.env).toEqual({
+      DSH_REQUIRE_BUILT_CLI_SMOKE: '1',
+    })
     expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['standalone-verify'])
   })
 

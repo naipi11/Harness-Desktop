@@ -7,6 +7,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { afterEach, describe, expect, it } from 'vitest'
 import { packCliForRelease } from '../../../scripts/release/build-cli-standalone.ts'
+import {
+  collectTerminalReadinessFailure,
+  requirePackedCliBuild,
+  settlePackedCliChild,
+} from './support/packed-install-fixture.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -14,6 +19,10 @@ const builtBin = join(cliRoot, 'lib', 'bin.js')
 const npmExecutable = join(dirname(process.execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm')
 const roots: string[] = []
 const nodeLoaderEnvironmentNames = new Set(['NODE_OPTIONS', 'NODE_PATH', 'TSX_TSCONFIG_PATH'])
+const builtCliAvailable = requirePackedCliBuild({
+  available: await access(builtBin).then(() => true, () => false),
+  required: process.env.DSH_REQUIRE_BUILT_CLI_SMOKE === '1',
+})
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
 const runtimeUnavailableDiagnostic = new RegExp(
   '^The local Harness Runtime is not running\\.\\n'
@@ -131,26 +140,6 @@ async function waitForChildLine(
 function writeChildLine(child: RunningChild, line: string): void {
   if (child.stdin === null) throw new Error('packed CLI fixture child has no stdin')
   child.stdin.write(`${line}\n`)
-}
-
-async function settleChild(
-  child: RunningChild,
-  closeInput: () => void,
-  timeoutMs = 30_000,
-): Promise<{ readonly result: Awaited<RunningChild>; readonly forced: boolean }> {
-  closeInput()
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  const outcome = await Promise.race([
-    child.then(result => ({ kind: 'exit' as const, result })),
-    new Promise<{ readonly kind: 'timeout' }>((resolve) => {
-      timeout = setTimeout(() => { resolve({ kind: 'timeout' }) }, timeoutMs)
-      timeout.unref()
-    }),
-  ])
-  if (timeout !== undefined) clearTimeout(timeout)
-  if (outcome.kind === 'exit') return { result: outcome.result, forced: false }
-  child.kill('SIGKILL')
-  return { result: await child, forced: true }
 }
 
 function installedRunCliLoader(installedBin: string): string {
@@ -273,6 +262,8 @@ async function exerciseInstalledRuntime(input: {
       stderr: 'pipe',
     })
     terminalClient = terminalChild
+    let terminalStderr = ''
+    terminalChild.stderr?.setEncoding('utf8').on('data', (chunk: string) => { terminalStderr += chunk })
     if (terminalChild.stdout === null) throw new Error('packed CLI terminal helper has no stdout')
     terminalLines = createInterface({ input: terminalChild.stdout, crlfDelay: Infinity })
     const lines = terminalLines[Symbol.asyncIterator]()
@@ -280,12 +271,15 @@ async function exerciseInstalledRuntime(input: {
     try {
       terminalReady = await waitForChildLine(lines, 'terminal attachment')
     } catch (error) {
-      const outcome = await terminalChild
-      terminalSettled = true
-      throw new AggregateError([
-        error,
-        new Error(`installed terminal helper exited ${String(outcome.exitCode)}: ${outcome.stderr}`),
-      ], 'installed terminal helper failed before attachment')
+      const readiness = await collectTerminalReadinessFailure({
+        cause: error,
+        child: terminalChild,
+        lines: terminalLines,
+        closeInput: () => terminalChild.stdin?.end(),
+        observedStderr: () => terminalStderr,
+      })
+      terminalSettled = readiness.settled
+      throw readiness.error
     }
     expect(terminalReady).toEqual({ kind: 'terminal-ready', event: 'session-opened' })
 
@@ -328,14 +322,14 @@ async function exerciseInstalledRuntime(input: {
     writeChildLine(terminalChild, 'close')
     await expect(waitForChildLine(lines, 'terminal close')).resolves.toEqual({ kind: 'terminal-closed' })
     terminalLines.close()
-    const terminalOutcome = await settleChild(terminalChild, () => terminalChild.stdin?.end())
+    const terminalOutcome = await settlePackedCliChild(terminalChild, () => terminalChild.stdin?.end())
     terminalSettled = true
     expect(terminalOutcome.forced).toBe(false)
     expect(terminalOutcome.result.exitCode, terminalOutcome.result.stderr).toBe(0)
     expect(terminalOutcome.result.stderr).toBe('')
     expect(terminalOutcome.result.stdout).not.toContain(repoRoot)
 
-    const runtimeOutcome = await settleChild(runtimeChild, () => runtimeChild.stdin?.end())
+    const runtimeOutcome = await settlePackedCliChild(runtimeChild, () => runtimeChild.stdin?.end())
     runtimeSettled = true
     expect(runtimeOutcome.forced).toBe(false)
     expect(runtimeOutcome.result.exitCode, runtimeOutcome.result.stderr).toBe(0)
@@ -349,14 +343,20 @@ async function exerciseInstalledRuntime(input: {
     const cleanupErrors: unknown[] = []
     if (terminalClient !== undefined && !terminalSettled) {
       try {
-        await settleChild(terminalClient, () => terminalClient?.stdin?.end(), 10_000)
+        await settlePackedCliChild(terminalClient, () => terminalClient?.stdin?.end(), {
+          timeoutMs: 10_000,
+          postKillTimeoutMs: 10_000,
+        })
       } catch (error) {
         cleanupErrors.push(error)
       }
     }
     if (runtime !== undefined && !runtimeSettled) {
       try {
-        await settleChild(runtime, () => runtime?.stdin?.end(), 10_000)
+        await settlePackedCliChild(runtime, () => runtime?.stdin?.end(), {
+          timeoutMs: 10_000,
+          postKillTimeoutMs: 10_000,
+        })
       } catch (error) {
         cleanupErrors.push(error)
       }
@@ -414,7 +414,7 @@ it('removes checkout Node loader hooks from installed child processes', async ()
   }
 })
 
-describe.skipIf(!(await access(builtBin).then(() => true, () => false)))('packed CLI offline installation', () => {
+describe.skipIf(!builtCliAvailable)('packed CLI offline installation', () => {
   it('installs into an empty prefix and consumes the installed public client entries', async () => {
     const root = await temporaryRoot('harness-packed-cli-')
     const packRoot = join(root, 'pack')
