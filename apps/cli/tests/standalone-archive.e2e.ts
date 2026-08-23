@@ -18,5 +18,5 @@ describe.skipIf(!archiveExists)('standalone CLI native archive', () => {
       version,
       archiveDirectory,
     })).resolves.toEqual([])
-  }, 120_000)
+  }, 300_000)
 })

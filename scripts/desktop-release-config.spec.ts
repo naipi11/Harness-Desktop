@@ -125,5 +125,7 @@ describe('desktop release config gate', () => {
   it('accepts the repository-owned builder, manifest, and workflows', async () => {
     const files = await readDesktopReleaseFiles()
     expect(collectDesktopReleaseViolations(files)).toEqual([])
+    expect(files.desktopArtifactsWorkflow).toContain('dist/cli-standalone')
+    expect(files.desktopArtifactsWorkflow).not.toContain('apps/desktop/test-results')
   })
 })

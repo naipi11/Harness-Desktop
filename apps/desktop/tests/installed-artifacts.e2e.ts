@@ -1,9 +1,11 @@
 /** Native installed-or-mounted Desktop acceptance on the matching runner. */
 
 import { expect, test } from '@playwright/test'
-import { access } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { prepareInstalledDesktopArtifacts } from './support/installed-artifact-fixture.ts'
+import {
+  prepareInstalledDesktopArtifacts,
+  runInstalledArtifactLifecycle,
+} from './support/installed-artifact-fixture.ts'
 
 const releaseDirectory = fileURLToPath(new URL('../release', import.meta.url))
 test.setTimeout(180_000)
@@ -15,8 +17,7 @@ test('launches native installed artifacts after authenticated Dashboard boot and
   })
   expect(artifacts.length).toBeGreaterThan(0)
   for (const artifact of artifacts) {
-    const fixture = await artifact.launch()
-    try {
+    await runInstalledArtifactLifecycle(artifact, async (fixture) => {
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
       await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
       await expect.poll(() => fixture.desktopOutput().split(/\r?\n/u).filter(
@@ -24,14 +25,6 @@ test('launches native installed artifacts after authenticated Dashboard boot and
       ).length).toBe(1)
       await artifact.writeSentinel(fixture.runtime.harnessHome)
       await artifact.verifyGeneratedIcon()
-    } finally {
-      await fixture.close({ preserveRuntimeRoot: true })
-    }
-    try {
-      await artifact.remove()
-      await expect(access(artifact.sentinelPath)).resolves.toBeUndefined()
-    } finally {
-      await artifact.cleanup()
-    }
+    })
   }
 })

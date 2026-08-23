@@ -84,7 +84,20 @@ describe('verifyDesktopArtifactsWithTools', () => {
       inspectAppImage: async () => [],
     }))).resolves.toEqual([
       'desktop artifact: missing Linux Deb installer',
-      'desktop artifact: missing generated Linux icon',
+      'desktop artifact: missing generated Linux AppImage icon',
+    ])
+  })
+
+  it('requires the generated icon independently in both Linux package formats', async () => {
+    const root = await releaseRoot()
+    await file(join(root, 'Harness Desktop-1.0.0.AppImage'))
+    await file(join(root, 'harness-desktop_1.0.0_amd64.deb'))
+
+    await expect(verifyDesktopArtifactsWithTools({ platform: 'linux', releaseDirectory: root }, tools({
+      inspectAppImage: async () => ['usr/share/icons/hicolor/512x512/apps/harness-desktop.png'],
+      inspectDeb: async () => [],
+    }))).resolves.toEqual([
+      'desktop artifact: missing generated Linux Deb icon',
     ])
   })
 })

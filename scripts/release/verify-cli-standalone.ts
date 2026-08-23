@@ -1,7 +1,7 @@
 /** Verify standalone CLI archives by extracting and executing their bundled runtime. */
 
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -71,7 +71,11 @@ export async function verifyCliStandalone(
     } catch (error) {
       violations.push(`standalone CLI: ${format} verification failed: ${errorMessage(error)}`)
     } finally {
-      await rm(extraction, { recursive: true, force: true })
+      try {
+        await removeTree(extraction)
+      } catch (error) {
+        violations.push(`standalone CLI: ${format} cleanup failed: ${errorMessage(error)}`)
+      }
     }
   }
   return violations
@@ -92,19 +96,33 @@ async function verifyExtracted(
     violations.push(`standalone CLI: ${format} manifest Node version is ${manifest.node.version}`)
   }
 
-  const actualDigests = await digestTree(extraction, new Set(['manifest.json']))
+  const actualDigests = await digestStandaloneTree(extraction, new Set(['manifest.json']))
   if (JSON.stringify(actualDigests) !== JSON.stringify(manifest.files)) {
     violations.push(`standalone CLI: ${format} digest map does not match extracted files`)
   }
-  const actualNativeModules = Object.keys(actualDigests).filter(path => path.endsWith('.node'))
-  if (JSON.stringify(actualNativeModules) !== JSON.stringify([...manifest.nativeModules].toSorted())) {
-    violations.push(`standalone CLI: ${format} native-module closure does not match extracted files`)
+  const comparePaths = (left: string, right: string): number => left.localeCompare(right, 'en')
+  const actualNativeModules = Object.keys(actualDigests).filter(path => path.endsWith('.node')).toSorted(comparePaths)
+  const expectedNativeModules = [...manifest.nativeModules].toSorted(comparePaths)
+  if (JSON.stringify(actualNativeModules) !== JSON.stringify(expectedNativeModules)) {
+    violations.push(
+      `standalone CLI: ${format} native-module closure does not match extracted files: manifest=${JSON.stringify(expectedNativeModules)} extracted=${JSON.stringify(actualNativeModules)}`,
+    )
+  }
+  for (const path of [
+    'cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/lib/bin.js',
+    'cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/runtime.cordis.yml',
+    'cli/package/node_modules/@harness-desktop/dsh-base/cordis.patch.yml',
+    'cli/package/node_modules/@harness-desktop/dsh-web-app/cordis.patch.yml',
+    'cli/package/node_modules/@harness-desktop/dsh-headless/cordis.patch.yml',
+    'cli/package/node_modules/@harness-desktop/dsh-workflow-worker-thread/lib/worker.cjs',
+  ]) {
+    if (actualDigests[path] === undefined) violations.push(`standalone CLI: ${format} Runtime closure omits ${path}`)
   }
 
   const nodeExecutable = join(extraction, ...manifest.node.executable.split('/'))
   const isolatedCwd = await mkdtemp(join(tmpdir(), 'harness-cli-empty-cwd-'))
   try {
-    const environment = isolatedEnvironment(input.platform, isolatedCwd)
+    const environment = await isolatedEnvironment(input.platform, isolatedCwd)
     const version = await execa(nodeExecutable, ['--version'], { cwd: isolatedCwd, env: environment, reject: false })
     if (version.exitCode !== 0 || version.stdout.trim() !== `v${input.version}`) {
       violations.push(`standalone CLI: ${format} bundled Node did not report v${input.version}`)
@@ -126,8 +144,8 @@ async function verifyExtracted(
     }
 
     const [harness, dsh] = await Promise.all([
-      runLauncher(input.platform, extraction, 'harness', isolatedCwd, environment),
-      runLauncher(input.platform, extraction, 'dsh', isolatedCwd, environment),
+      runLauncher(input.platform, extraction, 'harness', ['--help'], isolatedCwd, environment),
+      runLauncher(input.platform, extraction, 'dsh', ['--help'], isolatedCwd, environment),
     ])
     if (harness.exitCode !== 0 || !/^Usage: harness/mu.test(harness.stdout)) {
       violations.push(`standalone CLI: ${format} harness launcher failed from empty cwd`)
@@ -135,8 +153,44 @@ async function verifyExtracted(
     if (dsh.exitCode !== 0 || !/^Usage: dsh/mu.test(dsh.stdout)) {
       violations.push(`standalone CLI: ${format} dsh launcher failed from empty cwd`)
     }
+    let runtimePid: number | undefined
+    try {
+      const started = await runLauncher(
+        input.platform, extraction, 'harness', ['web', '--background', '--no-open'], isolatedCwd, environment,
+      )
+      if (started.exitCode !== 0 || started.stdout !== 'Web lease: web present') {
+        violations.push(`standalone CLI: ${format} harness failed to start the bundled Runtime: ${started.stderr}`)
+      } else {
+        const harnessHome = environment.HARNESS_HOME
+        if (harnessHome === undefined) throw new Error('standalone CLI: isolated environment omitted HARNESS_HOME')
+        const endpoint = JSON.parse(await readFile(join(harnessHome, 'runtime-endpoint.json'), 'utf8')) as {
+          readonly process: { readonly pid: number }
+        }
+        runtimePid = endpoint.process.pid
+        const status = await runLauncher(input.platform, extraction, 'dsh', ['web', '--status'], isolatedCwd, environment)
+        if (status.exitCode !== 0 || !status.stdout.includes('Runtime: running')
+          || !status.stdout.includes('Web lease: web present')) {
+          violations.push(`standalone CLI: ${format} dsh failed to attach to the bundled Runtime: ${status.stderr}`)
+        }
+        const stopped = await runLauncher(input.platform, extraction, 'harness', ['web', '--stop'], isolatedCwd, environment)
+        if (stopped.exitCode !== 0 || stopped.stdout !== 'Web lease: web absent') {
+          violations.push(`standalone CLI: ${format} harness failed to release the bundled Runtime lease: ${stopped.stderr}`)
+        }
+      }
+    } finally {
+      if (runtimePid !== undefined) {
+        try { process.kill(runtimePid, 'SIGKILL') } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+        }
+        await waitForProcessExit(runtimePid)
+      }
+    }
   } finally {
-    await rm(isolatedCwd, { recursive: true, force: true })
+    try {
+      await removeTree(isolatedCwd)
+    } catch (error) {
+      violations.push(`standalone CLI: ${format} isolated-home cleanup failed: ${errorMessage(error)}`)
+    }
   }
   return violations
 }
@@ -145,25 +199,41 @@ async function runLauncher(
   platform: NodeJS.Platform,
   extraction: string,
   name: 'harness' | 'dsh',
+  args: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
-): Promise<{ readonly exitCode: number | undefined; readonly stdout: string }> {
+): Promise<{ readonly exitCode: number | undefined; readonly stdout: string; readonly stderr: string }> {
   if (platform === 'win32') {
     const command = process.env.ComSpec ?? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe')
-    const result = await execa(command, ['/d', '/s', '/c', join(extraction, `${name}.cmd`), '--help'], {
+    const result = await execa(command, ['/d', '/s', '/c', join(extraction, `${name}.cmd`), ...args], {
       cwd,
       env,
       reject: false,
+      timeout: 90_000,
     })
-    return { exitCode: result.exitCode, stdout: result.stdout }
+    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
   }
   const launcher = join(extraction, name)
   await chmod(launcher, 0o755)
-  const result = await execa(launcher, ['--help'], { cwd, env, reject: false })
-  return { exitCode: result.exitCode, stdout: result.stdout }
+  const result = await execa(launcher, [...args], { cwd, env, reject: false, timeout: 90_000 })
+  return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 
-function isolatedEnvironment(platform: NodeJS.Platform, home: string): NodeJS.ProcessEnv {
+async function waitForProcessExit(pid: number): Promise<void> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    try {
+      process.kill(pid, 0)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return
+      throw error
+    }
+    if (Date.now() >= deadline) throw new Error(`standalone CLI Runtime ${String(pid)} did not exit`)
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+}
+
+async function isolatedEnvironment(platform: NodeJS.Platform, home: string): Promise<NodeJS.ProcessEnv> {
   return {
     HOME: home,
     USERPROFILE: home,
@@ -173,11 +243,35 @@ function isolatedEnvironment(platform: NodeJS.Platform, home: string): NodeJS.Pr
     NODE_PATH: '',
     npm_config_cache: join(home, 'npm-cache'),
     npm_config_offline: 'true',
-    PATH: platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32') : '',
+    PATH: await isolatedSystemPath(platform, home),
     PATHEXT: platform === 'win32' ? '.COM;.EXE;.BAT;.CMD' : undefined,
     SystemRoot: process.env.SystemRoot,
     ComSpec: process.env.ComSpec,
   }
+}
+
+async function isolatedSystemPath(platform: NodeJS.Platform, home: string): Promise<string> {
+  if (platform === 'win32') {
+    return join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0')
+  }
+  const candidates = platform === 'darwin' ? ['/bin/ps', '/usr/bin/ps'] : ['/usr/bin/ps', '/bin/ps']
+  const source = await firstExisting(candidates)
+  if (source === undefined) throw new Error(`standalone CLI: ${platform} process probe is unavailable`)
+  const tools = join(home, 'system-tools')
+  await mkdir(tools)
+  await symlink(source, join(tools, 'ps'))
+  return tools
+}
+
+async function firstExisting(paths: readonly string[]): Promise<string | undefined> {
+  for (const path of paths) {
+    if (await access(path).then(() => true, () => false)) return path
+  }
+  return undefined
+}
+
+async function removeTree(path: string): Promise<void> {
+  await rm(path, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
 }
 
 async function extractZip(archive: string, destination: string): Promise<void> {
@@ -197,21 +291,43 @@ function assertSafeMember(path: string): void {
   }
 }
 
-async function digestTree(
+/**
+ * Hash one extracted archive tree with bounded readers and stable path ordering.
+ * @param directory - extracted archive root.
+ * @param excluded - archive-relative paths omitted from the digest map.
+ * @returns sorted archive-relative SHA-256 entries.
+ */
+export async function digestStandaloneTree(
   directory: string,
   excluded: ReadonlySet<string>,
-  prefix = '',
 ): Promise<Readonly<Record<string, string>>> {
-  const records: Array<readonly [string, string]> = []
+  const paths = (await listTree(directory)).filter(path => !excluded.has(path))
+  const records = new Array<readonly [string, string]>(paths.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next
+      next += 1
+      const path = paths[index]
+      if (path === undefined) return
+      records[index] = [path, sha256(await readFile(join(directory, ...path.split('/'))))]
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(32, paths.length) }, worker))
+  return Object.fromEntries(records)
+}
+
+async function listTree(directory: string, prefix = ''): Promise<string[]> {
+  const paths: string[] = []
   for (const entry of (await readdir(directory, { withFileTypes: true })).toSorted((left, right) => left.name.localeCompare(right.name, 'en'))) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`
     if (entry.isDirectory()) {
-      records.push(...Object.entries(await digestTree(join(directory, entry.name), excluded, path)))
-    } else if (entry.isFile() && !excluded.has(path)) {
-      records.push([path, sha256(await readFile(join(directory, entry.name)))])
+      paths.push(...await listTree(join(directory, entry.name), path))
+    } else if (entry.isFile()) {
+      paths.push(path)
     }
   }
-  return Object.fromEntries(records)
+  return paths
 }
 
 function sha256(bytes: Uint8Array): string {

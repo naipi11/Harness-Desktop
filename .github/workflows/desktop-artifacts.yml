@@ -118,6 +118,5 @@ jobs:
           path: |
             apps/desktop/release/*
             dist/cli-standalone/*
-            apps/desktop/test-results/**
           if-no-files-found: error
           retention-days: 7

@@ -26,6 +26,60 @@ const cliRoot = resolve(root, 'apps/cli')
 const defaultNodeVersion = '24.19.0'
 const defaultSourceDateEpoch = 1_704_067_200
 
+/**
+ * Deploy the complete built CLI Runtime graph, then pack it with physical bundled dependencies.
+ * @param outputDirectory - directory that receives the npm tarball.
+ * @returns absolute tarball path.
+ */
+export async function packCliForRelease(outputDirectory: string): Promise<string> {
+  const deployParent = await mkdtemp(join(tmpdir(), 'harness-cli-deploy-'))
+  const deployedPackage = join(deployParent, 'package')
+  try {
+    await execa('pnpm', ['run', 'verify:cli-runtime-closure'], { cwd: root, reject: true })
+    await execa('pnpm', [
+      '--filter', '@harness-desktop/cli',
+      'deploy', '--prod',
+      '--config.inject-workspace-packages=true',
+      '--ignore-scripts',
+      deployedPackage,
+    ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
+    await execa('pnpm', [
+      '--dir', deployedPackage,
+      'install', '--prod', '--offline', '--frozen-lockfile', '--ignore-scripts',
+      '--config.node-linker=hoisted',
+      '--config.confirm-modules-purge=false',
+    ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
+    const manifestPath = join(deployedPackage, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
+    const sourceManifest = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
+      readonly dependencies?: Record<string, string>
+    }
+    const dependencies = Object.fromEntries(await Promise.all(
+      Object.entries(sourceManifest.dependencies ?? {}).toSorted(([left], [right]) => left.localeCompare(right, 'en'))
+        .map(async ([name, specifier]) => [
+          name,
+          specifier.startsWith('workspace:')
+            ? (JSON.parse(await readFile(join(deployedPackage, 'node_modules', ...name.split('/'), 'package.json'), 'utf8')) as { version: string }).version
+            : specifier,
+        ] as const),
+    ))
+    const bundledDependencies = Object.keys(dependencies)
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies, bundledDependencies }, undefined, 2)}\n`)
+    await verifyPackedCliClosure(deployedPackage)
+    await mkdir(outputDirectory, { recursive: true })
+    const packed = await execa('pnpm', [
+      '--dir', deployedPackage,
+      '--config.node-linker=hoisted',
+      'pack', '--pack-destination', outputDirectory,
+    ], { cwd: root, reject: true })
+    const packedPath = packed.stdout.trim().split(/\r?\n/u).at(-1)
+    if (packedPath === undefined || packedPath === '') throw new Error('packed CLI: pnpm pack returned no tarball path')
+    return isAbsolute(packedPath) ? packedPath : join(outputDirectory, packedPath)
+  } finally {
+    await rm(deployParent, { recursive: true, force: true })
+  }
+}
+
 /** One allowlisted local Node distribution. */
 export interface NodeRuntimeChecksum {
   readonly filename: string
@@ -52,6 +106,7 @@ export interface CliStandaloneBuildDependencies {
   readonly cliPackageRoot: string
   readonly checksumAllowlist: NodeRuntimeChecksumAllowlist
   extractNodeDistribution(archive: string, destination: string): Promise<void>
+  validateCliClosure(packageRoot: string): Promise<void>
 }
 
 interface StandaloneManifest {
@@ -76,13 +131,11 @@ export async function buildCliStandalone(
   try {
     const packDestination = join(packedRoot, 'tarball')
     await mkdir(packDestination, { recursive: true })
-    const packed = await execa('pnpm', ['--dir', cliRoot, 'pack', '--pack-destination', packDestination], {
-      cwd: root,
-      reject: true,
-    })
-    const packedPath = packed.stdout.trim().split(/\r?\n/u).at(-1)
-    if (packedPath === undefined || packedPath === '') throw new Error('standalone CLI: pnpm pack returned no tarball path')
-    const tarball = isAbsolute(packedPath) ? packedPath : join(packDestination, packedPath)
+    const suppliedTarball = process.env.DSH_PACKED_CLI_TARBALL
+    const tarball = suppliedTarball === undefined || suppliedTarball === ''
+      ? await packCliForRelease(packDestination)
+      : isAbsolute(suppliedTarball) ? suppliedTarball : resolve(root, suppliedTarball)
+    if (!(await fileExists(tarball))) throw new Error(`standalone CLI: packed CLI tarball is missing at ${tarball}`)
     const packageRoot = join(packedRoot, 'package')
     await mkdir(packageRoot, { recursive: true })
     await tar.x({ file: tarball, cwd: packageRoot, strip: 1, strict: true })
@@ -90,6 +143,7 @@ export async function buildCliStandalone(
       cliPackageRoot: packageRoot,
       checksumAllowlist: checksumAllowlistJson,
       extractNodeDistribution,
+      validateCliClosure: verifyPackedCliClosure,
     })
   } finally {
     await rm(packedRoot, { recursive: true, force: true })
@@ -130,10 +184,11 @@ export async function buildCliStandaloneWithDependencies(
     if (!(await fileExists(join(stage, ...nodeExecutable.split('/'))))) {
       throw new Error(`standalone CLI: Node distribution ${runtime.filename} omitted ${nodeExecutable}`)
     }
-    await verifyPackedCliClosure(join(stage, 'cli', 'package'))
+    await dependencies.validateCliClosure(join(stage, 'cli', 'package'))
     const launchers = await writeLaunchers(stage, input.platform)
     const epoch = sourceDateEpoch()
     await normalizeTree(stage, epoch, new Set([...launchers, nodeExecutable]))
+    await pruneOptionalForeignNativeModules(stage, input.platform, input.arch)
     const nativeModules = await verifyNativeModules(stage, input.platform, input.arch)
     const cliManifest = JSON.parse(await readFile(join(stage, 'cli', 'package', 'package.json'), 'utf8')) as {
       readonly name?: string
@@ -227,11 +282,20 @@ async function writeLaunchers(stage: string, platform: NodeJS.Platform): Promise
 }
 
 async function verifyPackedCliClosure(packageRoot: string): Promise<void> {
-  for (const filename of ['bin.js', 'dsh-bin.js', 'main.js']) {
-    const path = join(packageRoot, 'lib', filename)
-    const source = await readFile(path, 'utf8')
-    if (/(?:from|import\s*\()\s*["']@harness-desktop\//u.test(source)) {
-      throw new Error(`standalone CLI: packed dependency closure leaves a workspace import in lib/${filename}`)
+  const main = await readFile(join(packageRoot, 'lib', 'main.js'), 'utf8')
+  if (!main.includes('from "@harness-desktop/dsh-host-local-runtime"')) {
+    throw new Error('packed CLI: main.js must retain the package-relative local Runtime connector import')
+  }
+  for (const path of [
+    ['node_modules', '@harness-desktop', 'dsh-host-local-runtime', 'lib', 'bin.js'],
+    ['node_modules', '@harness-desktop', 'dsh-host-local-runtime', 'runtime.cordis.yml'],
+    ['node_modules', '@harness-desktop', 'dsh-base', 'cordis.patch.yml'],
+    ['node_modules', '@harness-desktop', 'dsh-web-app', 'cordis.patch.yml'],
+    ['node_modules', '@harness-desktop', 'dsh-headless', 'cordis.patch.yml'],
+    ['node_modules', '@harness-desktop', 'dsh-workflow-worker-thread', 'lib', 'worker.cjs'],
+  ]) {
+    if (!(await fileExists(join(packageRoot, ...path)))) {
+      throw new Error(`packed CLI: Runtime closure omits ${path.join('/')}`)
     }
   }
 }
@@ -245,11 +309,30 @@ async function verifyNativeModules(
   for (const path of nativeModules) {
     const target = nativeTarget(await readFile(join(stage, ...path.split('/'))))
     const expected = `${platform}-${arch}`
-    if (target !== expected) {
+    if (target !== expected && !(platform === 'darwin' && target === 'darwin-universal')) {
       throw new Error(`standalone CLI: native module ${path} targets ${target}, expected ${expected}`)
     }
   }
   return nativeModules
+}
+
+async function pruneOptionalForeignNativeModules(
+  stage: string,
+  platform: NodeJS.Platform,
+  arch: string,
+): Promise<void> {
+  const expected = `${platform}-${arch}`
+  for (const path of (await listTree(stage)).filter(path => path.endsWith('.node'))) {
+    const target = nativeTarget(await readFile(join(stage, ...path.split('/'))))
+    if (target === expected || (platform === 'darwin' && target === 'darwin-universal')) continue
+    if (!isOptionalPlatformNativeModule(path)) continue
+    await rm(join(stage, ...path.split('/')), { force: true })
+  }
+}
+
+function isOptionalPlatformNativeModule(path: string): boolean {
+  return path.includes('/node_modules/node-pty/prebuilds/')
+    || /\/node_modules\/(?:@koromix|@img|node-addon-require-builtin-)/u.test(path)
 }
 
 function nativeTarget(bytes: Buffer): string {
@@ -275,10 +358,20 @@ function nativeTarget(bytes: Buffer): string {
 }
 
 async function digestTree(rootDirectory: string): Promise<Readonly<Record<string, string>>> {
-  return Object.fromEntries(await Promise.all((await listTree(rootDirectory)).map(async path => [
-    path,
-    sha256(await readFile(join(rootDirectory, ...path.split('/')))),
-  ] as const)))
+  const paths = await listTree(rootDirectory)
+  const records = new Array<readonly [string, string]>(paths.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next
+      next += 1
+      const path = paths[index]
+      if (path === undefined) return
+      records[index] = [path, sha256(await readFile(join(rootDirectory, ...path.split('/'))))]
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(32, paths.length) }, worker))
+  return Object.fromEntries(records)
 }
 
 async function listTree(directory: string, prefix = ''): Promise<string[]> {

@@ -8,6 +8,7 @@ import {
   buildCliStandaloneWithDependencies,
   type CliStandaloneBuildDependencies,
 } from './build-cli-standalone.ts'
+import { digestStandaloneTree } from './verify-cli-standalone.ts'
 
 const roots: string[] = []
 
@@ -67,6 +68,7 @@ function dependencies(
       await mkdir(destination, { recursive: true })
       await writeFile(join(destination, 'node.exe'), 'fixture node')
     },
+    validateCliClosure: async () => {},
     ...overrides,
   }
 }
@@ -160,4 +162,29 @@ describe('buildCliStandaloneWithDependencies', () => {
       'standalone CLI: native module cli/package/node_modules/foreign/foreign.node targets linux-x64, expected win32-x64',
     )
   })
+
+  it('hashes a payload larger than the process file-handle limit without unbounded opens', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-many-files-')
+    const assets = join(subject.cliRoot, 'assets')
+    await mkdir(assets)
+    for (let index = 0; index < 8_300; index += 1) {
+      await writeFile(join(assets, `${String(index).padStart(5, '0')}.txt`), '')
+    }
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'win32',
+      arch: 'x64',
+      version: '0.0.0-test',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, dependencies(subject))).resolves.toEqual([
+      'harness-cli-0.0.0-test-win32-x64.zip',
+      'harness-cli-0.0.0-test-win32-x64.tar.gz',
+      'harness-cli-0.0.0-test-win32-x64.sha256',
+    ])
+    const digests = await digestStandaloneTree(subject.cliRoot, new Set())
+    expect(Object.keys(digests)).toHaveLength(8_304)
+    expect(Object.keys(digests)).toEqual(Object.keys(digests).toSorted((left, right) => left.localeCompare(right, 'en')))
+  }, 120_000)
 })

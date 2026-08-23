@@ -152,13 +152,19 @@ async function verifyLinux(
   if (debs.length === 0) violations.push('desktop artifact: missing Linux Deb installer')
   else if (debs.length > 1) violations.push('desktop artifact: expected exactly one Linux Deb installer')
 
-  const inspected: string[] = []
   const appImage = appImages.length === 1 ? appImages[0] : undefined
   const deb = debs.length === 1 ? debs[0] : undefined
-  if (appImage !== undefined) inspected.push(...await tools.inspectAppImage(join(releaseDirectory, appImage.name)))
-  if (deb !== undefined) inspected.push(...await tools.inspectDeb(join(releaseDirectory, deb.name)))
-  if ((appImages.length === 1 || debs.length === 1) && !containsIcon(inspected, generatedIconNames.linux)) {
-    violations.push('desktop artifact: missing generated Linux icon')
+  if (appImage !== undefined) {
+    const inspected = await tools.inspectAppImage(join(releaseDirectory, appImage.name))
+    if (!containsIcon(inspected, generatedIconNames.linux)) {
+      violations.push('desktop artifact: missing generated Linux AppImage icon')
+    }
+  }
+  if (deb !== undefined) {
+    const inspected = await tools.inspectDeb(join(releaseDirectory, deb.name))
+    if (!containsIcon(inspected, generatedIconNames.linux)) {
+      violations.push('desktop artifact: missing generated Linux Deb icon')
+    }
   }
   return violations
 }

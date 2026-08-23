@@ -107,6 +107,7 @@
     "verify-node-next-types": "tsx scripts/verify-node-next-types.ts",
     "verify-runtime-closure": "tsx scripts/verify-runtime-closure.ts",
     "verify:desktop-runtime-closure": "tsx scripts/verify-runtime-closure.ts --manifest apps/desktop/package.json",
+    "verify:cli-runtime-closure": "tsx scripts/verify-runtime-closure.ts --manifest apps/cli/package.json",
     "verify-vendored-links": "tsx scripts/verify-vendored-links.ts",
     "verify-cordis-config": "tsx scripts/verify-cordis-config.ts",
     "rescope-vendor": "tsx scripts/rescope-vendor.ts",
