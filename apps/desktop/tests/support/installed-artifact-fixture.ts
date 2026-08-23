@@ -12,12 +12,14 @@ import {
   type DesktopRuntimeFixture,
 } from './runtime-fixture.ts'
 import {
+  cleanupPreparationRoots,
   launchAppImageWithFallback,
   rollbackWindowsPreparation,
   type InstalledArtifactLifecycle,
 } from './installed-artifact-lifecycle.ts'
 
 export {
+  cleanupPreparationRoots,
   isAppImageFuseUnavailable,
   launchAppImageWithFallback,
   rollbackWindowsPreparation,
@@ -317,9 +319,16 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
       },
     ]
   } catch (error) {
-    if (appImageRoot !== undefined) await removeTree(appImageRoot)
-    if (debRoot !== undefined) await removeTree(debRoot)
-    throw error
+    const cleanups: Array<() => Promise<void>> = []
+    if (appImageRoot !== undefined) {
+      const root = appImageRoot
+      cleanups.push(async () => removeTree(root))
+    }
+    if (debRoot !== undefined) {
+      const root = debRoot
+      cleanups.push(async () => removeTree(root))
+    }
+    return cleanupPreparationRoots(error, cleanups)
   }
 }
 

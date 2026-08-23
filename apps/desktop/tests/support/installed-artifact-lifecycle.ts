@@ -91,6 +91,29 @@ export async function runInstalledArtifactCollection(
   }
 }
 
+/**
+ * Settle every temporary root owned by a failed native-artifact preparation.
+ * @param primaryFailure - preparation failure that triggered cleanup.
+ * @param cleanups - independent root-removal operations.
+ * @throws the primary failure, or an aggregate retaining every cleanup failure.
+ */
+export async function cleanupPreparationRoots(
+  primaryFailure: unknown,
+  cleanups: readonly (() => Promise<void>)[],
+): Promise<never> {
+  const cleanupFailures: unknown[] = []
+  for (const cleanup of cleanups) {
+    await cleanup().catch((error: unknown) => cleanupFailures.push(error))
+  }
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(
+      [primaryFailure, ...cleanupFailures],
+      'installed desktop artifact: native preparation and root cleanup failed',
+    )
+  }
+  throw primaryFailure
+}
+
 /** @returns whether native AppImage launch failed specifically because FUSE mounting is unavailable. */
 export function isAppImageFuseUnavailable(error: unknown): boolean {
   return /(?:FUSE|libfuse|AppImage mount)/iu.test(String(error))

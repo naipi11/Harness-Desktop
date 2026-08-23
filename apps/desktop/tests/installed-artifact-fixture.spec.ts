@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  cleanupPreparationRoots,
   isAppImageFuseUnavailable,
   launchAppImageWithFallback,
   rollbackWindowsPreparation,
@@ -90,6 +91,25 @@ describe('prepared artifact collection lifecycle', () => {
         expect.objectContaining({ message: 'second cleanup failed' }),
       ],
     })
+  })
+})
+
+describe('native artifact preparation cleanup', () => {
+  it('attempts every owned root and retains the preparation failure', async () => {
+    const firstRoot = vi.fn(async () => { throw new Error('AppImage root cleanup failed') })
+    const secondRoot = vi.fn(async () => {})
+
+    await expect(cleanupPreparationRoots(
+      new Error('Deb preparation failed'),
+      [firstRoot, secondRoot],
+    )).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({ message: 'Deb preparation failed' }),
+        expect.objectContaining({ message: 'AppImage root cleanup failed' }),
+      ],
+    })
+    expect(firstRoot).toHaveBeenCalledOnce()
+    expect(secondRoot).toHaveBeenCalledOnce()
   })
 })
 
