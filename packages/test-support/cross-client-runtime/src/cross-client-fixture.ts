@@ -390,18 +390,6 @@ class OwnedAppHandle implements CrossClientAppHandle {
   }
 }
 
-async function settleCleanup(
-  errors: Error[],
-  stage: string,
-  operation: () => Promise<void>,
-): Promise<void> {
-  try {
-    await operation()
-  } catch (_privateFailure) {
-    errors.push(new Error(`cross-client cleanup failed at ${stage}`))
-  }
-}
-
 class CrossClientFixtureImpl implements CrossClientFixture {
   private state: CrossClientLifecycleSnapshot['state'] = 'starting'
   private readonly events: CrossClientLifecycleEvent[] = []
@@ -416,6 +404,8 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   private apiHandle: CrossClientDashboardApiHandle | undefined
   private lastWorkspaceId: WorkspaceId | undefined
   private runtimeStopped = false
+  private mockClosed = false
+  private rootRemoved = false
   private closeOwnedPromise: Promise<readonly Error[]> | undefined
   private stopPromise: Promise<void> | undefined
   private disposePromise: Promise<void> | undefined
@@ -769,7 +759,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     try {
       await this.closeClientsAndStopRuntime()
     } catch (error) {
-      this.stopPromise = undefined
+      if (!this.runtimeStopped) this.stopPromise = undefined
       throw error
     }
   }
@@ -787,6 +777,8 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   }
 
   private async stopRuntimeProcessOnce(): Promise<void> {
+    /* v8 ignore next -- a settled stop flight is retained, so this is a defensive duplicate-call guard */
+    if (this.runtimeStopped) return
     const processHandle = this.process
     if (processHandle === undefined) return
     processHandle.endInput()
@@ -813,29 +805,58 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     try {
       await this.disposeOnce()
     } catch (error) {
-      this.disposePromise = undefined
+      if (this.hasUnresolvedCleanup()) this.disposePromise = undefined
       throw error
     }
   }
 
   private async disposeOnce(): Promise<void> {
-    const errors: Error[] = []
+    const terminalErrors: Error[] = []
     try {
       await this.stopRuntime()
     } catch (stopFailure) {
       if (!this.runtimeStopped) throw stopFailure
       for (const error of (stopFailure as AggregateError).errors as Error[]) {
-        errors.push(new Error(error.message))
+        terminalErrors.push(new Error(error.message))
       }
     }
     const mock = this.mock
-    if (mock !== undefined) await settleCleanup(errors, 'mock-server', () => mock.close())
-    /* v8 ignore else -- successful stop with an owned process records runtimeStopped; stop failure returns above */
-    if (this.process === undefined || this.runtimeStopped) {
-      await settleCleanup(errors, 'temporary-root', () => this.dependencies.fileSystem.remove(this.root))
+    if (mock !== undefined && !this.mockClosed) {
+      try {
+        await mock.close()
+        this.mockClosed = true
+      } catch (_privateMockFailure) {
+        throw new AggregateError(
+          [...terminalErrors, new Error('cross-client cleanup failed at mock-server')],
+          'Cross-client fixture cleanup failed.',
+        )
+      }
     }
-    if (errors.length > 0) throw new AggregateError(errors, 'Cross-client fixture cleanup failed.')
+    /* v8 ignore else -- a settled root retains its dispose flight, so retries only enter while unresolved */
+    if (!this.rootRemoved) {
+      try {
+        await this.dependencies.fileSystem.remove(this.root)
+        this.rootRemoved = true
+      } catch (_privateRootFailure) {
+        throw new AggregateError(
+          [...terminalErrors, new Error('cross-client cleanup failed at temporary-root')],
+          'Cross-client fixture cleanup failed.',
+        )
+      }
+    }
     this.state = 'disposed'
+    if (terminalErrors.length > 0) {
+      throw new AggregateError(terminalErrors, 'Cross-client fixture cleanup failed.')
+    }
+  }
+
+  private hasUnresolvedCleanup(): boolean {
+    const owners: object[] = [...this.appHandles, ...this.terminals, ...this.runtimeClients]
+    if (this.apiHandle !== undefined) owners.push(this.apiHandle.dashboard, this.apiHandle.api)
+    if (owners.some(owner => !this.closedOwners.has(owner))) return true
+    if (this.process !== undefined && !this.runtimeStopped) return true
+    if (this.mock !== undefined && !this.mockClosed) return true
+    return !this.rootRemoved
   }
 }
 

@@ -125,6 +125,7 @@ interface DependencyOptions {
   readonly waitForExit?: () => Promise<{ readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }>
   readonly forceKill?: () => Promise<void>
   readonly mockStartFailure?: boolean
+  readonly mockClose?: () => Promise<void>
 }
 
 async function dependencies(
@@ -233,6 +234,7 @@ async function dependencies(
           close: async () => {
             signals.mockClosed += 1
             signals.order.push('mock-closed')
+            await options.mockClose?.()
             if (failures.has('mock')) throw new Error('mock secret failure')
           },
         }
@@ -706,7 +708,7 @@ describe('cross-client Runtime fixture', () => {
     expect(setup.signals.removedRoots).toHaveLength(1)
   })
 
-  it('reports mock cleanup failure only after owners and Runtime are quiescent', async () => {
+  it('reports mock cleanup failure after quiescence and retains the root', async () => {
     const parent = await temporaryParent()
     const setup = await dependencies(parent, { closeFailures: new Set(['mock']) })
     const fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
@@ -718,7 +720,77 @@ describe('cross-client Runtime fixture', () => {
       runtimeWaited: 1,
       mockClosed: 1,
     })
+    expect(setup.signals.removedRoots).toEqual([])
+  })
+
+  it('does not repeat an abnormal settled Runtime stop during dispose or repeated dispose', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent, {
+      waitForExit: async () => ({ exitCode: 1, signal: null }),
+    })
+    const fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+
+    await expect(fixture.stopRuntime()).rejects.toBeInstanceOf(AggregateError)
+    const firstDispose = fixture.dispose()
+    const firstError = await firstDispose.catch((error: unknown) => error)
+    const repeatedDispose = fixture.dispose()
+    const repeatedError = await repeatedDispose.catch((error: unknown) => error)
+
+    expect(firstError).toBeInstanceOf(AggregateError)
+    expect(repeatedDispose).toBe(firstDispose)
+    expect(repeatedError).toBe(firstError)
+    expect(setup.signals).toMatchObject({
+      runtimeInputEnded: 1,
+      runtimeWaited: 1,
+      mockClosed: 1,
+    })
     expect(setup.signals.removedRoots).toHaveLength(1)
+    expect(fixture.lifecycleSnapshot().state).toBe('disposed')
+    expect(fixture.lifecycleSnapshot().events.filter(event => event.kind === 'stopped')).toHaveLength(1)
+    expect(() => { assertCrossClientLifecycle(fixture.lifecycleSnapshot()) }).not.toThrow()
+  })
+
+  it('retries only root after mock settles and root removal fails transiently', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent)
+    const originalRemove = setup.dependencies.fileSystem.remove.bind(setup.dependencies.fileSystem)
+    let rootAttempts = 0
+    setup.dependencies.fileSystem.remove = async (path) => {
+      rootAttempts += 1
+      if (rootAttempts === 1) throw new Error('transient root failure')
+      await originalRemove(path)
+    }
+    const fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+
+    await expect(fixture.dispose()).rejects.toBeInstanceOf(AggregateError)
+    await fixture.dispose()
+
+    expect(rootAttempts).toBe(2)
+    expect(setup.signals.mockClosed).toBe(1)
+    expect(setup.signals.removedRoots).toHaveLength(1)
+    expect(fixture.lifecycleSnapshot().state).toBe('disposed')
+  })
+
+  it('retains root until a transient mock close succeeds, then settles both once', async () => {
+    const parent = await temporaryParent()
+    let mockAttempts = 0
+    const setup = await dependencies(parent, {
+      mockClose: async () => {
+        mockAttempts += 1
+        if (mockAttempts === 1) throw new Error('transient mock failure')
+      },
+    })
+    const fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+
+    await expect(fixture.dispose()).rejects.toBeInstanceOf(AggregateError)
+    expect(setup.signals.removedRoots).toEqual([])
+    await fixture.dispose()
+    await fixture.dispose()
+
+    expect(mockAttempts).toBe(2)
+    expect(setup.signals.mockClosed).toBe(2)
+    expect(setup.signals.removedRoots).toHaveLength(1)
+    expect(fixture.lifecycleSnapshot().state).toBe('disposed')
   })
 
   it('closes every owned client before direct Runtime stop and leaves final root cleanup to dispose', async () => {
