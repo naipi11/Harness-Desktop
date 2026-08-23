@@ -436,7 +436,6 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     const env: NodeJS.ProcessEnv = {
       ...createIsolatedSystemEnvironment(this.platformHome),
       HARNESS_HOME: this.home,
-      DSH_HOME: join(this.root, 'legacy-home'),
       HOME: this.platformHome,
       USERPROFILE: this.platformHome,
       APPDATA: join(this.platformHome, 'AppData', 'Roaming'),

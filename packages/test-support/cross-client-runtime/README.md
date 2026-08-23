@@ -6,7 +6,7 @@ Host-only reference fixture for acceptance tests that attach CLI, Web, and Deskt
 
 ## Fixture API
 
-`createCrossClientFixture()` creates one temporary root containing a fresh `HARNESS_HOME`, platform home, and workspace. Its default path starts the declared built `harness-runtime` bin under the current Node executable, starts the public `@harness-desktop/dsh-llm-mock-server`, and retries only `createRuntimeConnector(...).connect({ start: false })` plus `status().state === 'running'` for readiness. It does not read endpoint records, locks, SQLite, credential stores, ports, or process identifiers.
+`createCrossClientFixture()` creates one temporary root containing a fresh `HARNESS_HOME`, platform home, and workspace. Its default path starts the declared built `harness-runtime` bin under the current Node executable with `DSH_HOME` unset even when the parent defines it, starts the public `@harness-desktop/dsh-llm-mock-server`, and retries only `createRuntimeConnector(...).connect({ start: false })` plus `status().state === 'running'` for readiness. It does not read endpoint records, locks, SQLite, credential stores, ports, or process identifiers.
 
 `CrossClientFixture` exposes workspace and session creation, workspace/session/history reads, prompt submission, public terminal attachments, same-session `RuntimeBusyError` verification, injected CLI/Web/Desktop launchers, explicit Runtime stop, disposal, and token-free lifecycle observations. Workspace observations use `WorkspaceId` from `@harness-desktop/dsh-host-apiproxy/api`, and session observations use `SessionId` from `@harness-desktop/dsh-session/types`; the package introduces no identifier brand.
 
@@ -20,7 +20,7 @@ Fixture setup waits every sibling directory attempt before rollback, so no delay
 
 ## App adapters
 
-CLI, Web, and Desktop tests inject Node-only adapters. Adapter interfaces contain no Playwright, Electron, browser, or browser-side `client-runtime` import, so each app test keeps its runner-specific launch and presentation assertions in its own module.
+CLI, Web, and Desktop tests inject Node-only adapters. Adapter interfaces contain no Playwright, Electron, browser, or browser-side `client-runtime` import, so each app test keeps its runner-specific launch and presentation assertions in its own module. The CLI adapter runs only the matching built `apps/cli/lib/bin.js` or `lib/dsh-bin.js` under plain current Node from the fixture workspace, with a non-extending system environment and unchanged captured output.
 
 ## Model Experience
 
@@ -34,4 +34,5 @@ None directly; each isolated Runtime and mock scenario has an independent reques
 
 - **Test-only carriers** — the fixture supports the public Runtime connector, terminal, Dashboard handoff, and API carrier for acceptance tests; it is not an application integration API.
 - **App launchers are injected** — CLI, Web, and Desktop modules must supply their runner-specific adapters before calling `runCli()`, `openWeb()`, or `openDesktop()`.
+- **CLI Sessions stay Ungrouped** — terminal CLI creation is cwd-only and does not attach a Session to a Workspace merely because their paths match, following the [Workspace membership decision](../../../.agents/notes/implemented/bug-fix/2026-08-05-workspace-blank-session-reuse-membership.md).
 - **No storage or credential inspection** — persistence, lock, endpoint, and credential assertions remain with their owning packages; this fixture observes only public health and authenticated API state.

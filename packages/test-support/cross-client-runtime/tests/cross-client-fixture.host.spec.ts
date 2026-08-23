@@ -24,6 +24,7 @@ import {
   type CrossClientDashboardApiHandle,
   type CrossClientFixtureDependencies,
   type CrossClientRuntimeClient,
+  type CrossClientRuntimeProcessInput,
   type CrossClientRuntimeProcessHandle,
   type CrossClientStateClient,
 } from '../src/index.ts'
@@ -106,6 +107,7 @@ class StateClient implements CrossClientStateClient {
 
 interface FixtureSignals {
   readonly healthInputs: Array<{ readonly home: string; readonly platformHome: string; readonly start: boolean }>
+  readonly runtimeInputs: CrossClientRuntimeProcessInput[]
   runtimeInputEnded: number
   runtimeWaited: number
   runtimeKilled: number
@@ -140,6 +142,7 @@ async function dependencies(
 }> {
   const signals: FixtureSignals = {
     healthInputs: [],
+    runtimeInputs: [],
     runtimeInputEnded: 0,
     runtimeWaited: 0,
     runtimeKilled: 0,
@@ -240,7 +243,12 @@ async function dependencies(
         }
       },
     },
-    runtimeProcess: { start: async () => process },
+    runtimeProcess: {
+      start: async (input) => {
+        signals.runtimeInputs.push({ cwd: input.cwd, env: { ...input.env } })
+        return process
+      },
+    },
     runtimeHealth: {
       connect: async (input) => {
         signals.healthInputs.push(input)
@@ -270,6 +278,23 @@ function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void 
 }
 
 describe('cross-client Runtime fixture', () => {
+  it('does not turn an ambient legacy root into a migration decision for a fresh fixture', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent)
+    const previousLegacyHome = process.env.DSH_HOME
+    process.env.DSH_HOME = join(parent, 'ambient-private-legacy-home')
+    let fixture: Awaited<ReturnType<typeof createCrossClientFixture>> | undefined
+    try {
+      fixture = await createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+      expect(setup.signals.runtimeInputs).toHaveLength(1)
+      expect(setup.signals.runtimeInputs[0]?.env).not.toHaveProperty('DSH_HOME')
+    } finally {
+      if (previousLegacyHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousLegacyHome
+      await fixture?.dispose()
+    }
+  })
+
   it('owns one isolated layout and records explicit public health before accepting shared state', async () => {
     const parent = await temporaryParent()
     const setup = await dependencies(parent, { healthFailures: 2 })

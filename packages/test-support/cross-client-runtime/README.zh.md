@@ -6,7 +6,7 @@
 
 ## Fixture API
 
-`createCrossClientFixture()` 创建一个临时根目录，其中包含全新的 `HARNESS_HOME`、平台 home 和工作区。默认路径通过当前 Node 可执行文件启动已声明的构建版 `harness-runtime` 二进制命令，启动公开的 `@harness-desktop/dsh-llm-mock-server`，并且只重试 `createRuntimeConnector(...).connect({ start: false })` 及 `status().state === 'running'` 来判断就绪。它不读取端点记录、锁、SQLite、凭据存储、端口或进程标识符。
+`createCrossClientFixture()` 创建一个临时根目录，其中包含全新的 `HARNESS_HOME`、平台 home 和工作区。即使父进程定义了 `DSH_HOME`，默认路径也不会把它传给运行时；该路径通过当前 Node 可执行文件启动已声明的构建版 `harness-runtime` 二进制命令，启动公开的 `@harness-desktop/dsh-llm-mock-server`，并且只重试 `createRuntimeConnector(...).connect({ start: false })` 及 `status().state === 'running'` 来判断就绪。它不读取端点记录、锁、SQLite、凭据存储、端口或进程标识符。
 
 `CrossClientFixture` 公开工作区和会话创建、工作区／会话／历史读取、提示词提交、公开终端附加项、同一会话的 `RuntimeBusyError` 验证、注入的 CLI／Web／Desktop 启动器、显式运行时停止、清理和无 token 的生命周期观测。工作区观测使用 `@harness-desktop/dsh-host-apiproxy/api` 的 `WorkspaceId`，会话观测使用 `@harness-desktop/dsh-session/types` 的 `SessionId`；该包不引入新的标识符品牌。
 
@@ -20,7 +20,7 @@ Fixture 启动会等待每个同级目录创建尝试结束后再回滚，因此
 
 ## 应用适配器
 
-CLI、Web 和 Desktop 测试注入仅 Node 适配器。适配器接口不包含 Playwright、Electron、浏览器或浏览器侧 `client-runtime` import，因此每个应用测试都会在自身模块中保留所属 runner 的启动和呈现断言。
+CLI、Web 和 Desktop 测试注入仅 Node 适配器。适配器接口不包含 Playwright、Electron、浏览器或浏览器侧 `client-runtime` import，因此每个应用测试都会在自身模块中保留所属 runner 的启动和呈现断言。CLI 适配器只会从 fixture 工作区通过普通的当前 Node 运行相匹配的构建版 `apps/cli/lib/bin.js` 或 `lib/dsh-bin.js`，使用不扩展父进程值的系统环境，并原样保留捕获的输出。
 
 ## 模型体验
 
@@ -34,4 +34,5 @@ CLI、Web 和 Desktop 测试注入仅 Node 适配器。适配器接口不包含 
 
 - **仅供测试的载体**：fixture 支持用于验收测试的公开运行时 connector、终端、Dashboard handoff 和 API 载体；它不是应用集成 API。
 - **应用启动器需要注入**：CLI、Web 和 Desktop 模块必须先提供各自 runner 的适配器，才能调用 `runCli()`、`openWeb()` 或 `openDesktop()`。
+- **CLI 会话保留在 Ungrouped**：终端 CLI 只按 cwd 创建会话，不会仅因路径相同就把会话附加到工作区；该行为遵循[工作区成员关系决策](../../../.agents/notes/implemented/bug-fix/2026-08-05-workspace-blank-session-reuse-membership.md)。
 - **不检查存储或凭据**：持久化、锁、端点与凭据断言仍由各自所属包负责；该 fixture 只观测公开健康状态和经过认证的 API 状态。
