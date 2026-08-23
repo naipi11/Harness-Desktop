@@ -11,6 +11,18 @@ import {
   launchDesktopExecutableRuntimeFixture,
   type DesktopRuntimeFixture,
 } from './runtime-fixture.ts'
+import {
+  launchAppImageWithFallback,
+  rollbackWindowsPreparation,
+  type InstalledArtifactLifecycle,
+} from './installed-artifact-lifecycle.ts'
+
+export {
+  isAppImageFuseUnavailable,
+  launchAppImageWithFallback,
+  rollbackWindowsPreparation,
+  runInstalledArtifactLifecycle,
+} from './installed-artifact-lifecycle.ts'
 
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 const desktopRoot = join(repoRoot, 'apps', 'desktop')
@@ -23,14 +35,9 @@ export interface InstalledArtifactInput {
 }
 
 /** One installed, copied, or extracted native Desktop artifact. */
-export interface InstalledDesktopArtifact {
-  readonly name: string
-  readonly sentinelPath: string
-  launch(): Promise<DesktopRuntimeFixture>
+export interface InstalledDesktopArtifact extends InstalledArtifactLifecycle<DesktopRuntimeFixture> {
   writeSentinel(harnessHome: string): Promise<void>
   verifyGeneratedIcon(): Promise<void>
-  remove(): Promise<void>
-  cleanup(): Promise<void>
 }
 
 interface PreparedArtifact {
@@ -54,49 +61,6 @@ export async function prepareInstalledDesktopArtifacts(
 ): Promise<readonly InstalledDesktopArtifact[]> {
   const prepared = await prepareNativeArtifacts(input)
   return prepared.map(subject => wrapPreparedArtifact(subject))
-}
-
-/**
- * Exercise one prepared artifact while retaining cleanup ownership across every failure path.
- * @param artifact - prepared native artifact.
- * @param verify - authenticated launch and installed-resource assertions.
- */
-export async function runInstalledArtifactLifecycle(
-  artifact: InstalledDesktopArtifact,
-  verify: (fixture: DesktopRuntimeFixture) => Promise<void>,
-): Promise<void> {
-  let fixture: DesktopRuntimeFixture | undefined
-  let removalAttempted = false
-  let primaryFailure: unknown
-  const cleanupFailures: unknown[] = []
-  try {
-    fixture = await artifact.launch()
-    await verify(fixture)
-    await fixture.close({ preserveRuntimeRoot: true })
-    fixture = undefined
-    removalAttempted = true
-    await artifact.remove()
-    await access(artifact.sentinelPath)
-  } catch (error) {
-    primaryFailure = error
-  } finally {
-    if (fixture !== undefined) {
-      await fixture.close({ preserveRuntimeRoot: true }).catch((error: unknown) => cleanupFailures.push(error))
-    }
-    if (!removalAttempted) await artifact.remove().catch((error: unknown) => cleanupFailures.push(error))
-    await artifact.cleanup().catch((error: unknown) => cleanupFailures.push(error))
-  }
-  if (primaryFailure !== undefined && cleanupFailures.length > 0) {
-    throw new AggregateError([primaryFailure, ...cleanupFailures], `installed desktop artifact: ${artifact.name} lifecycle and cleanup failed`)
-  }
-  if (primaryFailure !== undefined) throw primaryFailure
-  if (cleanupFailures.length === 1) throw cleanupFailures[0]
-  if (cleanupFailures.length > 1) throw new AggregateError(cleanupFailures, `installed desktop artifact: ${artifact.name} cleanup failed`)
-}
-
-/** @returns whether native AppImage launch failed specifically because FUSE mounting is unavailable. */
-export function isAppImageFuseUnavailable(error: unknown): boolean {
-  return /(?:FUSE|libfuse|AppImage mount)/iu.test(String(error))
 }
 
 async function prepareNativeArtifacts(input: InstalledArtifactInput): Promise<readonly PreparedArtifact[]> {
@@ -153,11 +117,13 @@ async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifac
   )
   const root = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-win32-'))
   const installation = join(root, 'Harness Desktop')
+  let installed = false
   try {
     const result = await execa(installer, ['/S', `/D=${installation}`], { cwd: root, reject: false })
     if (result.exitCode !== 0) {
       throw new Error(`installed desktop artifact: NSIS install exited ${String(result.exitCode)}: ${result.stderr}`)
     }
+    installed = true
     const executable = join(installation, 'harness-desktop.exe')
     const asar = join(installation, 'resources', 'app.asar')
     await requireFile(executable, 'installed Windows executable')
@@ -170,18 +136,39 @@ async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifac
       iconMember: 'resources/icons/win/harness-desktop.ico',
       generatedIcon: join(desktopRoot, 'resources', 'icons', 'win', 'harness-desktop.ico'),
       async remove() {
-        const uninstaller = (await readdir(installation)).find(name => /^Uninstall .*\.exe$/u.test(name))
-        if (uninstaller === undefined) throw new Error('installed desktop artifact: NSIS uninstaller is missing')
-        const uninstall = await execa(join(installation, uninstaller), ['/S'], { cwd: root, reject: false })
-        if (uninstall.exitCode !== 0) {
-          throw new Error(`installed desktop artifact: NSIS uninstall exited ${String(uninstall.exitCode)}: ${uninstall.stderr}`)
-        }
-        await waitForRemoval(installation)
+        await uninstallWindowsInstallation(root, installation)
       },
     }
   } catch (error) {
+    if (installed) {
+      return rollbackWindowsPreparation(error, {
+        findUninstaller: async () => findWindowsUninstaller(installation),
+        runUninstaller: async path => runWindowsUninstaller(root, path),
+        waitForRemoval: async () => waitForRemoval(installation),
+        removeRoot: async () => removeTree(root),
+      })
+    }
     await removeTree(root)
     throw error
+  }
+}
+
+async function uninstallWindowsInstallation(root: string, installation: string): Promise<void> {
+  const uninstaller = await findWindowsUninstaller(installation)
+  await runWindowsUninstaller(root, uninstaller)
+  await waitForRemoval(installation)
+}
+
+async function findWindowsUninstaller(installation: string): Promise<string> {
+  const uninstaller = (await readdir(installation)).find(name => /^Uninstall .*\.exe$/u.test(name))
+  if (uninstaller === undefined) throw new Error('installed desktop artifact: NSIS uninstaller is missing')
+  return join(installation, uninstaller)
+}
+
+async function runWindowsUninstaller(root: string, uninstaller: string): Promise<void> {
+  const result = await execa(uninstaller, ['/S'], { cwd: root, reject: false })
+  if (result.exitCode !== 0) {
+    throw new Error(`installed desktop artifact: NSIS uninstall exited ${String(result.exitCode)}: ${result.stderr}`)
   }
 }
 
@@ -250,7 +237,9 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
     await chmod(appImage, 0o755)
     await execa(appImage, ['--appimage-extract'], { cwd: appImageRoot, reject: true })
     const extractedAppImage = join(appImageRoot, 'squashfs-root')
-    const appImageExecutable = await findFile(extractedAppImage, 'harness-desktop')
+    const appRun = join(extractedAppImage, 'AppRun')
+    await requireFile(appRun, 'extracted AppImage AppRun')
+    await chmod(appRun, 0o755)
     const appImageAsar = await findFile(extractedAppImage, 'app.asar')
 
     debRoot = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-deb-'))
@@ -281,13 +270,9 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
         iconMember: 'resources/icons/linux/harness-desktop-512.png',
         generatedIcon: icon,
         async launch() {
-          try {
-            return await launchDesktopExecutableRuntimeFixture({ executablePath: appImage, cwd: appImageWorkingRoot })
-          } catch (error) {
-            if (!isAppImageFuseUnavailable(error)) throw error
-            process.stderr.write('installed desktop artifact: AppImage FUSE unavailable; using extracted AppRun fallback\n')
-            return await launchDesktopExecutableRuntimeFixture({ executablePath: appImageExecutable, cwd: appImageWorkingRoot })
-          }
+          return launchAppImageWithFallback(appImage, appRun, async (executablePath) => {
+            return launchDesktopExecutableRuntimeFixture({ executablePath, cwd: appImageWorkingRoot })
+          })
         },
         async remove() { await rm(extractedAppImage, { recursive: true, force: true }) },
       },

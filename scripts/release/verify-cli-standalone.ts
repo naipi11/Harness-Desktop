@@ -1,7 +1,7 @@
 /** Verify standalone CLI archives by extracting and executing their bundled runtime. */
 
 import { createHash } from 'node:crypto'
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,6 +30,7 @@ interface StandaloneManifest {
     readonly executable: string
   }
   readonly launchers: readonly string[]
+  readonly executablePaths: readonly string[]
   readonly nativeModules: readonly string[]
   readonly files: Readonly<Record<string, string>>
 }
@@ -88,7 +89,7 @@ async function verifyExtracted(
 ): Promise<readonly string[]> {
   const manifest = JSON.parse(await readFile(join(extraction, 'manifest.json'), 'utf8')) as StandaloneManifest
   const violations: string[] = []
-  if (manifest.version !== 1) violations.push(`standalone CLI: ${format} manifest version is not 1`)
+  if (manifest.version !== 2) violations.push(`standalone CLI: ${format} manifest version is not 2`)
   if (manifest.target.platform !== input.platform || manifest.target.arch !== input.arch) {
     violations.push(`standalone CLI: ${format} manifest target is ${manifest.target.platform}-${manifest.target.arch}`)
   }
@@ -100,6 +101,18 @@ async function verifyExtracted(
   if (JSON.stringify(actualDigests) !== JSON.stringify(manifest.files)) {
     violations.push(`standalone CLI: ${format} digest map does not match extracted files`)
   }
+  const executablePaths = validateExecutablePaths(manifest.executablePaths, actualDigests, format, violations)
+  for (const path of [...manifest.launchers, manifest.node.executable]) {
+    if (!executablePaths.includes(path)) {
+      violations.push(`standalone CLI: ${format} executable manifest omits ${path}`)
+    }
+  }
+  violations.push(...await applyStandaloneExecutablePaths({
+    format: format === 'zip' ? 'zip' : 'tar.gz',
+    platform: input.platform,
+    extraction,
+    executablePaths,
+  }))
   const comparePaths = (left: string, right: string): number => left.localeCompare(right, 'en')
   const actualNativeModules = Object.keys(actualDigests).filter(path => path.endsWith('.node')).toSorted(comparePaths)
   const expectedNativeModules = [...manifest.nativeModules].toSorted(comparePaths)
@@ -272,6 +285,67 @@ async function firstExisting(paths: readonly string[]): Promise<string | undefin
 
 async function removeTree(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+}
+
+/** Filesystem operations used to restore and inspect archive executable modes. */
+export interface StandaloneExecutableModeDependencies {
+  chmod(path: string, mode: number): Promise<void>
+  stat(path: string): Promise<{ readonly mode: number }>
+}
+
+/**
+ * Restore ZIP modes from the checksummed manifest and require tar to preserve them.
+ * @param input - extracted format, target platform, root, and recorded executable paths.
+ * @param dependencies - filesystem mode operations.
+ * @returns mode diagnostics; empty means every applicable path is executable.
+ */
+export async function applyStandaloneExecutablePaths(
+  input: {
+    readonly format: 'zip' | 'tar.gz'
+    readonly platform: NodeJS.Platform
+    readonly extraction: string
+    readonly executablePaths: readonly string[]
+  },
+  dependencies: StandaloneExecutableModeDependencies = { chmod, stat },
+): Promise<readonly string[]> {
+  const violations: string[] = []
+  for (const path of input.executablePaths) {
+    const absolute = join(input.extraction, ...path.split('/'))
+    if (input.format === 'zip') await dependencies.chmod(absolute, 0o755)
+    if (input.platform === 'win32') continue
+    const mode = (await dependencies.stat(absolute)).mode & 0o777
+    if (mode !== 0o755) {
+      violations.push(`standalone CLI: ${input.format} executable ${path} has mode ${mode.toString(8)}, expected 755`)
+    }
+  }
+  return violations
+}
+
+function validateExecutablePaths(
+  value: unknown,
+  digests: Readonly<Record<string, string>>,
+  format: string,
+  violations: string[],
+): readonly string[] {
+  if (!Array.isArray(value) || value.some(path => typeof path !== 'string')) {
+    violations.push(`standalone CLI: ${format} executable manifest is invalid`)
+    return []
+  }
+  const paths = value as string[]
+  const sorted = [...new Set(paths)].toSorted((left, right) => left.localeCompare(right, 'en'))
+  if (JSON.stringify(paths) !== JSON.stringify(sorted)) {
+    violations.push(`standalone CLI: ${format} executable manifest is not sorted and unique`)
+  }
+  for (const path of sorted) {
+    try {
+      assertSafeMember(path)
+    } catch (error) {
+      violations.push(`standalone CLI: ${format} executable manifest contains ${errorMessage(error)}`)
+      continue
+    }
+    if (digests[path] === undefined) violations.push(`standalone CLI: ${format} executable manifest names missing file ${path}`)
+  }
+  return sorted.filter(path => digests[path] !== undefined)
 }
 
 async function extractZip(archive: string, destination: string): Promise<void> {

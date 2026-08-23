@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync, unzipSync } from 'fflate'
 import { afterEach, describe, expect, it } from 'vitest'
+import * as tar from 'tar'
 import {
   buildCliStandaloneWithDependencies,
   type CliStandaloneBuildDependencies,
 } from './build-cli-standalone.ts'
-import { digestStandaloneTree } from './verify-cli-standalone.ts'
+import { applyStandaloneExecutablePaths, digestStandaloneTree } from './verify-cli-standalone.ts'
 
 const roots: string[] = []
 
@@ -33,11 +34,13 @@ async function fixture(): Promise<{
   const runtimeRoot = join(root, 'runtimes')
   const runtimeFilename = 'node-v0.0.0-test-win-x64.zip'
   await mkdir(join(cliRoot, 'lib'), { recursive: true })
+  await mkdir(join(cliRoot, 'node_modules', '@vscode', 'ripgrep-win32-x64', 'bin'), { recursive: true })
   await mkdir(runtimeRoot, { recursive: true })
   await writeFile(join(cliRoot, 'package.json'), JSON.stringify({ name: '@harness-desktop/cli', version: '9.8.7' }))
   await writeFile(join(cliRoot, 'lib', 'bin.js'), "console.log('Usage: harness')\n")
   await writeFile(join(cliRoot, 'lib', 'dsh-bin.js'), "console.log('Usage: dsh')\n")
   await writeFile(join(cliRoot, 'lib', 'main.js'), 'export {}\n')
+  await writeFile(join(cliRoot, 'node_modules', '@vscode', 'ripgrep-win32-x64', 'bin', 'rg.exe'), 'fixture rg')
   const runtimeBytes = Buffer.from('fixture runtime distribution')
   await writeFile(join(runtimeRoot, runtimeFilename), runtimeBytes)
   return {
@@ -71,6 +74,37 @@ function dependencies(
     validateCliClosure: async () => {},
     ...overrides,
   }
+}
+
+function zipModes(bytes: Uint8Array): ReadonlyMap<string, number> {
+  const view = Buffer.from(bytes)
+  let end = view.length - 22
+  while (end >= 0 && view.readUInt32LE(end) !== 0x06054b50) end -= 1
+  if (end < 0) throw new Error('fixture ZIP has no end-of-central-directory record')
+  const count = view.readUInt16LE(end + 10)
+  let offset = view.readUInt32LE(end + 16)
+  const modes = new Map<string, number>()
+  for (let index = 0; index < count; index += 1) {
+    if (view.readUInt32LE(offset) !== 0x02014b50) throw new Error('fixture ZIP central directory is malformed')
+    const nameLength = view.readUInt16LE(offset + 28)
+    const extraLength = view.readUInt16LE(offset + 30)
+    const commentLength = view.readUInt16LE(offset + 32)
+    const name = view.subarray(offset + 46, offset + 46 + nameLength).toString('utf8')
+    modes.set(name, (view.readUInt32LE(offset + 38) >>> 16) & 0o777)
+    offset += 46 + nameLength + extraLength + commentLength
+  }
+  return modes
+}
+
+async function tarModes(path: string): Promise<ReadonlyMap<string, number>> {
+  const modes = new Map<string, number>()
+  await tar.t({
+    file: path,
+    onReadEntry(entry) {
+      modes.set(entry.path, entry.mode ?? 0)
+    },
+  })
+  return modes
 }
 
 describe('buildCliStandaloneWithDependencies', () => {
@@ -184,7 +218,106 @@ describe('buildCliStandaloneWithDependencies', () => {
       'harness-cli-0.0.0-test-win32-x64.sha256',
     ])
     const digests = await digestStandaloneTree(subject.cliRoot, new Set())
-    expect(Object.keys(digests)).toHaveLength(8_304)
+    expect(Object.keys(digests)).toHaveLength(8_305)
     expect(Object.keys(digests)).toEqual(Object.keys(digests).toSorted((left, right) => left.localeCompare(right, 'en')))
   }, 120_000)
+
+  it.each([
+    {
+      platform: 'linux' as const,
+      arch: 'x64',
+      packageExecutable: 'node_modules/@vscode/ripgrep-linux-x64/bin/rg',
+    },
+    {
+      platform: 'darwin' as const,
+      arch: 'arm64',
+      packageExecutable: 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper',
+    },
+  ])('records and preserves package executables for $platform', async ({ platform, arch, packageExecutable }) => {
+    const subject = await fixture()
+    const output = await tempRoot(`harness-cli-standalone-${platform}-executables-`)
+    const packageExecutablePath = join(subject.cliRoot, ...packageExecutable.split('/'))
+    const rgExecutable = `node_modules/@vscode/ripgrep-${platform}-${arch}/bin/rg`
+    const rgExecutablePath = join(subject.cliRoot, ...rgExecutable.split('/'))
+    const declaredBin = join(subject.cliRoot, 'node_modules', 'fixture-bin', 'bin', 'fixture-tool')
+    await mkdir(join(packageExecutablePath, '..'), { recursive: true })
+    await writeFile(packageExecutablePath, 'fixture package executable')
+    await mkdir(join(rgExecutablePath, '..'), { recursive: true })
+    await writeFile(rgExecutablePath, 'fixture rg')
+    await mkdir(join(declaredBin, '..'), { recursive: true })
+    await writeFile(declaredBin, '#!/bin/sh\n')
+    await writeFile(join(subject.cliRoot, 'node_modules', 'fixture-bin', 'package.json'), JSON.stringify({
+      name: 'fixture-bin',
+      version: '1.0.0',
+      bin: { 'fixture-tool': 'bin/fixture-tool' },
+    }))
+    const buildDependencies = dependencies(subject, {
+      checksumAllowlist: {
+        '0.0.0-test': { [platform]: { [arch]: { filename: subject.runtimeFilename, sha256: subject.runtimeSha256 } } },
+      },
+      extractNodeDistribution: async (_archive, destination) => {
+        await mkdir(join(destination, 'bin'), { recursive: true })
+        await writeFile(join(destination, 'bin', 'node'), 'fixture node')
+      },
+    })
+
+    const names = await buildCliStandaloneWithDependencies({
+      platform,
+      arch,
+      version: '0.0.0-test',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, buildDependencies)
+    const zipPath = join(output, names[0]!)
+    const zipped = unzipSync(await readFile(zipPath))
+    const manifest = JSON.parse(Buffer.from(zipped['manifest.json']!).toString('utf8')) as {
+      readonly executablePaths?: readonly string[]
+    }
+    const requiredPaths = [...new Set([
+      `cli/package/${packageExecutable}`,
+      `cli/package/${rgExecutable}`,
+      'cli/package/node_modules/fixture-bin/bin/fixture-tool',
+      'runtime/bin/node',
+      'harness',
+      'dsh',
+    ])]
+    expect(manifest.executablePaths).toEqual(expect.arrayContaining(requiredPaths))
+    const zipModeMap = zipModes(await readFile(zipPath))
+    const tarModeMap = await tarModes(join(output, names[1]!))
+    for (const path of requiredPaths) {
+      expect(zipModeMap.get(path), `ZIP mode for ${path}`).toBe(0o755)
+      expect(tarModeMap.get(path), `tar mode for ${path}`).toBe(0o755)
+    }
+  })
+})
+
+describe('standalone executable verification', () => {
+  it('rejects a tar member whose manifest-recorded executable bit is missing', async () => {
+    await expect(applyStandaloneExecutablePaths({
+      format: 'tar.gz',
+      platform: 'linux',
+      extraction: '/fixture',
+      executablePaths: ['cli/package/bin/rg'],
+    }, {
+      chmod: async () => {},
+      stat: async () => ({ mode: 0o644 }),
+    })).resolves.toEqual([
+      'standalone CLI: tar.gz executable cli/package/bin/rg has mode 644, expected 755',
+    ])
+  })
+
+  it('restores ZIP executable modes from the manifest before validating them', async () => {
+    let mode = 0o644
+
+    await expect(applyStandaloneExecutablePaths({
+      format: 'zip',
+      platform: 'linux',
+      extraction: '/fixture',
+      executablePaths: ['cli/package/bin/rg'],
+    }, {
+      async chmod(_path, nextMode) { mode = nextMode },
+      stat: async () => ({ mode }),
+    })).resolves.toEqual([])
+    expect(mode).toBe(0o755)
+  })
 })

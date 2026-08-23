@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { unzipSync, zipSync, type ZipOptions, type Zippable } from 'fflate'
@@ -110,11 +110,12 @@ export interface CliStandaloneBuildDependencies {
 }
 
 interface StandaloneManifest {
-  readonly version: 1
+  readonly version: 2
   readonly target: { readonly platform: NodeJS.Platform; readonly arch: string }
   readonly node: NodeRuntimeChecksum & { readonly version: string; readonly executable: string }
   readonly cli: { readonly name: string; readonly version: string }
   readonly launchers: readonly string[]
+  readonly executablePaths: readonly string[]
   readonly nativeModules: readonly string[]
   readonly files: Readonly<Record<string, string>>
 }
@@ -187,8 +188,13 @@ export async function buildCliStandaloneWithDependencies(
     await dependencies.validateCliClosure(join(stage, 'cli', 'package'))
     const launchers = await writeLaunchers(stage, input.platform)
     const epoch = sourceDateEpoch()
-    await normalizeTree(stage, epoch, new Set([...launchers, nodeExecutable]))
     await pruneOptionalForeignNativeModules(stage, input.platform, input.arch)
+    const executablePaths = await collectExecutablePaths(stage, input.platform, input.arch, [
+      ...launchers,
+      nodeExecutable,
+    ])
+    const executablePathSet = new Set(executablePaths)
+    await normalizeTree(stage, epoch, executablePathSet)
     const nativeModules = await verifyNativeModules(stage, input.platform, input.arch)
     const cliManifest = JSON.parse(await readFile(join(stage, 'cli', 'package', 'package.json'), 'utf8')) as {
       readonly name?: string
@@ -199,16 +205,17 @@ export async function buildCliStandaloneWithDependencies(
     }
     const fileDigests = await digestTree(stage)
     const manifest: StandaloneManifest = {
-      version: 1,
+      version: 2,
       target: { platform: input.platform, arch: input.arch },
       node: { version: input.version, ...runtime, executable: nodeExecutable },
       cli: { name: cliManifest.name, version: cliManifest.version },
       launchers,
+      executablePaths,
       nativeModules,
       files: fileDigests,
     }
     await writeFile(join(stage, 'manifest.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
-    await normalizeTree(stage, epoch, new Set([...launchers, nodeExecutable]))
+    await normalizeTree(stage, epoch, executablePathSet)
 
     await mkdir(input.outputDirectory, { recursive: true })
     const stem = `harness-cli-${input.version}-${input.platform}-${input.arch}`
@@ -217,11 +224,16 @@ export async function buildCliStandaloneWithDependencies(
     const checksumName = `${stem}.sha256`
     const zipPath = join(input.outputDirectory, zipName)
     const tarPath = join(input.outputDirectory, tarName)
-    await writeDeterministicZip(stage, zipPath, epoch)
+    await writeDeterministicZip(stage, zipPath, epoch, executablePathSet)
     await tar.c({
       cwd: stage,
       file: tarPath,
       gzip: true,
+      filter(path, entry) {
+        const mutable = entry as { mode: number }
+        mutable.mode = (mutable.mode & ~0o777) | (executablePathSet.has(path.replaceAll('\\', '/')) ? 0o755 : 0o644)
+        return true
+      },
       mtime: epoch,
       portable: true,
       strict: true,
@@ -316,6 +328,54 @@ async function verifyNativeModules(
   return nativeModules
 }
 
+async function collectExecutablePaths(
+  stage: string,
+  platform: NodeJS.Platform,
+  arch: string,
+  required: readonly string[],
+): Promise<readonly string[]> {
+  const paths = await listTree(stage)
+  const files = new Set(paths)
+  const executables = new Set(required)
+  let next = 0
+  const inspectModes = async (): Promise<void> => {
+    for (;;) {
+      const path = paths[next]
+      next += 1
+      if (path === undefined) return
+      if (((await stat(join(stage, ...path.split('/')))).mode & 0o111) !== 0) executables.add(path)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(32, paths.length) }, inspectModes))
+  for (const manifestPath of paths.filter(path => path.startsWith('cli/package/') && path.endsWith('/package.json'))) {
+    const manifest = JSON.parse(await readFile(join(stage, ...manifestPath.split('/')), 'utf8')) as { readonly bin?: unknown }
+    const bins = typeof manifest.bin === 'string'
+      ? [manifest.bin]
+      : typeof manifest.bin === 'object' && manifest.bin !== null && !Array.isArray(manifest.bin)
+        ? Object.values(manifest.bin as Readonly<Record<string, unknown>>).filter((value): value is string => typeof value === 'string')
+        : []
+    for (const bin of bins) {
+      const path = posix.normalize(posix.join(posix.dirname(manifestPath), bin))
+      if (files.has(path)) executables.add(path)
+    }
+  }
+  for (const path of requiredPackageExecutables(platform, arch)) {
+    if (!files.has(path)) throw new Error(`standalone CLI: required package executable is missing: ${path}`)
+    executables.add(path)
+  }
+  return [...executables].toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+function requiredPackageExecutables(platform: NodeJS.Platform, arch: string): readonly string[] {
+  const target = `${platform}-${arch}`
+  return [
+    `cli/package/node_modules/@vscode/ripgrep-${target}/bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`,
+    ...(platform === 'darwin'
+      ? [`cli/package/node_modules/node-pty/prebuilds/${target}/spawn-helper`]
+      : []),
+  ]
+}
+
 async function pruneOptionalForeignNativeModules(
   stage: string,
   platform: NodeJS.Platform,
@@ -405,10 +465,15 @@ async function listDirectories(directory: string): Promise<string[]> {
   return directories
 }
 
-async function writeDeterministicZip(stage: string, output: string, epoch: Date): Promise<void> {
+async function writeDeterministicZip(
+  stage: string,
+  output: string,
+  epoch: Date,
+  executablePaths: ReadonlySet<string>,
+): Promise<void> {
   const entries: Zippable = {}
   for (const path of await listTree(stage)) {
-    const mode = (await stat(join(stage, ...path.split('/')))).mode & 0o777
+    const mode = executablePaths.has(path) ? 0o755 : 0o644
     const options: ZipOptions = { mtime: epoch, attrs: mode << 16, os: 3 }
     entries[path] = [await readFile(join(stage, ...path.split('/'))), options]
   }

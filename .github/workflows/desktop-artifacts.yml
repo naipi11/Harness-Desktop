@@ -116,7 +116,12 @@ jobs:
         with:
           name: harness-desktop-${{ matrix.label }}
           path: |
-            apps/desktop/release/*
-            dist/cli-standalone/*
+            apps/desktop/release/Harness Desktop Setup *.exe
+            apps/desktop/release/Harness Desktop-*-universal.dmg
+            apps/desktop/release/Harness Desktop-*.AppImage
+            apps/desktop/release/harness-desktop_*_*.deb
+            dist/cli-standalone/harness-cli-*.zip
+            dist/cli-standalone/harness-cli-*.tar.gz
+            dist/cli-standalone/harness-cli-*.sha256
           if-no-files-found: error
           retention-days: 7
