@@ -1,0 +1,47 @@
+{
+  "name": "@harness-desktop/dsh-cross-client-runtime",
+  "description": "Host-only shared Runtime acceptance fixture for CLI, Web, and Desktop tests",
+  "version": "1.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
+    "directory": "packages/test-support/cross-client-runtime"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@harness-desktop/dsh-host-apiproxy": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
+    "@harness-desktop/dsh-llm-mock-server": "workspace:^"
+  },
+  "peerDependencies": {
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
+  }
+}

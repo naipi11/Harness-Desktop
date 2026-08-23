@@ -667,6 +667,9 @@ importers:
         specifier: 18.2.0
         version: 18.2.0(react@18.3.1)
     devDependencies:
+      '@harness-desktop/dsh-cross-client-runtime':
+        specifier: workspace:^
+        version: link:../../packages/test-support/cross-client-runtime
       '@harness-desktop/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../packages/host/apiproxy
@@ -980,6 +983,9 @@ importers:
         specifier: 18.2.0
         version: 18.2.0(react@18.2.0)
     devDependencies:
+      '@harness-desktop/dsh-cross-client-runtime':
+        specifier: workspace:^
+        version: link:../../packages/test-support/cross-client-runtime
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
@@ -1041,6 +1047,9 @@ importers:
       '@harness-desktop/dsh-cmdline':
         specifier: workspace:^
         version: link:../../packages/boot/cmdline
+      '@harness-desktop/dsh-cross-client-runtime':
+        specifier: workspace:^
+        version: link:../../packages/test-support/cross-client-runtime
       '@harness-desktop/dsh-pwsh-local':
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local
@@ -8492,6 +8501,25 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/test-support/cross-client-runtime:
+    dependencies:
+      '@harness-desktop/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../../host/apiproxy
+      '@harness-desktop/dsh-host-local-runtime':
+        specifier: workspace:^
+        version: link:../../host/local-runtime
+      '@harness-desktop/dsh-llm-mock-server':
+        specifier: workspace:^
+        version: link:../llm-mock-server
+    devDependencies:
+      '@harness-desktop/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@harness-desktop/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/test-support/llm-mock-server:
     devDependencies:

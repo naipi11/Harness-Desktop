@@ -116,6 +116,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@harness-desktop/dsh-cross-client-runtime": "workspace:^",
     "@types/react": "~18.3.31",
     "@types/react-dom": "~18.3.7",
     "@vitejs/plugin-react": "^4.7.0",

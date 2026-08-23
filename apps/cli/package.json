@@ -202,6 +202,7 @@
     "react-dom": "18.2.0"
   },
   "devDependencies": {
+    "@harness-desktop/dsh-cross-client-runtime": "workspace:^",
     "@harness-desktop/dsh-host-apiproxy": "workspace:^",
     "@harness-desktop/dsh-host-frontend-static": "workspace:^",
     "@harness-desktop/dsh-llm-mock-server": "workspace:^",
