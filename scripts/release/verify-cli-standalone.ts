@@ -11,6 +11,13 @@ import * as tar from 'tar'
 
 const root = resolve(import.meta.dirname, '../..')
 const defaultNodeVersion = '24.19.0'
+const hostileAmbientLoaderViolation = 'standalone CLI: archive child inherited hostile ambient Node loader'
+const hostileAmbientEnvironmentKeys = [
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'TSX_TSCONFIG_PATH',
+  'TS_NODE_PROJECT',
+] as const
 
 /** Inputs selecting one already-produced native standalone archive pair. */
 export interface CliStandaloneVerificationInput {
@@ -41,6 +48,90 @@ interface StandaloneManifest {
  * @returns diagnostics; an empty array means both archives and launchers passed.
  */
 export async function verifyCliStandalone(
+  input: CliStandaloneVerificationInput,
+): Promise<readonly string[]> {
+  return verifyInHostileAmbientLoaderEnvironment(async () => verifyCliStandaloneArchives(input))
+}
+
+/**
+ * Run archive verification while the already-running parent carries hostile loader state.
+ * @param verification - archive verification that owns every child probe and lifecycle.
+ * @returns archive diagnostics plus a stable violation if any child inherits the ambient loader.
+ */
+export async function verifyInHostileAmbientLoaderEnvironment(
+  verification: () => Promise<readonly string[]>,
+): Promise<readonly string[]> {
+  const hostileRoot = await mkdtemp(join(tmpdir(), 'harness-standalone-hostile-loader-'))
+  const marker = join(hostileRoot, 'ambient-loader-ran')
+  const loader = join(hostileRoot, 'ambient-loader.mjs')
+  const originalEnvironment = new Map(
+    hostileAmbientEnvironmentKeys.map(name => [name, process.env[name]] as const),
+  )
+  let primaryError: unknown
+  let verificationViolations: readonly string[] = []
+  let markerRan = false
+  let markerCheckError: unknown
+  let cleanupError: unknown
+  try {
+    await writeFile(loader, [
+      "import { appendFileSync } from 'node:fs'",
+      `appendFileSync(${JSON.stringify(marker)}, 'inherited\\n')`,
+      '',
+    ].join('\n'))
+    process.env.NODE_OPTIONS = `--import=${pathToFileURL(loader).href}`
+    process.env.NODE_PATH = hostileRoot
+    process.env.TSX_TSCONFIG_PATH = join(hostileRoot, 'hostile-tsconfig.json')
+    process.env.TS_NODE_PROJECT = join(hostileRoot, 'hostile-ts-node.json')
+    try {
+      verificationViolations = await verification()
+    } catch (error) {
+      primaryError = error
+    }
+  } finally {
+    restoreEnvironment(originalEnvironment)
+    try {
+      await access(marker)
+      markerRan = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') markerCheckError = error
+    }
+    try {
+      await removeTree(hostileRoot)
+    } catch (error) {
+      cleanupError = error
+    }
+  }
+
+  const probeErrors = [
+    ...(markerRan ? [new Error(hostileAmbientLoaderViolation)] : []),
+    ...(markerCheckError === undefined
+      ? []
+      : [new Error(`standalone CLI: hostile ambient loader marker check failed: ${errorMessage(markerCheckError)}`)]),
+    ...(cleanupError === undefined
+      ? []
+      : [new Error(`standalone CLI: hostile ambient loader cleanup failed: ${errorMessage(cleanupError)}`)]),
+  ]
+  if (primaryError !== undefined) {
+    const normalizedPrimaryError = primaryError instanceof Error
+      ? primaryError
+      : new Error(errorMessage(primaryError))
+    if (probeErrors.length === 0) throw normalizedPrimaryError
+    throw new AggregateError(
+      [normalizedPrimaryError, ...probeErrors],
+      'standalone CLI: hostile ambient loader verification failed',
+    )
+  }
+  return [...verificationViolations, ...probeErrors.map(error => error.message)]
+}
+
+function restoreEnvironment(environment: ReadonlyMap<string, string | undefined>): void {
+  for (const [name, value] of environment) {
+    if (value === undefined) Reflect.deleteProperty(process.env, name)
+    else process.env[name] = value
+  }
+}
+
+async function verifyCliStandaloneArchives(
   input: CliStandaloneVerificationInput,
 ): Promise<readonly string[]> {
   const stem = `harness-cli-${input.version}-${input.platform}-${input.arch}`
