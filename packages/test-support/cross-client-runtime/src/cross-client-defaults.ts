@@ -1,101 +1,20 @@
-/** Canonical built-process, public mock, connector, and Dashboard carrier adapters. */
+/** Canonical built-process, public mock, and connector adapters. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import {
-  AbstractApiClient,
-  type IApiClient,
-} from '@harness-desktop/dsh-host-apiproxy/client'
-import type {
-  HistoryEntry,
-  RpcResponse,
-  SessionSummary,
-  WorkspaceId,
-  WorkspaceView,
-} from '@harness-desktop/dsh-host-apiproxy/api'
-import {
-  createRuntimeConnector,
-  type SessionId,
-} from '@harness-desktop/dsh-host-local-runtime'
+import { createRuntimeConnector } from '@harness-desktop/dsh-host-local-runtime'
 import { startMockLlmServer } from '@harness-desktop/dsh-llm-mock-server'
 import type {
   CrossClientFixtureDependencies,
   CrossClientRuntimeExit,
-  CrossClientStateClient,
 } from './cross-client-fixture.ts'
+import { createCrossClientDashboardApiAdapter } from './cross-client-dashboard.ts'
 
 class DefaultAdapterError extends Error {}
 class ProcessTimeoutError extends Error {}
-
-class CookieApiClient extends AbstractApiClient {
-  #cookie: string
-
-  constructor(private readonly origin: string, cookie: string) {
-    super()
-    this.#cookie = cookie
-  }
-
-  protected override resolveBase(): string {
-    return this.origin
-  }
-
-  protected override doFetch(input: URL, init?: RequestInit): Promise<Response> {
-    if (input.origin !== this.origin) throw new DefaultAdapterError()
-    const headers = new Headers(init?.headers)
-    headers.set('cookie', this.#cookie)
-    headers.set('origin', this.origin)
-    return fetch(input, { ...init, headers })
-  }
-
-  close(): void {
-    this.#cookie = ''
-  }
-}
-
-function unwrap<T>(response: RpcResponse<T>): T {
-  if (!response.result.ok) throw new DefaultAdapterError()
-  return response.result.value
-}
-
-class DashboardStateClient implements CrossClientStateClient {
-  constructor(private readonly client: IApiClient & { close(): void }) {}
-
-  async createWorkspace(path: string): Promise<WorkspaceView> {
-    return unwrap(await this.client.workspace.create({ path })).workspace
-  }
-
-  async createSession(workspaceId: WorkspaceId): Promise<SessionId> {
-    return unwrap(await this.client.sessions.create({ workspaceId, agentPreset: 'standard' })).sessionId
-  }
-
-  async readWorkspaces(): Promise<readonly WorkspaceView[]> {
-    return unwrap(await this.client.workspace.list({})).items
-  }
-
-  async readSessions(): Promise<readonly SessionSummary[]> {
-    return unwrap(await this.client.sessions.list({})).items
-  }
-
-  async readHistory(sessionId: SessionId): Promise<readonly HistoryEntry[]> {
-    return unwrap(await this.client.sessions.history({ sessionId })).events
-  }
-
-  async prompt(sessionId: SessionId, text: string): Promise<void> {
-    unwrap(await this.client.sessions.prompt({
-      sessionId,
-      mode: 'queue',
-      content: [{ type: 'text', text }],
-    }))
-  }
-
-  close(): Promise<void> {
-    this.client.close()
-    return Promise.resolve()
-  }
-}
 
 function waitForChild(child: ChildProcess): Promise<CrossClientRuntimeExit> {
   return new Promise((resolveExit, rejectExit) => {
@@ -201,27 +120,7 @@ export const defaultCrossClientDependencies: CrossClientFixtureDependencies = {
       input: { env: { HARNESS_HOME: input.home }, homeDir: input.platformHome },
     }).connect({ start: input.start }),
   },
-  dashboardApi: {
-    async connect(runtime) {
-      const dashboard = await runtime.attachDashboard()
-      try {
-        const navigation = await dashboard.createBrowserHandoff()
-        const exchanged = await fetch(`${navigation.origin}/_harness/handoff`, {
-          method: 'POST',
-          redirect: 'manual',
-          headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
-          body: new URLSearchParams({ handoff: navigation.handoff.id }),
-        })
-        const cookie = exchanged.headers.get('set-cookie')?.split(';', 1)[0]
-        if (exchanged.status !== 303 || cookie === undefined) throw new DefaultAdapterError()
-        const client = new CookieApiClient(navigation.origin, cookie)
-        return { api: new DashboardStateClient(client), dashboard }
-      } catch (_handoffFailure) {
-        await dashboard.close().catch(() => {})
-        throw new DefaultAdapterError()
-      }
-    },
-  },
+  dashboardApi: createCrossClientDashboardApiAdapter(),
   delay: milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds)),
 }
 

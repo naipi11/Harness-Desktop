@@ -14,15 +14,15 @@ CLI、Web 和 Desktop 验收需要一个共享的本地运行时以及耐久的�
 
 `@harness-desktop/dsh-cross-client-runtime` 是一个仅 Host 的测试支持包。其默认 fixture 创建一个临时根目录，使用普通的当前 Node 和经过清理的系统环境运行已声明的构建版 `harness-runtime` 二进制命令，启动公开 LLM mock 服务器，并通过测试 API key 与 `${baseURL}/v1` 配置运行时。最小 `standard` preset 让组装后的产品路径保持规范，同时不使用 replay 或私有源码后端。
 
-就绪只重试公开的非启动 connector，并在已附加客户端的脱敏状态报告 `running` 后接受该运行时。共享状态通过使用 cookie 认证的 `AbstractApiClient` 子类创建和读取。fixture 从 `attachDashboard()` 和 `createBrowserHandoff()` 获取该 cookie，只在表单正文中提交 handoff，私下保留认证信息，并将每个 API 请求固定到返回的准确 origin。测试绝不读取端点记录、锁、SQLite、凭据存储、端口或进程标识符。
+就绪只重试公开的非启动 connector，并在已附加客户端的脱敏状态报告 `running` 后接受该运行时。共享状态通过使用 cookie 认证的 `AbstractApiClient` 子类创建和读取。fixture 从 `attachDashboard()` 和 `createBrowserHandoff()` 获取该 cookie，只接受干净、显式携带端口的回环 HTTP origin 以及指向 `/` 的 `303` 重定向，只在表单正文中提交 handoff，私下保留认证信息，并将每个 API 请求固定到返回的准确 origin。测试绝不读取端点记录、锁、SQLite、凭据存储、端口或进程标识符。
 
-根 API 使用现有的 `WorkspaceId` 与 `SessionId` 所有者，并公开工作区／会话／历史／提示词操作以及公开终端附加项。同一会话的争用必须返回携带尝试会话 id 的 `RuntimeBusyError`。CLI、Web 和 Desktop 进程或浏览器启动器仍是注入的仅 Node 适配器，因此 Playwright、Electron 和浏览器 fixture import 会留在应用所属的测试模块中。
+根 API 使用 `@harness-desktop/dsh-host-apiproxy/api` 的 `WorkspaceId` 和 `@harness-desktop/dsh-session/types` 的 `SessionId`，并公开工作区／会话／历史／提示词操作以及公开终端附加项。同一会话的争用必须返回携带尝试会话 id 的 `RuntimeBusyError`。CLI、Web 和 Desktop 进程或浏览器启动器仍是注入的仅 Node 适配器，因此 Playwright、Electron 和浏览器 fixture import 会留在应用所属的测试模块中。包含 fixture 根目录、测试 API key 或 access-token／auth／cookie／handoff 标记的 CLI 结果会以同一个稳定脱敏操作错误失败。
 
-运行时停止或清理会立即停止接受新操作。二者共享一个幂等阶段，先结束应用句柄、终端、Dashboard、API 客户端和基础客户端；随后运行时关闭会结束标准输入并在时限内等待，只有在超时后才强制终止其准确所属子进程，然后再次进行有界退出观测。清理接着关闭 mock 服务器，并且只在观测到退出后删除临时根目录。无 token 账本按顺序记录一次 `started`、`health-confirmed` 和 `stopped`；纯宿主断言负责执行该约束，而必须存在的 Cordis `./invariant` 配套项保持为有说明的空 installer。
+启动把同级目录创建视为一个事务：只有在每个尝试结束后才开始回滚。每个就绪状态异步公开操作都会在首次 await 之前同步进入准入计数器。运行时停止或清理会先改变状态，等待该计数器归零，再对应用句柄、终端、Dashboard、API 客户端和基础客户端取完整快照并结束它们；随后运行时关闭会结束标准输入并在时限内等待，只有在超时后才强制终止其准确所属子进程，然后再次进行有界退出观测。状态改变后才创建的句柄会先注册并关闭，再返回拒绝，不会以存活状态返回。清理接着关闭 mock 服务器，并且只在观测到退出后删除临时根目录。无 token 账本按顺序记录一次 `started`、`health-confirmed` 和 `stopped`；纯宿主断言负责执行该约束，而必须存在的 Cordis `./invariant` 配套项保持为有说明的空 installer。
 
 ## 验证
 
-宿主测试注入文件系统、进程、健康状态、API 和应用适配器，验证根目录所有权、非启动状态重试、状态观测、清理顺序、清理开始后的准入拒绝、幂等结果、稳定的独立失败聚合、强制终止兜底、启动失败清理、缺少停止事件时拒绝，以及禁止的浏览器／Electron／客户端 fixture 依赖。构建产物通道导入该包构建后的公开入口，拒绝继承恶意 Node loader，然后通过规范运行时与公开 mock 服务器验证公开健康状态、工作区／会话／历史持久化、包含自动标题请求的成功场景、停滞的终端工作、准确的同一会话忙碌拒绝、取消和清理。V8 逐文件门禁只排除 `cross-client-defaults.ts`，因为该模块包含会在插桩单元测试程序之外执行的规范构建进程与网络适配器；可注入的生命周期和状态所有者仍受 100% 逐文件门禁约束，而构建产物通道是被排除适配器模块的必要覆盖。
+宿主测试注入文件系统、进程、健康状态、API 和应用适配器，验证根目录所有权、等待全部目录结束的启动回滚、非启动状态重试、状态观测、延迟状态／CLI／应用／终端操作的同步准入、迟到句柄关闭、清理顺序、清理开始后的准入拒绝、幂等结果、稳定的独立失败聚合、强制终止兜底、启动失败清理、缺少停止事件时拒绝，以及禁止的浏览器／Electron／客户端 fixture 依赖。纳入覆盖率的 Dashboard 载体测试会拒绝不安全的 scheme／host／port／path／query／fragment／凭据、跨 origin cookie 请求、无效重定向响应，以及缺失或畸形的 cookie，同时验证仅正文 handoff 交换和不含密钥的诊断。构建产物通道导入该包构建后的公开入口，拒绝继承恶意 Node loader，然后通过规范运行时与公开 mock 服务器验证公开健康状态、工作区／会话／历史持久化、包含自动标题请求的成功场景、停滞的终端工作、准确的同一会话忙碌拒绝、取消和清理。V8 逐文件门禁只排除 `cross-client-defaults.ts`，其中已声明二进制命令、经过清理的进程环境、公开 mock 与公开 connector 的粘合代码会在插桩单元测试程序之外执行；生命周期、状态与 Dashboard 安全模块仍受 100% 逐文件门禁约束。
 
 ## 曾考虑的替代方案
 

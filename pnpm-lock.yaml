@@ -8513,6 +8513,9 @@ importers:
       '@harness-desktop/dsh-llm-mock-server':
         specifier: workspace:^
         version: link:../llm-mock-server
+      '@harness-desktop/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
     devDependencies:
       '@harness-desktop/cordis':
         specifier: workspace:^

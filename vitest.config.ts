@@ -276,9 +276,9 @@ export default defineConfig({
         'packages/host/apiproxy/src/index.ts',
         'packages/host/apiproxy/src/invariant.ts',
         'packages/host/apiproxy/src/api-proxy.ts',
-        // This host-process fixture's canonical path runs its built public entry,
-        // built Runtime bin, and loopback Dashboard carrier in vitest.artifact.config.ts;
-        // injected host specs cover its ledger and failure semantics in-process.
+        // This fixture's declared-bin, sanitized-process, public-mock, and
+        // public-connector glue executes through its built artifact; the lifecycle,
+        // state, and Dashboard-security modules remain covered in-process.
         'packages/test-support/cross-client-runtime/src/cross-client-defaults.ts',
         // Projection/command round: executor lifecycle branches and the
         // registry's drive tails need the same maturing lanes. TODO(gui):

@@ -34,7 +34,8 @@
   "dependencies": {
     "@harness-desktop/dsh-host-apiproxy": "workspace:^",
     "@harness-desktop/dsh-host-local-runtime": "workspace:^",
-    "@harness-desktop/dsh-llm-mock-server": "workspace:^"
+    "@harness-desktop/dsh-llm-mock-server": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^"
   },
   "peerDependencies": {
     "@harness-desktop/dsh-invariants": "workspace:^",

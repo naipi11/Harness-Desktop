@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RuntimeBusyError, type SessionId, type TerminalConnection } from '@harness-desktop/dsh-host-local-runtime'
+import { RuntimeBusyError, type TerminalConnection } from '@harness-desktop/dsh-host-local-runtime'
+import type { SessionId } from '@harness-desktop/dsh-session/types'
 import type { CrossClientFixture } from '../src/index.ts'
 
 const builtEntry = pathToFileURL(join(

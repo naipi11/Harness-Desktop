@@ -21,6 +21,9 @@
       "path": "../../host/local-runtime"
     },
     {
+      "path": "../../core/session"
+    },
+    {
       "path": "../llm-mock-server"
     }
   ]

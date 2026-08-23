@@ -12,10 +12,10 @@ import {
   RuntimeBusyError,
   type DashboardAttachment,
   type RuntimeStatus,
-  type SessionId,
   type TerminalConnection,
   type TerminalOpenRequest,
 } from '@harness-desktop/dsh-host-local-runtime'
+import type { SessionId } from '@harness-desktop/dsh-session/types'
 import {
   type MockLlmBehavior,
   type MockLlmServerOptions,
@@ -368,7 +368,10 @@ class OwnedTerminal implements TerminalConnection {
   }
 
   close(): Promise<void> {
-    return (this.closePromise ??= this.terminal.close())
+    return (this.closePromise ??= this.terminal.close().catch((error: unknown) => {
+      this.closePromise = undefined
+      throw error
+    }))
   }
 }
 
@@ -378,7 +381,10 @@ class OwnedAppHandle implements CrossClientAppHandle {
   constructor(private readonly handle: CrossClientAppHandle) {}
 
   close(): Promise<void> {
-    return (this.closePromise ??= this.handle.close())
+    return (this.closePromise ??= this.handle.close().catch((error: unknown) => {
+      this.closePromise = undefined
+      throw error
+    }))
   }
 }
 
@@ -410,6 +416,8 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   private closeOwnedPromise: Promise<readonly Error[]> | undefined
   private stopPromise: Promise<void> | undefined
   private disposePromise: Promise<void> | undefined
+  private admittedOperations = 0
+  private readonly admittedWaiters = new Set<() => void>()
 
   constructor(
     private readonly root: string,
@@ -455,114 +463,132 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     this.state = 'ready'
   }
 
-  async createWorkspace(path = this.workspace): Promise<WorkspaceView> {
-    const api = this.requireApi()
-    try {
-      const workspace = await api.createWorkspace(path)
-      this.lastWorkspaceId = workspace.workspaceId
-      return workspace
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  createWorkspace(path = this.workspace): Promise<WorkspaceView> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      try {
+        const workspace = await api.createWorkspace(path)
+        this.lastWorkspaceId = workspace.workspaceId
+        return workspace
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async createSession(workspaceId?: WorkspaceId): Promise<CrossClientObservation> {
-    const api = this.requireApi()
-    const owner = workspaceId ?? this.lastWorkspaceId ?? (await this.createWorkspace()).workspaceId
-    try {
-      const id = await api.createSession(owner)
-      const observation = { workspaceId: owner, sessionId: id }
-      this.observationRows.push(observation)
-      return { ...observation }
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  createSession(workspaceId?: WorkspaceId): Promise<CrossClientObservation> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      const owner = workspaceId ?? this.lastWorkspaceId ?? (await this.createWorkspace()).workspaceId
+      try {
+        const id = await api.createSession(owner)
+        const observation = { workspaceId: owner, sessionId: id }
+        this.observationRows.push(observation)
+        return { ...observation }
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async readWorkspaces(): Promise<readonly WorkspaceView[]> {
-    const api = this.requireApi()
-    try {
-      return await api.readWorkspaces()
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  readWorkspaces(): Promise<readonly WorkspaceView[]> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      try {
+        return await api.readWorkspaces()
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async readSessions(): Promise<readonly SessionSummary[]> {
-    const api = this.requireApi()
-    try {
-      return await api.readSessions()
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  readSessions(): Promise<readonly SessionSummary[]> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      try {
+        return await api.readSessions()
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async readHistory(sessionId: SessionId): Promise<readonly HistoryEntry[]> {
-    const api = this.requireApi()
-    try {
-      return await api.readHistory(sessionId)
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  readHistory(sessionId: SessionId): Promise<readonly HistoryEntry[]> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      try {
+        return await api.readHistory(sessionId)
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async prompt(sessionId: SessionId, text: string): Promise<void> {
-    const api = this.requireApi()
-    try {
-      await api.prompt(sessionId, text)
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
-    }
+  prompt(sessionId: SessionId, text: string): Promise<void> {
+    return this.runAdmitted(async () => {
+      const api = this.requireApi()
+      try {
+        await api.prompt(sessionId, text)
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
-  async openTerminal(
+  openTerminal(
     request: Omit<TerminalOpenRequest, 'workspace'> & { readonly workspace?: string } = {},
   ): Promise<TerminalConnection> {
-    this.ensureReady()
-    const runtime = this.runtime as CrossClientRuntimeClient
-    try {
-      const terminal = new OwnedTerminal(await runtime.openTerminal({
-        ...request,
-        workspace: request.workspace ?? this.workspace,
-      }))
+    return this.runAdmitted(async () => {
+      const runtime = this.runtime as CrossClientRuntimeClient
+      let terminal: OwnedTerminal
+      try {
+        terminal = new OwnedTerminal(await runtime.openTerminal({
+          ...request,
+          workspace: request.workspace ?? this.workspace,
+        }))
+      } catch (error) {
+        if (error instanceof RuntimeBusyError) throw error
+        throw new CrossClientFixtureOperationError()
+      }
       this.terminals.push(terminal)
+      if (this.state !== 'ready') {
+        await terminal.close().catch(() => {})
+        throw new CrossClientFixtureClosedError()
+      }
       return terminal
-    } catch (error) {
-      if (error instanceof RuntimeBusyError) throw error
-      throw new CrossClientFixtureOperationError()
-    }
+    })
   }
 
-  async expectSameSessionBusy(
+  expectSameSessionBusy(
     sessionId: SessionId,
     text = 'cross-client contender must not run',
   ): Promise<RuntimeBusyError> {
-    this.ensureReady()
-    const runtime = this.runtime as CrossClientRuntimeClient
-    try {
-      const terminal = await runtime.openTerminal({ workspace: this.workspace, sessionId, initialTask: text })
-      await terminal.close()
-    } catch (error) {
-      if (error instanceof RuntimeBusyError && error.sessionId === sessionId) return error
-      throw new CrossClientFixtureOperationError()
-    }
-    throw new CrossClientFixtureOperationError()
-  }
-
-  async runCli(args: readonly string[]): Promise<CrossClientCliResult> {
-    this.ensureReady()
-    const adapter = this.options.adapters?.cli
-    if (adapter === undefined) throw new CrossClientFixtureAdapterError()
-    try {
-      const result = await adapter.run([...args], this.appContext())
-      if (result.stdout.includes(TEST_API_KEY) || result.stderr.includes(TEST_API_KEY)) {
+    return this.runAdmitted(async () => {
+      const runtime = this.runtime as CrossClientRuntimeClient
+      try {
+        const terminal = await runtime.openTerminal({ workspace: this.workspace, sessionId, initialTask: text })
+        await terminal.close()
+      } catch (error) {
+        if (error instanceof RuntimeBusyError && error.sessionId === sessionId) return error
         throw new CrossClientFixtureOperationError()
       }
-      return result
-    } catch (error) {
-      if (error instanceof CrossClientFixtureOperationError) throw error
       throw new CrossClientFixtureOperationError()
-    }
+    })
+  }
+
+  runCli(args: readonly string[]): Promise<CrossClientCliResult> {
+    return this.runAdmitted(async () => {
+      const adapter = this.options.adapters?.cli
+      if (adapter === undefined) throw new CrossClientFixtureAdapterError()
+      try {
+        const result = await adapter.run([...args], this.appContext())
+        if (this.cliResultLeaksPrivateValue(result)) throw new CrossClientFixtureOperationError()
+        return result
+      } catch (error) {
+        if (error instanceof CrossClientFixtureOperationError) throw error
+        throw new CrossClientFixtureOperationError()
+      }
+    })
   }
 
   openWeb(): Promise<CrossClientAppHandle> {
@@ -641,16 +667,54 @@ class CrossClientFixtureImpl implements CrossClientFixture {
     return { home: this.home, platformHome: this.platformHome, workspace: this.workspace }
   }
 
-  private async openApp(adapter: CrossClientAppAdapter | undefined): Promise<CrossClientAppHandle> {
-    this.ensureReady()
-    if (adapter === undefined) throw new CrossClientFixtureAdapterError()
+  private cliResultLeaksPrivateValue(result: CrossClientCliResult): boolean {
+    const output = `${result.stdout}\n${result.stderr}`
+    const folded = output.toLowerCase()
+    if ([this.home, this.platformHome, TEST_API_KEY].some(value => folded.includes(value.toLowerCase()))) return true
+    return /\b(?:accesstoken|bearer|authorization|auth|cookie|handoff)\b/iu.test(output)
+  }
+
+  private async runAdmitted<T>(operation: () => Promise<T>): Promise<T> {
+    const release = this.admitOperation()
     try {
-      const handle = new OwnedAppHandle(await adapter.open(this.appContext()))
-      this.appHandles.push(handle)
-      return handle
-    } catch (_operationFailure) {
-      throw new CrossClientFixtureOperationError()
+      return await operation()
+    } finally {
+      release()
     }
+  }
+
+  private admitOperation(): () => void {
+    this.ensureReady()
+    this.admittedOperations += 1
+    return () => {
+      this.admittedOperations -= 1
+      if (this.admittedOperations !== 0) return
+      for (const resolveWaiter of this.admittedWaiters) resolveWaiter()
+      this.admittedWaiters.clear()
+    }
+  }
+
+  private waitForAdmittedOperations(): Promise<void> {
+    if (this.admittedOperations === 0) return Promise.resolve()
+    return new Promise((resolve) => { this.admittedWaiters.add(resolve) })
+  }
+
+  private async openApp(adapter: CrossClientAppAdapter | undefined): Promise<CrossClientAppHandle> {
+    return this.runAdmitted(async () => {
+      if (adapter === undefined) throw new CrossClientFixtureAdapterError()
+      let handle: OwnedAppHandle
+      try {
+        handle = new OwnedAppHandle(await adapter.open(this.appContext()))
+      } catch (_operationFailure) {
+        throw new CrossClientFixtureOperationError()
+      }
+      this.appHandles.push(handle)
+      if (this.state !== 'ready') {
+        await handle.close().catch(() => {})
+        throw new CrossClientFixtureClosedError()
+      }
+      return handle
+    })
   }
 
   private closeOwnedClients(): Promise<readonly Error[]> {
@@ -677,6 +741,7 @@ class CrossClientFixtureImpl implements CrossClientFixture {
   }
 
   private async closeClientsAndStopRuntime(): Promise<void> {
+    await this.waitForAdmittedOperations()
     const errors = [...await this.closeOwnedClients()]
     try {
       await this.stopRuntimeProcessOnce()
@@ -751,12 +816,13 @@ export async function createCrossClientFixture(
   const workspace = join(root, 'workspace')
   const fixture = new CrossClientFixtureImpl(root, home, platformHome, workspace, dependencies, options)
   try {
-    await Promise.all([
+    const directoryResults = await Promise.allSettled([
       dependencies.fileSystem.mkdir(join(home, '.agent-presets', 'standard')),
       dependencies.fileSystem.mkdir(platformHome),
       dependencies.fileSystem.mkdir(join(platformHome, 'tmp')),
       dependencies.fileSystem.mkdir(workspace),
     ])
+    if (directoryResults.some(result => result.status === 'rejected')) throw new FixtureTransportError()
     await dependencies.fileSystem.writeFile(
       join(home, '.agent-presets', 'standard', 'agent.cordis.yml'),
       '[]\n',
@@ -768,8 +834,13 @@ export async function createCrossClientFixture(
     try {
       await fixture.dispose()
     } catch (cleanupFailure) {
-      const cleanupErrors = ((cleanupFailure as AggregateError).errors as Error[])
-        .map(error => new Error(error.message))
+      let cleanupErrors: Error[]
+      /* v8 ignore else -- defensive containment if dispose violates its internal AggregateError contract */
+      if (cleanupFailure instanceof AggregateError) {
+        cleanupErrors = (cleanupFailure.errors as Error[]).map(error => new Error(error.message))
+      } else {
+        cleanupErrors = [new Error('cross-client cleanup failed at unknown stage')]
+      }
       throw new AggregateError(
         [setupError, ...cleanupErrors],
         'Cross-client fixture setup and cleanup failed.',

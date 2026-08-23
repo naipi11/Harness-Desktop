@@ -10,10 +10,10 @@ import {
   RuntimeBusyError,
   type DashboardAttachment,
   type RuntimeStatus,
-  type SessionId,
   type TerminalConnection,
   type TerminalOpenRequest,
 } from '@harness-desktop/dsh-host-local-runtime'
+import type { SessionId } from '@harness-desktop/dsh-session/types'
 import {
   CrossClientFixtureAdapterError,
   CrossClientFixtureOperationError,
@@ -116,6 +116,7 @@ interface FixtureSignals {
   removedRoots: string[]
   appClosed: number
   terminalClosed: number
+  readonly order: string[]
 }
 
 interface DependencyOptions {
@@ -148,6 +149,7 @@ async function dependencies(
     removedRoots: [],
     appClosed: 0,
     terminalClosed: 0,
+    order: [],
   }
   const failures = options.closeFailures ?? new Set()
   const state = new StateClient()
@@ -155,6 +157,7 @@ async function dependencies(
     createBrowserHandoff: async () => { throw new Error('not used by injected API adapter') },
     close: async () => {
       signals.dashboardClosed += 1
+      signals.order.push('dashboard-closed')
       if (failures.has('dashboard')) throw new Error('dashboard secret failure')
     },
   }
@@ -165,6 +168,7 @@ async function dependencies(
     cancel: async () => ({ kind: 'idle' }),
     close: async () => {
       signals.terminalClosed += 1
+      signals.order.push('terminal-closed')
       if (failures.has('terminal')) throw new Error('terminal secret failure')
     },
   }
@@ -174,11 +178,15 @@ async function dependencies(
     attachDashboard: async () => dashboard,
     close: async () => {
       signals.runtimeClientClosed += 1
+      signals.order.push('runtime-client-closed')
       if (failures.has('runtime-client')) throw new Error('runtime client secret failure')
     },
   }
   const process: CrossClientRuntimeProcessHandle = {
-    endInput: () => { signals.runtimeInputEnded += 1 },
+    endInput: () => {
+      signals.runtimeInputEnded += 1
+      signals.order.push('runtime-input-ended')
+    },
     waitForExit: async () => {
       signals.runtimeWaited += 1
       return options.waitForExit?.() ?? { exitCode: 0, signal: null }
@@ -191,6 +199,7 @@ async function dependencies(
   let healthFailures = options.healthFailures ?? 0
   state.close = async () => {
     signals.apiClosed += 1
+    signals.order.push('api-closed')
     if (failures.has('api')) throw new Error('api secret failure')
   }
   const api: CrossClientDashboardApiHandle = {
@@ -207,6 +216,7 @@ async function dependencies(
       writeFile: (path, data) => writeFile(path, data),
       remove: async (path) => {
         signals.removedRoots.push(path)
+        signals.order.push('root-removed')
         await rm(path, { recursive: true, force: true })
       },
     },
@@ -217,6 +227,7 @@ async function dependencies(
           baseURL: 'http://127.0.0.1:43999',
           close: async () => {
             signals.mockClosed += 1
+            signals.order.push('mock-closed')
             if (failures.has('mock')) throw new Error('mock secret failure')
           },
         }
@@ -243,6 +254,12 @@ async function temporaryParent(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'cross-client-host-spec-'))
   roots.add(parent)
   return parent
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void } {
+  let resolvePromise: ((value: T) => void) | undefined
+  const promise = new Promise<T>((resolve) => { resolvePromise = resolve })
+  return { promise, resolve: (value) => { resolvePromise?.(value) } }
 }
 
 describe('cross-client Runtime fixture', () => {
@@ -356,7 +373,8 @@ describe('cross-client Runtime fixture', () => {
   it('wraps terminal, busy, CLI, and app adapters without leaking injected failures', async () => {
     const parent = await temporaryParent()
     const setup = await dependencies(parent)
-    let cliMode: 'success' | 'stdout-secret' | 'stderr-secret' | 'failure' = 'success'
+    let cliOutput = 'ok'
+    let cliFailure = false
     let desktopFailure = false
     const fixture = await createCrossClientFixture({
       temporaryParent: parent,
@@ -366,11 +384,11 @@ describe('cross-client Runtime fixture', () => {
           run: async (args, context) => {
             expect(args).toEqual(['run', 'task'])
             expect(context.workspace).toBe(fixture.workspace)
-            if (cliMode === 'failure') throw new Error('private CLI failure')
+            if (cliFailure) throw new Error('private CLI failure')
             return {
               exitCode: 0,
-              stdout: cliMode === 'stdout-secret' ? 'cross-client-runtime-fixture-key' : 'ok',
-              stderr: cliMode === 'stderr-secret' ? 'cross-client-runtime-fixture-key' : '',
+              stdout: cliOutput,
+              stderr: '',
             }
           },
         },
@@ -390,11 +408,25 @@ describe('cross-client Runtime fixture', () => {
     desktopFailure = true
     await expect(fixture.openDesktop()).rejects.toBeInstanceOf(CrossClientFixtureOperationError)
     expect(await fixture.runCli(['run', 'task'])).toEqual({ exitCode: 0, stdout: 'ok', stderr: '' })
-    cliMode = 'stdout-secret'
-    await expect(fixture.runCli(['run', 'task'])).rejects.toBeInstanceOf(CrossClientFixtureOperationError)
-    cliMode = 'stderr-secret'
-    await expect(fixture.runCli(['run', 'task'])).rejects.toBeInstanceOf(CrossClientFixtureOperationError)
-    cliMode = 'failure'
+    for (const leak of [
+      fixture.home,
+      fixture.platformHome,
+      'cross-client-runtime-fixture-key',
+      'accessToken=private',
+      'Bearer private',
+      'authorization: private',
+      'auth=private',
+      'cookie=private',
+      'handoff=private',
+    ]) {
+      cliOutput = leak
+      const error = await fixture.runCli(['run', 'task']).catch((failure: unknown) => failure)
+      expect(error).toBeInstanceOf(CrossClientFixtureOperationError)
+      expect(String(error)).not.toContain(leak)
+      expect(JSON.stringify(fixture.lifecycleSnapshot())).not.toContain(leak)
+    }
+    cliOutput = 'ok'
+    cliFailure = true
     await expect(fixture.runCli(['run', 'task'])).rejects.toBeInstanceOf(CrossClientFixtureOperationError)
 
     const originalOpen = setup.runtimeClient.openTerminal.bind(setup.runtimeClient)
@@ -421,6 +453,89 @@ describe('cross-client Runtime fixture', () => {
     await expect(missing.runCli([])).rejects.toBeInstanceOf(CrossClientFixtureAdapterError)
     await expect(missing.openDesktop()).rejects.toBeInstanceOf(CrossClientFixtureAdapterError)
     await missing.dispose()
+  })
+
+  it('waits every admitted operation and closes late handles before Runtime and root teardown', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent)
+    const stateGate = deferred<undefined>()
+    const terminalGate = deferred<undefined>()
+    const cliGate = deferred<undefined>()
+    const appGate = deferred<undefined>()
+    const originalTerminalClose = setup.terminal.close.bind(setup.terminal)
+    let terminalCloseAttempts = 0
+    setup.terminal.close = async () => {
+      terminalCloseAttempts += 1
+      if (terminalCloseAttempts === 1) throw new Error('late terminal close failed once')
+      await originalTerminalClose()
+    }
+    let appCloseAttempts = 0
+    setup.state.readWorkspaces = async () => {
+      await stateGate.promise
+      return []
+    }
+    setup.runtimeClient.openTerminal = async () => {
+      await terminalGate.promise
+      return setup.terminal
+    }
+    const fixture = await createCrossClientFixture({
+      temporaryParent: parent,
+      dependencies: setup.dependencies,
+      adapters: {
+        cli: {
+          run: async () => {
+            await cliGate.promise
+            return { exitCode: 0, stdout: 'settled', stderr: '' }
+          },
+        },
+        web: {
+          open: async () => {
+            await appGate.promise
+            return {
+              close: async () => {
+                appCloseAttempts += 1
+                if (appCloseAttempts === 1) throw new Error('late app close failed once')
+                setup.signals.appClosed += 1
+                setup.signals.order.push('app-closed')
+              },
+            }
+          },
+        },
+      },
+    })
+
+    const stateOperation = fixture.readWorkspaces()
+    const terminalOperation = fixture.openTerminal()
+    const cliOperation = fixture.runCli([])
+    const appOperation = fixture.openWeb()
+    const disposing = fixture.dispose()
+    await Promise.resolve()
+
+    expect(fixture.lifecycleSnapshot().state).toBe('disposing')
+    expect(setup.signals.runtimeInputEnded).toBe(0)
+    expect(setup.signals.removedRoots).toEqual([])
+
+    stateGate.resolve(undefined)
+    cliGate.resolve(undefined)
+    terminalGate.resolve(undefined)
+    appGate.resolve(undefined)
+    await expect(stateOperation).resolves.toEqual([])
+    await expect(cliOperation).resolves.toEqual({ exitCode: 0, stdout: 'settled', stderr: '' })
+    await expect(terminalOperation).rejects.toBeInstanceOf(CrossClientFixtureClosedError)
+    await expect(appOperation).rejects.toBeInstanceOf(CrossClientFixtureClosedError)
+    await disposing
+
+    expect(setup.signals.terminalClosed).toBe(1)
+    expect(setup.signals.appClosed).toBe(1)
+    expect(setup.signals.order.indexOf('terminal-closed')).toBeLessThan(
+      setup.signals.order.indexOf('runtime-input-ended'),
+    )
+    expect(setup.signals.order.indexOf('app-closed')).toBeLessThan(
+      setup.signals.order.indexOf('runtime-input-ended'),
+    )
+    expect(setup.signals.order.indexOf('runtime-input-ended')).toBeLessThan(
+      setup.signals.order.indexOf('root-removed'),
+    )
   })
 
   it('stops new operations during cleanup and aggregates independent resource failures once', async () => {
@@ -631,6 +746,45 @@ describe('cross-client Runtime fixture', () => {
     await defaultParent.dispose()
   })
 
+  it('waits every setup directory attempt before rolling back the owned root', async () => {
+    const parent = await temporaryParent()
+    const setup = await dependencies(parent)
+    const delayedSibling = deferred<undefined>()
+    const firstFailure = deferred<undefined>()
+    const originalMkdtemp = setup.dependencies.fileSystem.mkdtemp.bind(setup.dependencies.fileSystem)
+    const originalMkdir = setup.dependencies.fileSystem.mkdir.bind(setup.dependencies.fileSystem)
+    let ownedRoot: string | undefined
+    let calls = 0
+    setup.dependencies.fileSystem.mkdtemp = async (prefix) => {
+      ownedRoot = await originalMkdtemp(prefix)
+      return ownedRoot
+    }
+    setup.dependencies.fileSystem.mkdir = async (path) => {
+      calls += 1
+      if (calls === 1) {
+        firstFailure.resolve(undefined)
+        throw new Error('first sibling failed')
+      }
+      if (calls === 2) await delayedSibling.promise
+      await originalMkdir(path)
+    }
+
+    const creating = createCrossClientFixture({ temporaryParent: parent, dependencies: setup.dependencies })
+    await firstFailure.promise
+    const earlySettlement = await Promise.race([
+      creating.then(() => 'settled', () => 'settled'),
+      new Promise<'pending'>(resolve => setTimeout(() => { resolve('pending') }, 10)),
+    ])
+    expect(earlySettlement).toBe('pending')
+    expect(setup.signals.removedRoots).toEqual([])
+    delayedSibling.resolve(undefined)
+    await expect(creating).rejects.toBeInstanceOf(CrossClientFixtureSetupError)
+    if (ownedRoot === undefined) throw new Error('fixture did not create its root')
+    await expect(access(ownedRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await expect(access(ownedRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('retries a stopping health client and contains each terminal process-stop failure', async () => {
     const parent = await temporaryParent()
     const healthSetup = await dependencies(parent)
@@ -696,7 +850,13 @@ describe('cross-client Runtime fixture', () => {
 
 describe('host-only source dependency boundary', () => {
   it('contains no browser runner, Electron, or browser-only client fixture import', async () => {
-    const sourcePaths = ['index.ts', 'cross-client-fixture.ts', 'cross-client-defaults.ts', 'invariant.ts']
+    const sourcePaths = [
+      'index.ts',
+      'cross-client-fixture.ts',
+      'cross-client-defaults.ts',
+      'cross-client-dashboard.ts',
+      'invariant.ts',
+    ]
     const imports = (await Promise.all(sourcePaths.map(async (file) => {
       const source = await readFile(join(import.meta.dirname, '..', 'src', file), 'utf8')
       return ts.preProcessFile(source).importedFiles.map(item => item.fileName)
