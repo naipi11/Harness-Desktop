@@ -39,12 +39,21 @@ function conformingFiles(): DesktopReleaseFiles {
         'package:dir': 'electron-builder --dir --config electron-builder.config.mjs --publish never',
       },
     }),
-    desktopArtifactsWorkflow: [
-      '--publish never',
-      'windows-2025',
-      'macos-15',
-      'ubuntu-24.04',
-    ].join('\n'),
+    desktopArtifactsWorkflow: `
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+          - os: macos-15
+          - os: ubuntu-24.04
+    steps:
+      - name: Configure pnpm store path
+        shell: bash
+        run: pnpm store path
+      - run: pnpm --filter desktop run package --publish never
+`,
     releaseWorkflow: 'name: Release dsh (legacy pack audit)',
   }
 }
@@ -98,6 +107,7 @@ describe('desktop release config gate', () => {
       'desktopArtifactsWorkflow: missing runner windows-2025',
       'desktopArtifactsWorkflow: missing runner macos-15',
       'desktopArtifactsWorkflow: missing runner ubuntu-24.04',
+      'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
       'desktopArtifactsWorkflow: forbidden publish marker NODE_AUTH_TOKEN',
       'desktopArtifactsWorkflow: forbidden publish marker release:publish',
       'desktopArtifactsWorkflow: forbidden publish marker gh release',
@@ -119,6 +129,29 @@ describe('desktop release config gate', () => {
 
     expect(violations).toContain(
       'builderConfig.win.icon: expected apps/desktop/resources/icons/win/harness-desktop.ico',
+    )
+  })
+
+  it('rejects Bash-authored pnpm store setup without an explicit Bash shell', () => {
+    const files = conformingFiles()
+    const violations = collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: [
+        '--publish never',
+        'windows-2025',
+        'macos-15',
+        'ubuntu-24.04',
+        'jobs:',
+        '  package:',
+        '    steps:',
+        '      - name: Configure pnpm store path',
+        '        run: |',
+        '          store_root="$HOME/.local/share/pnpm/store"',
+      ].join('\n'),
+    })
+
+    expect(violations).toContain(
+      'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
     )
   })
 

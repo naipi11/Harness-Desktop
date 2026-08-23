@@ -2,9 +2,23 @@
 
 import { extractFile } from '@electron/asar'
 import { createHash } from 'node:crypto'
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import {
+  access,
+  chmod,
+  copyFile,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import {
@@ -30,6 +44,9 @@ export {
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 const desktopRoot = join(repoRoot, 'apps', 'desktop')
 const sentinelName = 'installed-smoke-sentinel.txt'
+const debRootPrefix = 'harness-desktop-installed-deb-'
+const linuxSystemPath = '/usr/sbin:/usr/bin:/sbin:/bin'
+const linuxCommandEnvironment = { LC_ALL: 'C', PATH: linuxSystemPath } as const
 
 /** Native installer discovery inputs for the current runner. */
 export interface InstalledArtifactInput {
@@ -52,6 +69,7 @@ interface PreparedArtifact {
   readonly generatedIcon: string
   readonly launch?: () => Promise<DesktopRuntimeFixture>
   remove(): Promise<void>
+  cleanup?(): Promise<void>
 }
 
 /**
@@ -116,8 +134,29 @@ export function wrapPreparedArtifact(subject: PreparedArtifact): InstalledDeskto
     remove: async () => subject.remove(),
     async cleanup() {
       if (runtimeRoot !== undefined) await removeTree(runtimeRoot)
-      await removeTree(subject.cwd)
+      if (subject.cleanup === undefined) await removeTree(subject.cwd)
+      else await subject.cleanup()
     },
+  }
+}
+
+/**
+ * Build the isolated dpkg operation that unpacks and configures a Deb.
+ * @param root - validated temporary installation root.
+ * @param deb - Deb artifact to install.
+ * @returns dpkg arguments with configured-install semantics.
+ */
+export function isolatedDpkgInstallArguments(root: string, deb: string): readonly string[] {
+  return [`--root=${root}`, '--install', deb]
+}
+
+/**
+ * Reject a dpkg state that did not complete package configuration.
+ * @param status - `${db:Status-Status}` value from the isolated admin database.
+ */
+export function assertIsolatedDpkgInstalled(status: string): void {
+  if (status !== 'installed') {
+    throw new Error(`installed desktop artifact: isolated dpkg package status is ${status}, expected installed`)
   }
 }
 
@@ -269,24 +308,24 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
     await chmod(appRun, 0o755)
     const appImageAsar = await findFile(extractedAppImage, 'app.asar')
 
-    debRoot = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-deb-'))
+    debRoot = await mkdtemp(join(tmpdir(), debRootPrefix))
     const debWorkingRoot = debRoot
-    const dpkgAdmin = join(debWorkingRoot, 'var', 'lib', 'dpkg')
-    await mkdir(join(dpkgAdmin, 'updates'), { recursive: true })
-    await writeFile(join(dpkgAdmin, 'status'), '')
-    const install = await execa('dpkg', [
-      `--root=${debWorkingRoot}`,
-      `--admindir=${dpkgAdmin}`,
-      '--force-not-root',
-      '--force-bad-path',
-      '--unpack', deb,
-    ], { reject: false })
+    await assertOwnedDebRoot(debWorkingRoot)
+    const packageName = await readDebPackageName(deb)
+    const hostState = await captureHostDebState(packageName)
+    await requireDebControlScripts(deb, join(debWorkingRoot, 'control'))
+    await stageIsolatedDpkgRoot(debWorkingRoot)
+    const install = await runIsolatedDpkg(isolatedDpkgInstallArguments(debWorkingRoot, deb))
     if (install.exitCode !== 0) {
       throw new Error(`installed desktop artifact: isolated dpkg install exited ${String(install.exitCode)}: ${install.stderr}`)
     }
-    const packageName = (await execa('dpkg-deb', ['--field', deb, 'Package'], { reject: true })).stdout.trim()
-    const debExecutable = await findFile(debWorkingRoot, 'harness-desktop')
-    const debAsar = await findFile(debWorkingRoot, 'app.asar')
+    assertIsolatedDpkgInstalled(await queryIsolatedDpkgStatus(debWorkingRoot, packageName))
+    const installedPaths = debInstalledPaths(debWorkingRoot)
+    await requireFile(installedPaths.executable, 'configured Deb executable')
+    await requireFile(installedPaths.asar, 'configured Deb app.asar')
+    await requireFile(installedPaths.desktopEntry, 'configured Deb desktop entry')
+    await requireFile(installedPaths.icon, 'configured Deb generated icon')
+    await requireSymlink(installedPaths.launcher, '/opt/Harness Desktop/harness-desktop')
     const icon = join(desktopRoot, 'resources', 'icons', 'linux', 'harness-desktop-512.png')
     return [
       {
@@ -305,26 +344,34 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
       },
       {
         name: 'Linux Deb',
-        executable: debExecutable,
+        executable: installedPaths.executable,
         cwd: debWorkingRoot,
-        asar: debAsar,
+        asar: installedPaths.asar,
         iconMember: 'resources/icons/linux/harness-desktop-512.png',
         generatedIcon: icon,
         async remove() {
-          const removal = await execa('dpkg', [
-            `--root=${debWorkingRoot}`,
-            `--admindir=${dpkgAdmin}`,
-            '--force-not-root',
-            '--force-bad-path',
-            '--remove', packageName,
-          ], { reject: false })
+          const removal = await runIsolatedDpkg([`--root=${debWorkingRoot}`, '--remove', packageName])
           if (removal.exitCode !== 0) {
             throw new Error(`installed desktop artifact: isolated dpkg removal exited ${String(removal.exitCode)}: ${removal.stderr}`)
           }
-          if (await access(debExecutable).then(() => true, () => false)) {
-            throw new Error('installed desktop artifact: isolated dpkg removal retained the Deb executable')
+          const nextStatus = await queryIsolatedDpkgStatus(debWorkingRoot, packageName, true)
+          if (nextStatus === 'installed') {
+            throw new Error('installed desktop artifact: isolated dpkg removal retained installed package status')
           }
+          for (const [label, path] of [
+            ['executable', installedPaths.executable],
+            ['asar', installedPaths.asar],
+            ['desktop entry', installedPaths.desktopEntry],
+            ['icon', installedPaths.icon],
+            ['launcher', installedPaths.launcher],
+          ] as const) {
+            if (await pathExists(path)) {
+              throw new Error(`installed desktop artifact: isolated dpkg removal retained Deb ${label}`)
+            }
+          }
+          await requireHostDebState(hostState)
         },
+        async cleanup() { await removePrivilegedDebRoot(debWorkingRoot) },
       },
     ]
   } catch (error) {
@@ -335,10 +382,231 @@ async function prepareLinux(releaseDirectory: string): Promise<readonly Prepared
     }
     if (debRoot !== undefined) {
       const root = debRoot
-      cleanups.push(async () => removeTree(root))
+      cleanups.push(async () => removePrivilegedDebRoot(root))
     }
     return cleanupPreparationRoots(error, cleanups)
   }
+}
+
+interface DebInstalledPaths {
+  readonly executable: string
+  readonly asar: string
+  readonly desktopEntry: string
+  readonly icon: string
+  readonly launcher: string
+}
+
+interface HostDebState {
+  readonly packageName: string
+  readonly queryExitCode: number | undefined
+  readonly queryStdout: string
+  readonly executableExists: boolean
+  readonly launcherExists: boolean
+}
+
+async function readDebPackageName(deb: string): Promise<string> {
+  const dpkgDeb = await requireHostTool(['/usr/bin/dpkg-deb', '/bin/dpkg-deb'], 'dpkg-deb')
+  const result = await execa(dpkgDeb, ['--field', deb, 'Package'], {
+    env: linuxCommandEnvironment,
+    extendEnv: false,
+    reject: false,
+  })
+  const packageName = result.stdout.trim()
+  if (result.exitCode !== 0 || packageName === '') {
+    throw new Error(`installed desktop artifact: cannot read Deb package name: ${result.stderr}`)
+  }
+  return packageName
+}
+
+async function requireDebControlScripts(deb: string, destination: string): Promise<void> {
+  const dpkgDeb = await requireHostTool(['/usr/bin/dpkg-deb', '/bin/dpkg-deb'], 'dpkg-deb')
+  await mkdir(destination)
+  const result = await execa(dpkgDeb, ['--control', deb, destination], {
+    env: linuxCommandEnvironment,
+    extendEnv: false,
+    reject: false,
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`installed desktop artifact: cannot inspect Deb control scripts: ${result.stderr}`)
+  }
+  await requireFile(join(destination, 'postinst'), 'Deb postinst maintainer script')
+  await requireFile(join(destination, 'postrm'), 'Deb postrm maintainer script')
+}
+
+async function stageIsolatedDpkgRoot(root: string): Promise<void> {
+  const dpkgAdmin = join(root, 'var', 'lib', 'dpkg')
+  await mkdir(join(dpkgAdmin, 'updates'), { recursive: true })
+  await mkdir(join(dpkgAdmin, 'info'), { recursive: true })
+  await mkdir(join(dpkgAdmin, 'triggers'), { recursive: true })
+  await mkdir(join(root, 'bin'), { recursive: true })
+  await mkdir(join(root, 'usr', 'bin'), { recursive: true })
+  await mkdir(join(root, 'dev'), { recursive: true })
+  await copyFile('/var/lib/dpkg/status', join(dpkgAdmin, 'status'))
+
+  const libraries = new Set<string>()
+  for (const name of ['bash', 'ln', 'chmod', 'rm']) {
+    const source = await requireHostTool([`/bin/${name}`, `/usr/bin/${name}`], name)
+    await stageRuntimeFile(root, source, `/bin/${name}`)
+    for (const library of await dynamicLibraries(source)) libraries.add(library)
+  }
+  for (const library of libraries) await stageRuntimeFile(root, library, library)
+
+  const mknod = await requireHostTool(['/usr/bin/mknod', '/bin/mknod'], 'mknod')
+  const result = await runSudo([mknod, '-m', '666', join(root, 'dev', 'null'), 'c', '1', '3'])
+  if (result.exitCode !== 0) {
+    throw new Error(`installed desktop artifact: cannot stage isolated /dev/null: ${result.stderr}`)
+  }
+}
+
+async function dynamicLibraries(executable: string): Promise<readonly string[]> {
+  const ldd = await requireHostTool(['/usr/bin/ldd', '/bin/ldd'], 'ldd')
+  const result = await execa(ldd, [executable], {
+    env: linuxCommandEnvironment,
+    extendEnv: false,
+    reject: false,
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`installed desktop artifact: ldd failed for ${executable}: ${result.stderr}`)
+  }
+  const paths = new Set<string>()
+  for (const line of result.stdout.split('\n')) {
+    const match = /(?:=>\s+)?(\/[^\s]+)\s+\(/u.exec(line)
+    if (match?.[1] !== undefined) paths.add(match[1])
+  }
+  return [...paths]
+}
+
+async function stageRuntimeFile(root: string, source: string, absoluteTarget: string): Promise<void> {
+  const target = join(root, ...absoluteTarget.split('/').filter(Boolean))
+  await mkdir(dirname(target), { recursive: true })
+  await copyFile(source, target)
+  await chmod(target, (await stat(source)).mode & 0o777)
+}
+
+async function runIsolatedDpkg(
+  args: readonly string[],
+): Promise<{ readonly exitCode: number | undefined; readonly stderr: string }> {
+  const env = await requireHostTool(['/usr/bin/env', '/bin/env'], 'env')
+  const dpkg = await requireHostTool(['/usr/bin/dpkg', '/bin/dpkg'], 'dpkg')
+  return runSudo([
+    env,
+    '-i',
+    `PATH=${linuxSystemPath}`,
+    'LC_ALL=C',
+    'DEBIAN_FRONTEND=noninteractive',
+    dpkg,
+    ...args,
+  ])
+}
+
+async function queryIsolatedDpkgStatus(root: string, packageName: string, allowMissing = false): Promise<string> {
+  const dpkgQuery = await requireHostTool(['/usr/bin/dpkg-query', '/bin/dpkg-query'], 'dpkg-query')
+  const result = await runSudo([
+    dpkgQuery,
+    `--admindir=${join(root, 'var', 'lib', 'dpkg')}`,
+    '--showformat=${db:Status-Status}',
+    '--show',
+    packageName,
+  ])
+  if (result.exitCode !== 0) {
+    if (allowMissing) return 'not-installed'
+    throw new Error(`installed desktop artifact: isolated dpkg status query failed: ${result.stderr}`)
+  }
+  return result.stdout.trim()
+}
+
+async function runSudo(
+  args: readonly string[],
+): Promise<{ readonly exitCode: number | undefined; readonly stdout: string; readonly stderr: string }> {
+  const sudo = await requireHostTool(['/usr/bin/sudo', '/bin/sudo'], 'sudo')
+  const result = await execa(sudo, ['--non-interactive', ...args], {
+    env: linuxCommandEnvironment,
+    extendEnv: false,
+    reject: false,
+  })
+  return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+}
+
+async function requireHostTool(candidates: readonly string[], label: string): Promise<string> {
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) return candidate
+  }
+  throw new Error(`installed desktop artifact: required Linux tool ${label} is unavailable`)
+}
+
+function debInstalledPaths(root: string): DebInstalledPaths {
+  return {
+    executable: join(root, 'opt', 'Harness Desktop', 'harness-desktop'),
+    asar: join(root, 'opt', 'Harness Desktop', 'resources', 'app.asar'),
+    desktopEntry: join(root, 'usr', 'share', 'applications', 'harness-desktop.desktop'),
+    icon: join(root, 'usr', 'share', 'icons', 'hicolor', '512x512', 'apps', 'harness-desktop.png'),
+    launcher: join(root, 'usr', 'bin', 'harness-desktop'),
+  }
+}
+
+async function requireSymlink(path: string, target: string): Promise<void> {
+  const metadata = await lstat(path).catch(() => undefined)
+  if (metadata === undefined || !metadata.isSymbolicLink() || await readlink(path) !== target) {
+    throw new Error(`installed desktop artifact: configured Deb launcher must link to ${target}`)
+  }
+}
+
+async function captureHostDebState(packageName: string): Promise<HostDebState> {
+  const dpkgQuery = await requireHostTool(['/usr/bin/dpkg-query', '/bin/dpkg-query'], 'dpkg-query')
+  const result = await execa(dpkgQuery, [
+    '--showformat=${db:Status-Status}',
+    '--show',
+    packageName,
+  ], {
+    env: linuxCommandEnvironment,
+    extendEnv: false,
+    reject: false,
+  })
+  return {
+    packageName,
+    queryExitCode: result.exitCode,
+    queryStdout: result.stdout,
+    executableExists: await pathExists('/opt/Harness Desktop/harness-desktop'),
+    launcherExists: await pathExists('/usr/bin/harness-desktop'),
+  }
+}
+
+async function requireHostDebState(expected: HostDebState): Promise<void> {
+  const actual = await captureHostDebState(expected.packageName)
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error('installed desktop artifact: isolated dpkg lifecycle changed host package state')
+  }
+}
+
+async function assertOwnedDebRoot(root: string): Promise<void> {
+  const resolvedRoot = resolve(root)
+  const resolvedTemp = resolve(tmpdir())
+  const suffix = basename(resolvedRoot).slice(debRootPrefix.length)
+  if (resolvedRoot !== root || dirname(resolvedRoot) !== resolvedTemp
+    || !basename(resolvedRoot).startsWith(debRootPrefix) || suffix === '') {
+    throw new Error(`installed desktop artifact: refusing privileged cleanup outside owned Deb root: ${root}`)
+  }
+  const metadata = await lstat(resolvedRoot)
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error(`installed desktop artifact: refusing privileged cleanup of non-directory Deb root: ${root}`)
+  }
+}
+
+async function removePrivilegedDebRoot(root: string): Promise<void> {
+  if (!await pathExists(root)) return
+  await assertOwnedDebRoot(root)
+  const rmPath = await requireHostTool(['/usr/bin/rm', '/bin/rm'], 'rm')
+  const result = await runSudo([rmPath, '-rf', '--', root])
+  if (result.exitCode !== 0) {
+    throw new Error(`installed desktop artifact: privileged Deb root cleanup failed: ${result.stderr}`)
+  }
+  if (await pathExists(root)) {
+    throw new Error(`installed desktop artifact: privileged Deb root cleanup retained ${root}`)
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return access(path).then(() => true, () => false)
 }
 
 async function exactlyOneFile(directory: string, pattern: RegExp, label: string): Promise<string> {

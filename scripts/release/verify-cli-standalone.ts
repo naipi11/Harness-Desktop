@@ -136,13 +136,18 @@ async function verifyExtracted(
   const isolatedCwd = await mkdtemp(join(tmpdir(), 'harness-cli-empty-cwd-'))
   try {
     const environment = await isolatedEnvironment(input.platform, isolatedCwd)
-    const version = await execa(nodeExecutable, ['--version'], { cwd: isolatedCwd, env: environment, reject: false })
+    const version = await execa(nodeExecutable, ['--version'], {
+      cwd: isolatedCwd,
+      env: environment,
+      extendEnv: false,
+      reject: false,
+    })
     if (version.exitCode !== 0 || version.stdout.trim() !== `v${input.version}`) {
       violations.push(`standalone CLI: ${format} bundled Node did not report v${input.version}`)
     }
     const executablePath = await execa(nodeExecutable, [
       '--eval', 'process.stdout.write(process.execPath)',
-    ], { cwd: isolatedCwd, env: environment, reject: false })
+    ], { cwd: isolatedCwd, env: environment, extendEnv: false, reject: false })
     if (executablePath.exitCode !== 0 || resolve(executablePath.stdout) !== resolve(nodeExecutable)) {
       violations.push(`standalone CLI: ${format} process.execPath is outside the bundled runtime`)
     }
@@ -152,7 +157,7 @@ async function verifyExtracted(
         '--eval',
         "const require = process.getBuiltinModule('node:module').createRequire(import.meta.url); require(process.argv[1])",
         join(extraction, ...path.split('/')),
-      ], { cwd: isolatedCwd, env: environment, reject: false })
+      ], { cwd: isolatedCwd, env: environment, extendEnv: false, reject: false })
       if (result.exitCode !== 0) violations.push(`standalone CLI: ${format} native module failed to load: ${path}`)
     }
 
@@ -221,6 +226,7 @@ async function runLauncher(
     const result = await execa(command, ['/d', '/s', '/c', join(extraction, `${name}.cmd`), ...args], {
       cwd,
       env,
+      extendEnv: false,
       reject: false,
       timeout: 90_000,
     })
@@ -228,7 +234,13 @@ async function runLauncher(
   }
   const launcher = join(extraction, name)
   await chmod(launcher, 0o755)
-  const result = await execa(launcher, [...args], { cwd, env, reject: false, timeout: 90_000 })
+  const result = await execa(launcher, [...args], {
+    cwd,
+    env,
+    extendEnv: false,
+    reject: false,
+    timeout: 90_000,
+  })
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 
@@ -253,7 +265,6 @@ async function isolatedEnvironment(platform: NodeJS.Platform, home: string): Pro
     HARNESS_HOME: join(home, 'harness-home'),
     DSH_TELEMETRY_DISABLED: '1',
     FORCE_COLOR: '0',
-    NODE_PATH: '',
     npm_config_cache: join(home, 'npm-cache'),
     npm_config_offline: 'true',
     PATH: await isolatedSystemPath(platform, home),

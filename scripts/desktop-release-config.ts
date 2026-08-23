@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { load } from 'js-yaml'
 import { productMetadata } from '../packages/boot/app-boot/src/product-metadata.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -150,6 +151,9 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
       violations.push(`desktopArtifactsWorkflow: missing runner ${runner}`)
     }
   }
+  if (!workflowStepUsesShell(files.desktopArtifactsWorkflow, 'Configure pnpm store path', 'bash')) {
+    violations.push('desktopArtifactsWorkflow: Configure pnpm store path must use shell bash')
+  }
   for (const marker of desktopArtifactsForbiddenMarkers) {
     if (files.desktopArtifactsWorkflow.includes(marker)) {
       violations.push(`desktopArtifactsWorkflow: forbidden publish marker ${marker}`)
@@ -175,6 +179,24 @@ function parseDesktopScripts(manifestText: string): Record<string, string> | und
   } catch {
     return undefined
   }
+}
+
+function workflowStepUsesShell(workflowText: string, name: string, shell: string): boolean {
+  try {
+    const workflow: unknown = load(workflowText)
+    if (!isRecord(workflow) || !isRecord(workflow.jobs)) return false
+    const packageJob = workflow.jobs.package
+    if (!isRecord(packageJob) || !Array.isArray(packageJob.steps)) return false
+    return packageJob.steps.some(step => (
+      isRecord(step) && step.name === name && step.shell === shell
+    ))
+  } catch {
+    return false
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Read the repository-owned files the desktop release gate audits. */

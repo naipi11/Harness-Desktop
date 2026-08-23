@@ -47,6 +47,7 @@ jobs:
 
       - name: Configure pnpm store path
         id: pnpm-store
+        shell: bash
         run: |
           store_root="$HOME/.local/share/pnpm/store"
           echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"

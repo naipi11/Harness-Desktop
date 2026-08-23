@@ -2,7 +2,11 @@ import { access, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { wrapPreparedArtifact } from './support/installed-artifact-fixture.ts'
+import {
+  assertIsolatedDpkgInstalled,
+  isolatedDpkgInstallArguments,
+  wrapPreparedArtifact,
+} from './support/installed-artifact-fixture.ts'
 import {
   cleanupPreparationRoots,
   isAppImageFuseUnavailable,
@@ -97,6 +101,41 @@ describe('runInstalledArtifactLifecycle', () => {
       await rm(runtimeRoot, { recursive: true, force: true })
       await rm(preparationRoot, { recursive: true, force: true })
     }
+  })
+
+  it('uses a prepared artifact custom cleanup owner for privileged roots', async () => {
+    const preparationRoot = await mkdtemp(join(tmpdir(), 'harness-installed-privileged-unit-'))
+    const cleanup = vi.fn(async () => {
+      await rm(preparationRoot, { recursive: true, force: true })
+    })
+    const subject = wrapPreparedArtifact({
+      name: 'privileged fixture wrapper',
+      executable: 'unused',
+      cwd: preparationRoot,
+      asar: 'unused',
+      iconMember: 'unused',
+      generatedIcon: 'unused',
+      remove: vi.fn(async () => {}),
+      cleanup,
+    })
+
+    await subject.cleanup()
+
+    expect(cleanup).toHaveBeenCalledOnce()
+  })
+})
+
+describe('isolated Deb configuration', () => {
+  it('uses dpkg install and rejects unpack-only package state', () => {
+    const args = isolatedDpkgInstallArguments('/tmp/harness-root', '/release/harness-desktop.deb')
+    expect(args).toEqual([
+      '--root=/tmp/harness-root',
+      '--install',
+      '/release/harness-desktop.deb',
+    ])
+    expect(args).not.toContain('--unpack')
+    expect(() => { assertIsolatedDpkgInstalled('unpacked') }).toThrow('package status is unpacked, expected installed')
+    expect(() => { assertIsolatedDpkgInstalled('installed') }).not.toThrow()
   })
 })
 
