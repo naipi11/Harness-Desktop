@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as tar from 'tar'
 import {
   buildCliStandaloneWithDependencies,
+  repairMissingDeclaredBins,
   type CliStandaloneBuildDependencies,
 } from './build-cli-standalone.ts'
 import { applyStandaloneExecutablePaths, digestStandaloneTree } from './verify-cli-standalone.ts'
@@ -195,6 +196,49 @@ describe('buildCliStandaloneWithDependencies', () => {
     }, dependencies(subject))).rejects.toThrow(
       'standalone CLI: native module cli/package/node_modules/foreign/foreign.node targets linux-x64, expected win32-x64',
     )
+  })
+
+  it('rejects an extracted supplied-tarball package whose declared bin target is missing', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-missing-bin-')
+    const packageRoot = join(subject.cliRoot, 'node_modules', 'missing-bin')
+    await mkdir(packageRoot, { recursive: true })
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: 'missing-bin',
+      version: '1.2.3',
+      bin: './bin.mjs',
+    }))
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'win32',
+      arch: 'x64',
+      version: '0.0.0-test',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, dependencies(subject))).rejects.toThrow(
+      'standalone CLI: package missing-bin@1.2.3 declares missing bin cli/package/node_modules/missing-bin/bin.mjs',
+    )
+  })
+
+  it('repairs a missing declared bin only from an exact name and version source package', async () => {
+    const subject = await fixture()
+    const stagedPackage = join(subject.cliRoot, 'node_modules', 'fixture-repair')
+    const sourcePackage = join(await tempRoot('harness-cli-bin-source-'), 'fixture-repair')
+    const manifest = { name: 'fixture-repair', version: '4.5.6', bin: './bin.mjs', files: ['dist/'] }
+    await mkdir(stagedPackage, { recursive: true })
+    await writeFile(join(stagedPackage, 'package.json'), JSON.stringify(manifest))
+    await mkdir(sourcePackage, { recursive: true })
+    await writeFile(join(sourcePackage, 'package.json'), JSON.stringify(manifest))
+    await writeFile(join(sourcePackage, 'bin.mjs'), '#!/usr/bin/env node\n')
+    await expect(repairMissingDeclaredBins(subject.cliRoot, async (name, version) => {
+      expect([name, version]).toEqual(['fixture-repair', '4.5.6'])
+      return sourcePackage
+    })).resolves.toEqual(['node_modules/fixture-repair/bin.mjs'])
+    await expect(readFile(join(stagedPackage, 'bin.mjs'), 'utf8')).resolves.toBe('#!/usr/bin/env node\n')
+    const repairedManifest = JSON.parse(await readFile(join(stagedPackage, 'package.json'), 'utf8')) as {
+      readonly files: readonly string[]
+    }
+    expect(repairedManifest.files).toEqual(['dist/', 'bin.mjs'])
   })
 
   it('hashes a payload larger than the process file-handle limit without unbounded opens', async () => {

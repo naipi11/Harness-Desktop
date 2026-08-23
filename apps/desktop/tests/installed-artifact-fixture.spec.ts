@@ -3,6 +3,7 @@ import {
   isAppImageFuseUnavailable,
   launchAppImageWithFallback,
   rollbackWindowsPreparation,
+  runInstalledArtifactCollection,
   runInstalledArtifactLifecycle,
   type InstalledArtifactLifecycle,
 } from './support/installed-artifact-lifecycle.ts'
@@ -61,6 +62,37 @@ describe('runInstalledArtifactLifecycle', () => {
   })
 })
 
+describe('prepared artifact collection lifecycle', () => {
+  it('removes and cleans every unvisited artifact when the first lifecycle fails', async () => {
+    const secondRemove = vi.fn(async () => {})
+    const secondCleanup = vi.fn(async () => {})
+    const secondLaunch = vi.fn(async () => ({ close: vi.fn(async () => {}) }))
+    const first = artifact({ launch: vi.fn(async () => { throw new Error('first launch failed') }) })
+    const second = artifact({ launch: secondLaunch, remove: secondRemove, cleanup: secondCleanup })
+
+    await expect(runInstalledArtifactCollection([first, second], async () => {})).rejects.toThrow('first launch failed')
+    expect(secondRemove).toHaveBeenCalledOnce()
+    expect(secondCleanup).toHaveBeenCalledOnce()
+    expect(secondLaunch).not.toHaveBeenCalled()
+  })
+
+  it('aggregates unvisited removal and cleanup failures with the first lifecycle failure', async () => {
+    const first = artifact({ launch: vi.fn(async () => { throw new Error('first failed') }) })
+    const second = artifact({
+      remove: vi.fn(async () => { throw new Error('second remove failed') }),
+      cleanup: vi.fn(async () => { throw new Error('second cleanup failed') }),
+    })
+
+    await expect(runInstalledArtifactCollection([first, second], async () => {})).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({ message: 'first failed' }),
+        expect.objectContaining({ message: 'second remove failed' }),
+        expect.objectContaining({ message: 'second cleanup failed' }),
+      ],
+    })
+  })
+})
+
 describe('AppImage native launch fallback', () => {
   it('allows extraction fallback only for a reported FUSE mount failure', () => {
     expect(isAppImageFuseUnavailable(new Error('dlopen(): error loading libfuse.so.2'))).toBe(true)
@@ -94,6 +126,7 @@ describe('Windows preparation rollback', () => {
     const calls: string[] = []
 
     await expect(rollbackWindowsPreparation(new Error('installed ASAR is missing'), {
+      uninstallerRequired: true,
       async findUninstaller() { calls.push('find'); return 'Uninstall Harness Desktop.exe' },
       async runUninstaller(path) { calls.push(`run:${path}`) },
       async waitForRemoval() { calls.push('wait') },
@@ -104,6 +137,7 @@ describe('Windows preparation rollback', () => {
 
   it('aggregates rollback cleanup failure with the validation failure', async () => {
     const result = rollbackWindowsPreparation(new Error('installed executable is missing'), {
+      uninstallerRequired: true,
       async findUninstaller() { return 'uninstaller.exe' },
       async runUninstaller() { throw new Error('uninstall failed') },
       async waitForRemoval() {},
@@ -117,5 +151,30 @@ describe('Windows preparation rollback', () => {
         expect.objectContaining({ message: 'root cleanup failed' }),
       ],
     })
+  })
+
+  it('runs a generated uninstaller found after a nonzero installer exit', async () => {
+    const calls: string[] = []
+
+    await expect(rollbackWindowsPreparation(new Error('NSIS exited 1'), {
+      uninstallerRequired: false,
+      async findUninstaller() { calls.push('find'); return 'partial-uninstaller.exe' },
+      async runUninstaller(path) { calls.push(`run:${path}`) },
+      async waitForRemoval() { calls.push('wait') },
+      async removeRoot() { calls.push('rm') },
+    })).rejects.toThrow('NSIS exited 1')
+    expect(calls).toEqual(['find', 'run:partial-uninstaller.exe', 'wait', 'rm'])
+  })
+
+  it('allows a true no-install failure with no generated uninstaller', async () => {
+    const primary = new Error('NSIS could not start')
+
+    await expect(rollbackWindowsPreparation(primary, {
+      uninstallerRequired: false,
+      async findUninstaller() { return undefined },
+      async runUninstaller() { throw new Error('must not run') },
+      async waitForRemoval() { throw new Error('must not wait') },
+      async removeRoot() {},
+    })).rejects.toBe(primary)
   })
 })

@@ -21,6 +21,7 @@ export {
   isAppImageFuseUnavailable,
   launchAppImageWithFallback,
   rollbackWindowsPreparation,
+  runInstalledArtifactCollection,
   runInstalledArtifactLifecycle,
 } from './installed-artifact-lifecycle.ts'
 
@@ -117,8 +118,10 @@ async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifac
   )
   const root = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-win32-'))
   const installation = join(root, 'Harness Desktop')
+  let installerAttempted = false
   let installed = false
   try {
+    installerAttempted = true
     const result = await execa(installer, ['/S', `/D=${installation}`], { cwd: root, reject: false })
     if (result.exitCode !== 0) {
       throw new Error(`installed desktop artifact: NSIS install exited ${String(result.exitCode)}: ${result.stderr}`)
@@ -140,9 +143,10 @@ async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifac
       },
     }
   } catch (error) {
-    if (installed) {
+    if (installerAttempted) {
       return rollbackWindowsPreparation(error, {
-        findUninstaller: async () => findWindowsUninstaller(installation),
+        uninstallerRequired: installed,
+        findUninstaller: async () => findOptionalWindowsUninstaller(installation),
         runUninstaller: async path => runWindowsUninstaller(root, path),
         waitForRemoval: async () => waitForRemoval(installation),
         removeRoot: async () => removeTree(root),
@@ -160,9 +164,21 @@ async function uninstallWindowsInstallation(root: string, installation: string):
 }
 
 async function findWindowsUninstaller(installation: string): Promise<string> {
-  const uninstaller = (await readdir(installation)).find(name => /^Uninstall .*\.exe$/u.test(name))
+  const uninstaller = await findOptionalWindowsUninstaller(installation)
   if (uninstaller === undefined) throw new Error('installed desktop artifact: NSIS uninstaller is missing')
-  return join(installation, uninstaller)
+  return uninstaller
+}
+
+async function findOptionalWindowsUninstaller(installation: string): Promise<string | undefined> {
+  let entries
+  try {
+    entries = await readdir(installation)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  const uninstaller = entries.find(name => /^Uninstall .*\.exe$/u.test(name))
+  return uninstaller === undefined ? undefined : join(installation, uninstaller)
 }
 
 async function runWindowsUninstaller(root: string, uninstaller: string): Promise<void> {

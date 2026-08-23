@@ -1,6 +1,7 @@
 /** Build deterministic, offline Harness CLI archives around an allowlisted Node runtime. */
 
 import { createHash } from 'node:crypto'
+import { globSync } from 'node:fs'
 import {
   chmod,
   cp,
@@ -8,6 +9,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   utimes,
@@ -65,6 +67,7 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
     ))
     const bundledDependencies = Object.keys(dependencies)
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies, bundledDependencies }, undefined, 2)}\n`)
+    await repairMissingDeclaredBins(deployedPackage)
     await verifyPackedCliClosure(deployedPackage)
     await mkdir(outputDirectory, { recursive: true })
     const packed = await execa('pnpm', [
@@ -74,7 +77,9 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
     ], { cwd: root, reject: true })
     const packedPath = packed.stdout.trim().split(/\r?\n/u).at(-1)
     if (packedPath === undefined || packedPath === '') throw new Error('packed CLI: pnpm pack returned no tarball path')
-    return isAbsolute(packedPath) ? packedPath : join(outputDirectory, packedPath)
+    const tarball = isAbsolute(packedPath) ? packedPath : join(outputDirectory, packedPath)
+    await finalizePackedCliTarball(tarball)
+    return tarball
   } finally {
     await rm(deployParent, { recursive: true, force: true })
   }
@@ -347,23 +352,229 @@ async function collectExecutablePaths(
     }
   }
   await Promise.all(Array.from({ length: Math.min(32, paths.length) }, inspectModes))
-  for (const manifestPath of paths.filter(path => path.startsWith('cli/package/') && path.endsWith('/package.json'))) {
-    const manifest = JSON.parse(await readFile(join(stage, ...manifestPath.split('/')), 'utf8')) as { readonly bin?: unknown }
-    const bins = typeof manifest.bin === 'string'
-      ? [manifest.bin]
-      : typeof manifest.bin === 'object' && manifest.bin !== null && !Array.isArray(manifest.bin)
-        ? Object.values(manifest.bin as Readonly<Record<string, unknown>>).filter((value): value is string => typeof value === 'string')
-        : []
-    for (const bin of bins) {
-      const path = posix.normalize(posix.join(posix.dirname(manifestPath), bin))
-      if (files.has(path)) executables.add(path)
+  for (const declared of await collectDeclaredBins(stage, paths)) {
+    if (!files.has(declared.path)) {
+      throw new Error(
+        `standalone CLI: package ${declared.packageName}@${declared.packageVersion} declares missing bin ${declared.path}`,
+      )
     }
+    executables.add(declared.path)
   }
   for (const path of requiredPackageExecutables(platform, arch)) {
     if (!files.has(path)) throw new Error(`standalone CLI: required package executable is missing: ${path}`)
     executables.add(path)
   }
   return [...executables].toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+interface DeclaredBin {
+  readonly packageName: string
+  readonly packageVersion: string
+  readonly manifestPath: string
+  readonly target: string
+  readonly path: string
+}
+
+/** Resolve one exact same-name/version source package used to repair an incomplete deployed package. */
+export type DeclaredBinSourceResolver = (name: string, version: string) => Promise<string>
+
+/**
+ * Restore missing declared package bins from exact same-name/version source packages, then audit the result.
+ * @param packageRoot - deployed or extracted CLI package root.
+ * @param resolveSource - exact source package resolver.
+ * @returns repaired paths relative to the CLI package root.
+ */
+export async function repairMissingDeclaredBins(
+  packageRoot: string,
+  resolveSource: DeclaredBinSourceResolver = resolveExactSourcePackage,
+): Promise<readonly string[]> {
+  const paths = await listTree(packageRoot)
+  const files = new Set(paths)
+  const declared = await collectDeclaredBins(packageRoot, paths)
+  const repaired: string[] = []
+  for (const bin of declared) {
+    if (files.has(bin.path)) continue
+    const sourceRoot = await resolveSource(bin.packageName, bin.packageVersion)
+    const sourceManifest = JSON.parse(await readFile(join(sourceRoot, 'package.json'), 'utf8')) as {
+      readonly name?: unknown
+      readonly version?: unknown
+      readonly bin?: unknown
+    }
+    if (sourceManifest.name !== bin.packageName || sourceManifest.version !== bin.packageVersion) {
+      throw new Error(
+        `packed CLI: declared bin source for ${bin.packageName}@${bin.packageVersion} resolved ${String(sourceManifest.name)}@${String(sourceManifest.version)}`,
+      )
+    }
+    const sourceTargets = binTargets(sourceManifest.bin, `${bin.packageName}@${bin.packageVersion}`)
+    if (!sourceTargets.includes(bin.target)) {
+      throw new Error(`packed CLI: source package ${bin.packageName}@${bin.packageVersion} does not declare bin ${bin.target}`)
+    }
+    const source = join(sourceRoot, ...bin.target.split('/'))
+    if (!(await fileExists(source))) {
+      throw new Error(`packed CLI: source package ${bin.packageName}@${bin.packageVersion} omits declared bin ${bin.target}`)
+    }
+    const destination = join(packageRoot, ...bin.path.split('/'))
+    await mkdir(dirname(destination), { recursive: true })
+    await cp(source, destination)
+    await retainRepairedBinInFiles(packageRoot, bin)
+    files.add(bin.path)
+    repaired.push(bin.path)
+  }
+  await auditDeclaredBins(packageRoot)
+  return repaired.toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
+ * Repair and audit the emitted npm tarball inside the trusted pack operation.
+ * @param tarball - freshly packed CLI tarball.
+ * @param resolveSource - exact source package resolver used only by the pack owner.
+ */
+export async function finalizePackedCliTarball(
+  tarball: string,
+  resolveSource: DeclaredBinSourceResolver = resolveExactSourcePackage,
+): Promise<void> {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'harness-cli-packed-audit-'))
+  try {
+    const packageRoot = join(rootDirectory, 'package')
+    await mkdir(packageRoot)
+    await tar.x({ file: tarball, cwd: packageRoot, strip: 1, strict: true })
+    const repaired = await repairMissingDeclaredBins(packageRoot, resolveSource)
+    if (repaired.length > 0) {
+      const executablePaths = await packedCliExecutablePaths(packageRoot)
+      const replacement = join(rootDirectory, 'repaired.tgz')
+      await tar.c({
+        cwd: packageRoot,
+        file: replacement,
+        filter(path, entry) {
+          const mutable = entry as { mode: number }
+          mutable.mode = (mutable.mode & ~0o777) | (executablePaths.has(path.replaceAll('\\', '/')) ? 0o755 : 0o644)
+          return true
+        },
+        gzip: true,
+        mtime: sourceDateEpoch(),
+        portable: true,
+        prefix: 'package/',
+        strict: true,
+      }, await listTree(packageRoot))
+      await rename(replacement, tarball)
+    }
+    const finalRoot = join(rootDirectory, 'final')
+    await mkdir(finalRoot)
+    await tar.x({ file: tarball, cwd: finalRoot, strip: 1, strict: true })
+    await auditDeclaredBins(finalRoot)
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true })
+  }
+}
+
+async function packedCliExecutablePaths(packageRoot: string): Promise<ReadonlySet<string>> {
+  const paths = await listTree(packageRoot)
+  const executables = new Set<string>()
+  let next = 0
+  const inspect = async (): Promise<void> => {
+    for (;;) {
+      const path = paths[next]
+      next += 1
+      if (path === undefined) return
+      if (((await stat(join(packageRoot, ...path.split('/')))).mode & 0o111) !== 0) executables.add(path)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(32, paths.length) }, inspect))
+  for (const bin of await collectDeclaredBins(packageRoot, paths)) executables.add(bin.path)
+  for (const path of requiredPackedCliExecutables(process.platform, process.arch)) {
+    if (paths.includes(path)) executables.add(path)
+  }
+  return executables
+}
+
+function requiredPackedCliExecutables(platform: NodeJS.Platform, arch: string): readonly string[] {
+  const target = `${platform}-${arch}`
+  return [
+    `node_modules/@vscode/ripgrep-${target}/bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`,
+    ...(platform === 'darwin' ? [`node_modules/node-pty/prebuilds/${target}/spawn-helper`] : []),
+  ]
+}
+
+async function retainRepairedBinInFiles(packageRoot: string, bin: DeclaredBin): Promise<void> {
+  const manifestPath = join(packageRoot, ...bin.manifestPath.split('/'))
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
+  if (manifest.files === undefined) return
+  if (!Array.isArray(manifest.files) || manifest.files.some(path => typeof path !== 'string')) {
+    throw new Error(`packed CLI: package ${bin.packageName}@${bin.packageVersion} has invalid files allowlist`)
+  }
+  const files = manifest.files as string[]
+  if (!files.includes(bin.target)) files.push(bin.target)
+  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, files }, undefined, 2)}\n`)
+}
+
+async function auditDeclaredBins(packageRoot: string): Promise<void> {
+  const paths = await listTree(packageRoot)
+  const files = new Set(paths)
+  for (const bin of await collectDeclaredBins(packageRoot, paths)) {
+    if (!files.has(bin.path)) {
+      throw new Error(`packed CLI: package ${bin.packageName}@${bin.packageVersion} declares missing bin ${bin.path}`)
+    }
+  }
+}
+
+async function collectDeclaredBins(rootDirectory: string, paths: readonly string[]): Promise<readonly DeclaredBin[]> {
+  const declared: DeclaredBin[] = []
+  for (const manifestPath of paths.filter(path => path === 'package.json' || path.endsWith('/package.json'))) {
+    const manifest = JSON.parse(await readFile(join(rootDirectory, ...manifestPath.split('/')), 'utf8')) as {
+      readonly name?: unknown
+      readonly version?: unknown
+      readonly bin?: unknown
+    }
+    if (manifest.bin === undefined) continue
+    if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') {
+      throw new Error(`packed CLI: ${manifestPath} declares bin without string name and version`)
+    }
+    const packageDirectory = posix.dirname(manifestPath)
+    for (const target of binTargets(manifest.bin, `${manifest.name}@${manifest.version}`)) {
+      const path = packageDirectory === '.' ? target : posix.join(packageDirectory, target)
+      declared.push({
+        packageName: manifest.name,
+        packageVersion: manifest.version,
+        manifestPath,
+        target,
+        path,
+      })
+    }
+  }
+  return declared.toSorted((left, right) => left.path.localeCompare(right.path, 'en'))
+}
+
+function binTargets(value: unknown, label: string): readonly string[] {
+  if (typeof value !== 'string' && (typeof value !== 'object' || value === null || Array.isArray(value))) {
+    throw new Error(`packed CLI: package ${label} has invalid bin declarations`)
+  }
+  const raw = typeof value === 'string'
+    ? [value]
+    : Object.values(value as Readonly<Record<string, unknown>>)
+  if (raw.some(target => typeof target !== 'string')) throw new Error(`packed CLI: package ${label} has invalid bin declarations`)
+  return [...new Set((raw as string[]).map((target) => {
+    const normalized = posix.normalize(target)
+    if (posix.isAbsolute(normalized) || normalized === '..' || normalized.startsWith('../')) {
+      throw new Error(`packed CLI: package ${label} declares escaping bin ${JSON.stringify(target)}`)
+    }
+    return normalized.replace(/^\.\//u, '')
+  }))].toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+async function resolveExactSourcePackage(name: string, version: string): Promise<string> {
+  const candidates = globSync([
+    'apps/*/package.json',
+    'packages/*/*/package.json',
+    'vendor/*/package.json',
+    'node_modules/.pnpm/*/node_modules/*/package.json',
+    'node_modules/.pnpm/*/node_modules/@*/*/package.json',
+  ], { cwd: root }).toSorted((left, right) => left.localeCompare(right, 'en'))
+  for (const candidate of candidates) {
+    const absolute = resolve(root, candidate)
+    const manifest = JSON.parse(await readFile(absolute, 'utf8')) as { readonly name?: unknown; readonly version?: unknown }
+    if (manifest.name === name && manifest.version === version) return dirname(absolute)
+  }
+  throw new Error(`packed CLI: no source package found for declared bin owner ${name}@${version}`)
 }
 
 function requiredPackageExecutables(platform: NodeJS.Platform, arch: string): readonly string[] {

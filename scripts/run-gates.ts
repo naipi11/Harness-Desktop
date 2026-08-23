@@ -415,15 +415,15 @@ function ciArtifactGates(): Gate[] {
 
 function releaseSmokeGates(): Gate[] {
   return [
-    pnpmScript('build', 'build'),
-    pnpmScript('generate-icons', 'generate:icons', { needs: ['build'] }),
+    pnpmScript('generate-icons', 'generate:icons'),
     pnpmScript('verify-icons', 'verify:icons', { needs: ['generate-icons'] }),
+    pnpmScript('build', 'build', { needs: ['verify-icons'] }),
     {
       id: 'desktop-package',
       label: 'native Desktop package',
       displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
       ...pnpmInvocation(['--filter', '@harness-desktop/dsh-desktop', 'run', 'package', '--publish', 'never']),
-      needs: ['verify-icons'],
+      needs: ['build'],
     },
     pnpmScript('desktop-artifacts', 'release:verify-desktop-artifacts', { needs: ['desktop-package'] }),
     pnpmScript('packed-cli', 'release:verify-packed-cli', { needs: ['desktop-artifacts'] }),

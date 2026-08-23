@@ -54,6 +54,43 @@ export async function runInstalledArtifactLifecycle<T extends InstalledArtifactR
   if (cleanupFailures.length > 1) throw new AggregateError(cleanupFailures, `installed desktop artifact: ${artifact.name} cleanup failed`)
 }
 
+type ArtifactRuntime<TArtifact extends InstalledArtifactLifecycle> = Awaited<ReturnType<TArtifact['launch']>>
+
+/**
+ * Exercise a prepared artifact collection and settle every later artifact if one lifecycle fails.
+ * @param artifacts - prepared native artifacts in execution order.
+ * @param verify - authenticated assertions for one artifact and launched fixture.
+ */
+export function runInstalledArtifactCollection<TArtifact extends InstalledArtifactLifecycle>(
+  artifacts: readonly TArtifact[],
+  verify: (artifact: TArtifact, fixture: ArtifactRuntime<TArtifact>) => Promise<void>,
+): Promise<void>
+export async function runInstalledArtifactCollection(
+  artifacts: readonly InstalledArtifactLifecycle[],
+  verify: (artifact: InstalledArtifactLifecycle, fixture: InstalledArtifactRuntimeFixture) => Promise<void>,
+): Promise<void> {
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = artifacts[index]
+    if (artifact === undefined) continue
+    try {
+      await runInstalledArtifactLifecycle(artifact, async fixture => verify(artifact, fixture))
+    } catch (primaryFailure) {
+      const cleanupFailures: unknown[] = []
+      for (const unvisited of artifacts.slice(index + 1)) {
+        await unvisited.remove().catch((error: unknown) => cleanupFailures.push(error))
+        await unvisited.cleanup().catch((error: unknown) => cleanupFailures.push(error))
+      }
+      if (cleanupFailures.length > 0) {
+        throw new AggregateError(
+          [primaryFailure, ...cleanupFailures],
+          'installed desktop artifact: collection lifecycle and cleanup failed',
+        )
+      }
+      throw primaryFailure
+    }
+  }
+}
+
 /** @returns whether native AppImage launch failed specifically because FUSE mounting is unavailable. */
 export function isAppImageFuseUnavailable(error: unknown): boolean {
   return /(?:FUSE|libfuse|AppImage mount)/iu.test(String(error))
@@ -82,7 +119,8 @@ export async function launchAppImageWithFallback<T>(
 
 /** Cleanup operations owned after a Windows installer has reported success. */
 export interface WindowsPreparationRollbackDependencies {
-  findUninstaller(): Promise<string>
+  readonly uninstallerRequired: boolean
+  findUninstaller(): Promise<string | undefined>
   runUninstaller(path: string): Promise<void>
   waitForRemoval(): Promise<void>
   removeRoot(): Promise<void>
@@ -101,8 +139,14 @@ export async function rollbackWindowsPreparation(
   const cleanupFailures: unknown[] = []
   try {
     const uninstaller = await dependencies.findUninstaller()
-    await dependencies.runUninstaller(uninstaller)
-    await dependencies.waitForRemoval()
+    if (uninstaller === undefined) {
+      if (dependencies.uninstallerRequired) {
+        cleanupFailures.push(new Error('installed desktop artifact: NSIS uninstaller is missing'))
+      }
+    } else {
+      await dependencies.runUninstaller(uninstaller)
+      await dependencies.waitForRemoval()
+    }
   } catch (error) {
     cleanupFailures.push(error)
   }

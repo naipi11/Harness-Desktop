@@ -82,9 +82,9 @@ describe('gate graph validation', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('release-smoke'))
 
     expect(subject.map(item => item.id)).toEqual([
-      'build',
       'generate-icons',
       'verify-icons',
+      'build',
       'desktop-package',
       'desktop-artifacts',
       'packed-cli',
@@ -94,8 +94,9 @@ describe('gate graph validation', () => {
     ])
     expect(subject.find(item => item.id === 'desktop-package')).toMatchObject({
       displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
-      needs: ['verify-icons'],
+      needs: ['build'],
     })
+    expect(subject.find(item => item.id === 'build')?.needs).toEqual(['verify-icons'])
     expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['standalone-verify'])
   })
 
