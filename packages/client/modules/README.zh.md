@@ -8,7 +8,7 @@
 
 解析分支顺序（`import(specifier)`）：平台种子词 → 外壳实例；记忆化记录 → 表层；外壳自身的静态注册表（`registerStatic`，app-shell）→ 模块；已注册 factory → 物化；模块图记录（`window.__DSH_BOOT__`）→ 加载外部 classic script + 物化；其他情况一律抛出异常。这是构建时 bundle 纯度门禁的运行时镜像。交给 factory 的同步 `require` 采用相同顺序，但不含异步加载分支，并把观察到的边记录到模块记录中。`prefetch` 是第一阶段到达钩子（只加载脚本并注册 factory；并发调用共享一个进行中的任务）；`invalidate` 会丢弃 factory 与物化记录，使下一次 prefetch/import 重新加载脚本；它是 HMR（热模块替换）钩子。
 
-Node 侧会扫描已启用的 Loader 配置项以发现 web `dsh.client` 包，解析每个 `exports["./client"]`，把构建后的 bundle 哈希写入启动图，并通过 `/plugins` 提供该文件及其 sourcemap。当另一个生命周期所有者挂载 Host 侧而使配置中的 Host 行保持禁用时，带有 `includeWhenDisabled: true` 的声明只会保留对应浏览器 bundle；client connection 使用该机制提供 Runtime 已认证路由。源码启动会把宿主侧导入映射到 TypeScript 源码，但仍消费这一构建后的客户端导出；缺失文件共享一条构建说明，随后以包／路径列表列出各项，而无关的文件系统错误仍是独立故障。
+Node 侧会扫描存活的 Loader 配置项以发现 web `dsh.client` 包，解析每个 `exports["./client"]`，把构建后的 bundle 哈希写入启动图，并通过 `/plugins` 提供该文件及其 sourcemap。裸配置项名称从 config-tree 锚点解析包元数据。构建版组合也可能向 Loader 提供物理 `file:` 配置项；注册表会查找其最近的 `package.json`，以 manifest（元数据清单）的 `name` 作为图 id，并在该包任一配置项别名符合条件时保留唯一一行。无法解析的配置项或未声明 Web 客户端的匿名包仍是非客户端行；畸形客户端元数据只在其自身的增量处理轮次失败，不会污染另一个包的协调。当另一个生命周期所有者挂载 Host 侧而使配置中的 Host 行保持禁用时，带有 `includeWhenDisabled: true` 的声明只会保留对应浏览器 bundle；client connection 使用该机制提供 Runtime 已认证路由。源码启动会把宿主侧导入映射到 TypeScript 源码，但仍消费这一构建后的客户端导出；缺失文件共享一条构建说明，随后以包／路径列表列出各项，而无关的文件系统错误仍是独立故障。
 
 ## 模型体验
 

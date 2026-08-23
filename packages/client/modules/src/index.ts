@@ -12,10 +12,11 @@
  * the fiber's entry name dirty; a microtask flush reconciles each dirty name
  * against the live loader entries. The activation pass seeds the same dirty
  * set with all current entries and flushes synchronously, so first scan and
- * steady state share one implementation. Package metadata (including the
- * negative "not a client package" verdict) is cached per name and never
- * expires — plugin-set changes take effect on restart; bundle content
- * changes reach the graph only through
+ * steady state share one implementation. Bare names resolve package metadata
+ * from the config-tree anchor; built `file:` entry names recover the logical
+ * graph id from the nearest package manifest. Metadata (including the negative
+ * "not a client package" verdict) is cached per entry name and never expires —
+ * plugin-set changes take effect on restart; bundle content changes reach the graph only through
  * {@link ClientModuleRegistry.rebuilt}.
  * @module @harness-desktop/dsh-client-modules
  */
@@ -24,7 +25,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createRequire } from 'node:module'
+import { createRequire, findPackageJSON } from 'node:module'
 import { dirname, join } from 'node:path'
 import { Service } from '@harness-desktop/cordis'
 import type { Context } from '@harness-desktop/cordis'
@@ -53,8 +54,9 @@ interface DshClientDeclaration {
   includeWhenDisabled?: boolean
 }
 
-/** Resolved package metadata for one `dsh.client` package (cached per name, never expires). */
+/** Resolved package identity and browser artifact for one Loader entry name. */
 interface PkgMeta {
+  packageName: string
   clientPath: string
   inject?: string[]
   immediately: boolean
@@ -148,6 +150,16 @@ function clientExportOf(pkgName: string, exportsField: unknown): string | undefi
   throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
 }
 
+/** File specifiers that identify no resolvable module remain ordinary non-client Loader rows. */
+function isUnresolvableFileEntry(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false
+  const code = error.code
+  return code === 'ERR_MODULE_NOT_FOUND'
+    || code === 'ERR_INVALID_FILE_URL_PATH'
+    || code === 'ERR_INVALID_URL'
+    || code === 'ERR_INVALID_ARG_VALUE'
+}
+
 /** sha1 content hash shortened to 12 hex chars (bundle rev / graph rev). */
 function shortHash(input: string | Buffer): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 12)
@@ -192,9 +204,9 @@ export class ClientModuleRegistry extends Service {
   static inject = ['webServer', 'loader']
 
   private readonly table = new Map<string, WebPluginRecord>()
-  // Negative verdicts (unresolvable specifier — builtins like cordis:include,
-  // subpath rows — or a package without a web `dsh.client` declaration) are
-  // cached as null and never expire: plugin-set changes take effect on restart.
+  // Negative verdicts (unresolvable bare/file specifier, bare subpath row, or
+  // package without a web `dsh.client` declaration) are cached as null and
+  // never expire: plugin-set changes take effect on restart.
   private readonly pkgMeta = new Map<string, PkgMeta | null>()
   private readonly rebuildListeners = new Set<(id: string, rev: string) => void>()
   private readonly graphListeners = new Set<() => void>()
@@ -340,7 +352,21 @@ export class ClientModuleRegistry extends Service {
     const cached = this.pkgMeta.get(pkgName)
     if (cached !== undefined) return cached
     let pkgPath: string
-    try {
+    if (pkgName.startsWith('file:')) {
+      let found: string | undefined
+      try {
+        found = findPackageJSON(pkgName, this.ctx.baseUrl)
+      } catch (error) {
+        if (!isUnresolvableFileEntry(error)) throw error
+        this.pkgMeta.set(pkgName, null)
+        return null
+      }
+      if (found === undefined) {
+        this.pkgMeta.set(pkgName, null)
+        return null
+      }
+      pkgPath = found
+    } else try {
       pkgPath = this.resolvePkgJson(pkgName)
     } catch {
       // Not a resolvable package root: loader builtins (cordis:include) and
@@ -349,20 +375,26 @@ export class ClientModuleRegistry extends Service {
       return null
     }
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as Record<string, unknown>
+    const packageName = pkg.name
+    const diagnosticName = typeof packageName === 'string' && packageName.length > 0 ? packageName : pkgName
     const dsh = pkg.dsh
     const decl = parseDshClient(
-      pkgName,
+      diagnosticName,
       dsh !== null && typeof dsh === 'object' ? (dsh as Record<string, unknown>).client : undefined,
     )
     if (decl === undefined || decl.platform !== 'web') {
       this.pkgMeta.set(pkgName, null)
       return null
     }
-    const clientRel = clientExportOf(pkgName, pkg.exports)
+    if (typeof packageName !== 'string' || packageName.length === 0) {
+      throw new Error(`client-modules: ${pkgName} package.json has no package name`)
+    }
+    const clientRel = clientExportOf(packageName, pkg.exports)
     if (clientRel === undefined) {
-      throw new Error(`client-modules: ${pkgName} declares dsh.client but exports no "./client" bundle`)
+      throw new Error(`client-modules: ${packageName} declares dsh.client but exports no "./client" bundle`)
     }
     const meta: PkgMeta = {
+      packageName,
       clientPath: join(dirname(pkgPath), clientRel),
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
       immediately: decl.immediately === true,
@@ -394,18 +426,28 @@ export class ClientModuleRegistry extends Service {
     if (meta === null) return false
     let qualifies = false
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.name !== entryName) continue
+      let candidate: PkgMeta | null
+      try {
+        candidate = this.resolveMeta(entry.options.name)
+      } catch (_candidateMetadataFailure) {
+        // The candidate's own dirty pass reports its malformed metadata; it must not poison this package's reconcile.
+        continue
+      }
+      if (candidate?.packageName !== meta.packageName) continue
       if ((!entry.disabled && entry.fiber !== undefined) || (entry.disabled && meta.includeWhenDisabled)) {
         qualifies = true
         break
       }
     }
-    if (!qualifies) return this.table.delete(entryName)
-    if (this.table.has(entryName)) return false
+    if (!qualifies) return this.table.delete(meta.packageName)
+    if (this.table.has(meta.packageName)) return false
     // The rev rides the row from here on: a fiber restart reuses the row (and
     // its rev) untouched; only rebuilt() re-reads the bundle.
-    const rev = this.initialBundleRevision(entryName, meta.clientPath)
-    this.table.set(entryName, { entry: graphRow(entryName, rev, meta.inject, meta.immediately), clientPath: meta.clientPath })
+    const rev = this.initialBundleRevision(meta.packageName, meta.clientPath)
+    this.table.set(meta.packageName, {
+      entry: graphRow(meta.packageName, rev, meta.inject, meta.immediately),
+      clientPath: meta.clientPath,
+    })
     return true
   }
 

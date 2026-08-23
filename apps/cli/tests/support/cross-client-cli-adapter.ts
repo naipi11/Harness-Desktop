@@ -15,6 +15,37 @@ const CLI_TIMEOUT_MS = 45_000
 
 class BuiltCliAdapterError extends Error {}
 
+/** One strictly parsed CLI JSONL object with optional event fields used by app acceptance. */
+export interface CliJsonLine extends Record<string, unknown> {
+  readonly kind?: unknown
+  readonly sessionId?: unknown
+  readonly text?: unknown
+}
+
+/**
+ * Parse CLI JSONL without accepting a missing record; only one final line terminator is ignored.
+ * @param stdout - complete captured CLI stdout.
+ * @returns decoded object records in their original order.
+ * @throws when a physical record is blank, malformed, or not a JSON object.
+ */
+export function parseCliJsonLines(stdout: string): readonly CliJsonLine[] {
+  const lines = stdout.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  return lines.map((rawLine, index) => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    if (line.length === 0) throw new Error(`CLI stdout line ${String(index + 1)} is blank`)
+    try {
+      const parsed: unknown = JSON.parse(line)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new TypeError('record must be an object')
+      }
+      return parsed as CliJsonLine
+    } catch (error) {
+      throw new Error(`CLI stdout line ${String(index + 1)} is not a JSON object`, { cause: error })
+    }
+  })
+}
+
 function builtEntry(command: 'harness' | 'dsh'): string {
   return fileURLToPath(new URL(command === 'harness' ? '../../lib/bin.js' : '../../lib/dsh-bin.js', import.meta.url))
 }

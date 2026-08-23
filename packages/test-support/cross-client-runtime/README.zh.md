@@ -22,6 +22,10 @@ Fixture 启动会等待每个同级目录创建尝试结束后再回滚，因此
 
 CLI、Web 和 Desktop 测试注入仅 Node 适配器。适配器接口不包含 Playwright、Electron、浏览器或浏览器侧 `client-runtime` import，因此每个应用测试都会在自身模块中保留所属 runner 的启动和呈现断言。CLI 适配器只会从 fixture 工作区通过普通的当前 Node 运行相匹配的构建版 `apps/cli/lib/bin.js` 或 `lib/dsh-bin.js`，使用不扩展父进程值的系统环境，并原样保留捕获的输出。
 
+Web 适配器会动态 import 物理构建版 local-Runtime 公开入口，并在缺少 `apps/web/dist` 时拒绝运行。它以禁止启动另一运行时的模式连接、验证 `running`、拥有一个 Dashboard 附加项，并在 fixture 平台 home 内写入一个随机命名、独占创建且采用 POSIX 仅所有者 mode 的表单文件。Chromium 打开该文件的干净 URL，只在表单正文中提交一次 handoff，跟随准确且干净的 `/` 重定向，并等待认证就绪标记与真实 Engineering workbench 同时出现。适配器分别拥有页面、浏览器上下文、Dashboard 附加项、运行时客户端和 bootstrap 文件的可重试关闭；打开与清理同时失败时只保留稳定的阶段错误。其探针公开 Playwright 页面供语义 role／text 交互，并公开一份不含 token 的审计，覆盖请求 URL 与 header、referrer、最终 DOM 与 URL、Chromium history、浏览器 storage、console／page 错误和 HttpOnly cookie 策略；它绝不返回 handoff 或 cookie 值。
+
+累积式 Web 验收先通过构建版 `harness run --json` 创建状态：已知 Workspace 保持不变，只按 cwd 创建的 CLI Session 出现在 Ungrouped 下。真实 Dashboard 会通过可访问 UI 关闭首次使用提示、展开并选择该 Session，渲染已有提示词／回复，通过输入框提交第二条提示词，再由 fixture 的公开历史 API 确认两个轮次。该语义 DOM 覆盖没有更改任何产品可见字符串，因此无需更新 snapshot。
+
 ## 模型体验
 
 无，因为 fixture 只驱动普通的公开提示词和终端操作，所有模型可见输入均由规范运行时的组合插件负责。

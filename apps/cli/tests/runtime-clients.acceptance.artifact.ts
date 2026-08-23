@@ -8,7 +8,7 @@ import type {
   CrossClientFixture,
   CrossClientLifecycleSnapshot,
 } from '@harness-desktop/dsh-cross-client-runtime'
-import { createBuiltCliAdapter } from './support/cross-client-cli-adapter.ts'
+import { createBuiltCliAdapter, parseCliJsonLines } from './support/cross-client-cli-adapter.ts'
 
 const PROMPT = 'TASK5_BUILT_CLI_PROMPT'
 const REPLY = 'TASK5_BUILT_CLI_REPLY'
@@ -17,28 +17,8 @@ const fixtureEntry = require.resolve('@harness-desktop/dsh-cross-client-runtime'
 
 type FixtureApi = typeof import('@harness-desktop/dsh-cross-client-runtime')
 
-interface JsonLine {
-  readonly kind?: unknown
-  readonly sessionId?: unknown
-  readonly text?: unknown
-}
-
 async function builtFixtureApi(): Promise<FixtureApi> {
   return import(pathToFileURL(fixtureEntry).href) as Promise<FixtureApi>
-}
-
-function parseJsonLines(stdout: string): readonly JsonLine[] {
-  return stdout.split(/\r?\n/u).filter(line => line.length > 0).map((line, index) => {
-    try {
-      const parsed: unknown = JSON.parse(line)
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new TypeError('record must be an object')
-      }
-      return parsed
-    } catch (error) {
-      throw new Error(`CLI stdout line ${String(index + 1)} is not a JSON object`, { cause: error })
-    }
-  })
 }
 
 function containsExactString(value: unknown, expected: string): boolean {
@@ -57,6 +37,18 @@ function expectDisposed(snapshot: CrossClientLifecycleSnapshot): void {
 }
 
 describe('built CLI shared Runtime acceptance', () => {
+  it.each([
+    { stdout: '\n{}\n', line: 1 },
+    { stdout: '{}\n\n{}\n', line: 2 },
+    { stdout: '{}\n\n', line: 2 },
+  ])('rejects a blank JSONL record at original line $line', ({ stdout, line }) => {
+    expect(() => parseCliJsonLines(stdout)).toThrow(`CLI stdout line ${String(line)} is blank`)
+  })
+
+  it('accepts exactly one terminal newline after JSONL records', () => {
+    expect(parseCliJsonLines('{"kind":"ready"}\n')).toEqual([{ kind: 'ready' }])
+  })
+
   it.each(['harness', 'dsh'] as const)(
     'persists %s JSONL work through the public fixture state API',
     async (command) => {
@@ -72,7 +64,7 @@ describe('built CLI shared Runtime acceptance', () => {
         const result = await fixture.runCli(['run', PROMPT, '--json'])
         expect(result.exitCode, result.stderr).toBe(0)
         expect(result.stderr).toBe('')
-        const events = parseJsonLines(result.stdout)
+        const events = parseCliJsonLines(result.stdout)
         const opened = events.filter(event => event.kind === 'session-opened')
         expect(opened).toHaveLength(1)
         if (typeof opened[0]?.sessionId !== 'string') {
@@ -80,7 +72,7 @@ describe('built CLI shared Runtime acceptance', () => {
         }
         const sessionId = opened[0].sessionId as SessionId
         const reply = events
-          .filter((event): event is JsonLine & { readonly kind: 'output'; readonly text: string } =>
+          .filter((event): event is typeof event & { readonly kind: 'output'; readonly text: string } =>
             event.kind === 'output' && typeof event.text === 'string')
           .map(event => event.text)
           .join('')

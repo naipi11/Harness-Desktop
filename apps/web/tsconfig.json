@@ -95,7 +95,10 @@
     "tests/pwsh-terminal.e2e.ts",
     "tests/workflow-run.e2e.ts",
     "tests/dashboard-workbench.e2e.ts",
-    "tests/dashboard-ready.e2e.ts"
+    "tests/dashboard-ready.e2e.ts",
+    "tests/cross-client-runtime.e2e.ts",
+    "tests/support/cross-client-web-adapter.ts",
+    "tests/support/cross-client-web-adapter.spec.ts"
   ],
   "references": [
     {
