@@ -1,6 +1,6 @@
 /** Build deterministic signed update manifests from named local artifacts. */
 
-import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -29,6 +29,14 @@ export interface UpdateManifestArtifactInput {
   readonly url: string
 }
 
+/** Credential-free inputs used to inventory candidate artifacts. */
+export interface UpdateManifestInventoryInput {
+  readonly currentVersion: string
+  readonly version: string
+  readonly keyId: string
+  readonly artifacts: readonly UpdateManifestArtifactInput[]
+}
+
 /** Inputs for one deterministic manifest set. */
 export interface UpdateManifestBuildInput {
   readonly currentVersion: string
@@ -37,6 +45,29 @@ export interface UpdateManifestBuildInput {
   readonly signingKeyPath: string
   readonly outputDirectory: string
   readonly artifacts: readonly UpdateManifestArtifactInput[]
+}
+
+/** One candidate reduced to validated metadata without its local path or bytes. */
+export interface UpdateManifestArtifactInventory {
+  readonly channel: UpdateChannel
+  readonly consumer: UpdateArtifactConsumer
+  readonly platform: UpdatePlatform
+  readonly arch: UpdateArchitecture
+  readonly format: UpdateArtifactFormat
+  readonly url: string
+  readonly sha256: string
+  readonly members: readonly string[]
+}
+
+const validatedInventory = Symbol('validated update manifest inventory')
+
+/** Credential-free candidate metadata accepted by the shared update policy. */
+export interface UpdateManifestInventory {
+  readonly [validatedInventory]: true
+  readonly currentVersion: string
+  readonly version: string
+  readonly keyId: string
+  readonly artifacts: readonly UpdateManifestArtifactInventory[]
 }
 
 /** One complete manifest prepared in memory before any output is created. */
@@ -61,22 +92,80 @@ export type UpdateManifestWriter = (path: string, bytes: Buffer) => Promise<void
  */
 export type UpdateManifestRootReservation = (path: string) => Promise<void>
 
+/**
+ * Read and inspect one candidate before release signing material is loaded.
+ * @param artifactPath - caller-selected candidate path.
+ * @param format - declared archive format.
+ * @returns immutable candidate bytes and their archive member paths.
+ */
+export type UpdateManifestArtifactInspector = typeof inspectUpdateArtifact
+
+/**
+ * Read caller-owned signing bytes only after every candidate passes inventory.
+ * @param path - private-key path selected by the caller.
+ * @returns opaque private-key bytes for the pure signing phase.
+ */
+export type UpdateManifestSigningKeyReader = (path: string) => Promise<Buffer>
+
+/** Candidate inspection and signing-key operations with enforced inventory-first ordering. */
+export interface UpdateManifestBuildDependencies {
+  readonly inspectArtifact?: UpdateManifestArtifactInspector
+  readonly readSigningKey?: UpdateManifestSigningKeyReader
+}
+
 const channelOrder: readonly UpdateChannel[] = ['stable', 'beta', 'nightly']
 
 /**
- * Build and sign all manifests in memory before creating output files.
- * @param input - release version, local artifacts, and caller-supplied private-key file.
- * @returns deterministic filenames, values, and UTF-8 bytes.
+ * Inspect and validate every candidate without receiving signing material.
+ * @param input - release version and caller-selected local candidates.
+ * @param inspectArtifact - credential-free candidate inspector.
+ * @returns validated digests and member lists with all candidate paths removed.
  */
-export async function buildUpdateManifests(
-  input: UpdateManifestBuildInput,
-): Promise<readonly BuiltUpdateManifest[]> {
+export async function inventoryUpdateArtifacts(
+  input: UpdateManifestInventoryInput,
+  inspectArtifact: UpdateManifestArtifactInspector = inspectUpdateArtifact,
+): Promise<UpdateManifestInventory> {
   assertUniqueTargets(input.artifacts)
   if (input.artifacts.length === 0) throw new Error('update manifest: at least one artifact is required')
 
-  const privateKeyBytes = await readFile(input.signingKeyPath).catch((error: unknown) => {
-    throw new Error('update manifest: signing key file is unavailable', { cause: error })
+  const artifacts: UpdateManifestArtifactInventory[] = []
+  for (const artifactInput of [...input.artifacts].sort(compareArtifactInputs)) {
+    const inspected = await inspectArtifact(artifactInput.artifactPath, artifactInput.format)
+    artifacts.push(Object.freeze({
+      channel: artifactInput.channel,
+      consumer: artifactInput.consumer,
+      platform: artifactInput.platform,
+      arch: artifactInput.arch,
+      format: artifactInput.format,
+      url: artifactInput.url,
+      sha256: createHash('sha256').update(inspected.bytes).digest('hex'),
+      members: Object.freeze([...inspected.members].sort(compareText)),
+    }))
+  }
+  const inventory: UpdateManifestInventory = Object.freeze({
+    [validatedInventory]: true as const,
+    currentVersion: input.currentVersion,
+    version: input.version,
+    keyId: input.keyId,
+    artifacts: Object.freeze(artifacts),
   })
+  assertInventoryAccepted(inventory)
+  return inventory
+}
+
+/**
+ * Build and sign all manifests from validated metadata and private-key bytes.
+ * @param inventory - credential-free preflight output without candidate paths.
+ * @param privateKeyBytes - caller-owned Ed25519 private-key bytes.
+ * @returns deterministic filenames, values, and UTF-8 bytes.
+ */
+export function buildUpdateManifests(
+  inventory: UpdateManifestInventory,
+  privateKeyBytes: Buffer,
+): readonly BuiltUpdateManifest[] {
+  if (!Object.hasOwn(inventory, validatedInventory)) {
+    throw new Error('update manifest: validated artifact inventory is required')
+  }
   let privateKey: ReturnType<typeof createPrivateKey>
   try {
     privateKey = createPrivateKey(privateKeyBytes)
@@ -88,48 +177,32 @@ export async function buildUpdateManifests(
   }
   const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString()
 
-  const ordered = [...input.artifacts].sort(compareArtifactInputs)
   const built: BuiltUpdateManifest[] = []
-  for (const artifactInput of ordered) {
-    const inspected = await inspectUpdateArtifact(artifactInput.artifactPath, artifactInput.format)
-    const payload: UpdateManifestPayload = {
-      schemaVersion: 1,
-      applicationId: productMetadata.appId,
-      channel: artifactInput.channel,
-      version: input.version,
-      artifacts: [{
-        consumer: artifactInput.consumer,
-        platform: artifactInput.platform,
-        arch: artifactInput.arch,
-        format: artifactInput.format,
-        url: artifactInput.url,
-        sha256: createHash('sha256').update(inspected.bytes).digest('hex'),
-        members: inspected.members,
-      }],
-    }
+  for (const artifact of inventory.artifacts) {
+    const payload = manifestPayload(inventory, artifact)
     const manifest: SignedUpdateManifest = {
       ...payload,
       signature: {
         algorithm: 'ed25519',
-        keyId: input.keyId,
+        keyId: inventory.keyId,
         value: sign(null, canonicalizeSignedUpdateManifest(payload), privateKey).toString('base64url'),
       },
     }
-    const allowedOrigin = artifactOrigin(artifactInput.url)
+    const allowedOrigin = artifactOrigin(artifact.url)
     const verification = verifySignedUpdateManifest(manifest, {
       appId: productMetadata.appId,
-      currentVersion: input.currentVersion,
-      channel: artifactInput.channel,
-      consumer: artifactInput.consumer,
-      platform: artifactInput.platform,
-      arch: artifactInput.arch === 'universal' ? 'x64' : artifactInput.arch,
+      currentVersion: inventory.currentVersion,
+      channel: artifact.channel,
+      consumer: artifact.consumer,
+      platform: artifact.platform,
+      arch: runtimeArchitecture(artifact.arch),
       allowedOrigins: [allowedOrigin],
-      publicKeys: { [input.keyId]: publicKey },
+      publicKeys: { [inventory.keyId]: publicKey },
     })
     if (verification.kind === 'rejected') {
-      throw new Error(`update manifest: shared policy rejected ${verification.code} for ${targetKey(artifactInput)}`)
+      throw new Error(`update manifest: shared policy rejected ${verification.code} for ${targetKey(artifact)}`)
     }
-    const filename = manifestFilename(artifactInput)
+    const filename = manifestFilename(artifact)
     built.push({ filename, manifest, bytes: Buffer.from(`${JSON.stringify(manifest, undefined, 2)}\n`) })
   }
   return built
@@ -140,14 +213,23 @@ export async function buildUpdateManifests(
  * @param input - release version, local artifacts, private-key file, and output directory.
  * @param writeManifest - exclusive staged-file writer; tests inject a write failure.
  * @param reserveOutputRoot - atomic exclusive-create operation; tests inject a competing winner.
+ * @param dependencies - candidate inspection and signing-key operations; inspection completes before key read.
  * @returns deterministic manifest paths relative to the reserved output root.
  */
 export async function writeUpdateManifests(
   input: UpdateManifestBuildInput,
   writeManifest: UpdateManifestWriter = writeManifestExclusive,
   reserveOutputRoot: UpdateManifestRootReservation = reserveManifestOutputRoot,
+  dependencies: UpdateManifestBuildDependencies = {},
 ): Promise<readonly string[]> {
-  const manifests = await buildUpdateManifests(input)
+  const inventory = await inventoryUpdateArtifacts({
+    currentVersion: input.currentVersion,
+    version: input.version,
+    keyId: input.keyId,
+    artifacts: input.artifacts,
+  }, dependencies.inspectArtifact)
+  const privateKeyBytes = await (dependencies.readSigningKey ?? readSigningKeyFile)(input.signingKeyPath)
+  const manifests = buildUpdateManifests(inventory, privateKeyBytes)
   const outputDirectory = resolve(input.outputDirectory)
   const parent = dirname(outputDirectory)
   await mkdir(parent, { recursive: true })
@@ -179,6 +261,12 @@ async function writeManifestExclusive(path: string, bytes: Buffer): Promise<void
 
 async function reserveManifestOutputRoot(path: string): Promise<void> {
   await mkdir(path)
+}
+
+async function readSigningKeyFile(path: string): Promise<Buffer> {
+  return readFile(path).catch((error: unknown) => {
+    throw new Error('update manifest: signing key file is unavailable', { cause: error })
+  })
 }
 
 async function cleanFailedManifestOutput(
@@ -213,11 +301,16 @@ function assertUniqueTargets(artifacts: readonly UpdateManifestArtifactInput[]):
   }
 }
 
-function targetKey(artifact: UpdateManifestArtifactInput): string {
+type UpdateManifestTarget = Pick<
+  UpdateManifestArtifactInput,
+  'channel' | 'consumer' | 'platform' | 'arch' | 'format'
+>
+
+function targetKey(artifact: UpdateManifestTarget): string {
   return `${artifact.channel}/${artifact.consumer}/${artifact.platform}/${artifact.arch}/${artifact.format}`
 }
 
-function manifestFilename(artifact: UpdateManifestArtifactInput): string {
+function manifestFilename(artifact: UpdateManifestTarget): string {
   return `${artifact.channel}-${artifact.consumer}-${artifact.platform}-${artifact.arch}-${artifact.format.replace('.', '-')}.json`
 }
 
@@ -235,6 +328,60 @@ function artifactOrigin(value: string): string {
     return new URL(value).origin
   } catch (error) {
     throw new Error('update manifest: artifact URL is invalid', { cause: error })
+  }
+}
+
+function runtimeArchitecture(arch: UpdateArchitecture): string {
+  return arch === 'universal' ? 'x64' : arch
+}
+
+function manifestPayload(
+  inventory: Pick<UpdateManifestInventory, 'version'>,
+  artifact: UpdateManifestArtifactInventory,
+): UpdateManifestPayload {
+  return {
+    schemaVersion: 1,
+    applicationId: productMetadata.appId,
+    channel: artifact.channel,
+    version: inventory.version,
+    artifacts: [{
+      consumer: artifact.consumer,
+      platform: artifact.platform,
+      arch: artifact.arch,
+      format: artifact.format,
+      url: artifact.url,
+      sha256: artifact.sha256,
+      members: artifact.members,
+    }],
+  }
+}
+
+function assertInventoryAccepted(inventory: UpdateManifestInventory): void {
+  const pair = generateKeyPairSync('ed25519')
+  const publicKey = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+  for (const artifact of inventory.artifacts) {
+    const payload = manifestPayload(inventory, artifact)
+    const manifest: SignedUpdateManifest = {
+      ...payload,
+      signature: {
+        algorithm: 'ed25519',
+        keyId: inventory.keyId,
+        value: sign(null, canonicalizeSignedUpdateManifest(payload), pair.privateKey).toString('base64url'),
+      },
+    }
+    const verification = verifySignedUpdateManifest(manifest, {
+      appId: productMetadata.appId,
+      currentVersion: inventory.currentVersion,
+      channel: artifact.channel,
+      consumer: artifact.consumer,
+      platform: artifact.platform,
+      arch: runtimeArchitecture(artifact.arch),
+      allowedOrigins: [artifactOrigin(artifact.url)],
+      publicKeys: { [inventory.keyId]: publicKey },
+    })
+    if (verification.kind === 'rejected') {
+      throw new Error(`update manifest: shared policy rejected ${verification.code} for ${targetKey(artifact)}`)
+    }
   }
 }
 

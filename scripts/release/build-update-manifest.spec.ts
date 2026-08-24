@@ -12,8 +12,11 @@ import {
   type UpdateChannel,
 } from '@harness-desktop/dsh-update-policy'
 import {
+  buildUpdateManifests,
+  inventoryUpdateArtifacts,
   writeUpdateManifests,
   type UpdateManifestBuildInput,
+  type UpdateManifestInventoryInput,
 } from './build-update-manifest.ts'
 
 const roots: string[] = []
@@ -75,7 +78,74 @@ function input(
   }
 }
 
+function inventoryInput(
+  subject: BuildFixture,
+  channels: readonly UpdateChannel[] = ['stable', 'beta', 'nightly'],
+): UpdateManifestInventoryInput {
+  const buildInput = input(subject, join(subject.root, 'unused-output'), channels)
+  return {
+    currentVersion: buildInput.currentVersion,
+    version: buildInput.version,
+    keyId: buildInput.keyId,
+    artifacts: buildInput.artifacts,
+  }
+}
+
 describe('writeUpdateManifests', () => {
+  it('finishes credential-free artifact inventory before loading signing material', async () => {
+    const subject = await fixture()
+    const outputDirectory = join(subject.root, 'ordered-signing-output')
+    const expectedInspections = input(subject, outputDirectory).artifacts.length
+    let inspections = 0
+    let signingKeyLoaded = false
+
+    await writeUpdateManifests(
+      input(subject, outputDirectory),
+      undefined,
+      undefined,
+      {
+        async inspectArtifact(path, format) {
+          expect(signingKeyLoaded).toBe(false)
+          expect(path).toBe(subject.artifactPath)
+          expect(format).toBe('zip')
+          inspections += 1
+          return {
+            bytes: await readFile(path),
+            members: ['payload/harness.txt'],
+          }
+        },
+        async readSigningKey(path) {
+          expect(inspections).toBe(expectedInspections)
+          signingKeyLoaded = true
+          return readFile(path)
+        },
+      },
+    )
+
+    expect(signingKeyLoaded).toBe(true)
+    expect(inspections).toBe(expectedInspections)
+  })
+
+  it('signs only validated inventory bytes after the candidate path is unavailable', async () => {
+    const subject = await fixture()
+    const inventory = await inventoryUpdateArtifacts(inventoryInput(subject, ['stable']))
+    expect(inventory.artifacts).toHaveLength(1)
+    expect(inventory.artifacts[0]?.sha256).toMatch(/^[0-9a-f]{64}$/u)
+    expect(inventory.artifacts[0]?.members).toEqual(['payload/harness.txt'])
+    expect(Object.isFrozen(inventory)).toBe(true)
+    expect(Object.isFrozen(inventory.artifacts)).toBe(true)
+    expect(Object.isFrozen(inventory.artifacts[0]?.members)).toBe(true)
+    await rm(subject.artifactPath)
+
+    const manifests = buildUpdateManifests(inventory, await readFile(subject.privateKeyPath))
+
+    expect(manifests).toHaveLength(1)
+    expect(manifests[0]?.manifest.artifacts[0]).toMatchObject({
+      sha256: inventory.artifacts[0]?.sha256,
+      members: ['payload/harness.txt'],
+    })
+  })
+
   it('writes deterministic stable, beta, and nightly manifests with one explicit artifact each', async () => {
     const subject = await fixture()
     const first = join(subject.root, 'first')
@@ -230,10 +300,20 @@ describe('writeUpdateManifests', () => {
   it('rejects unsafe archive members before signing or output', async () => {
     const subject = await fixture({ '../escape.txt': Buffer.from('unsafe') })
     const outputDirectory = join(subject.root, 'unsafe-member-output')
+    let signingKeyReads = 0
 
-    await expect(writeUpdateManifests(input(subject, outputDirectory, ['stable']))).rejects.toThrow(
-      'archive-path-invalid',
-    )
+    await expect(writeUpdateManifests(
+      input(subject, outputDirectory, ['stable']),
+      undefined,
+      undefined,
+      {
+        async readSigningKey() {
+          signingKeyReads += 1
+          throw new Error('signing key must not be read for an invalid inventory')
+        },
+      },
+    )).rejects.toThrow('archive-path-invalid')
+    expect(signingKeyReads).toBe(0)
     await expect(access(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

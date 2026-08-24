@@ -7,6 +7,7 @@ import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { path7za } from '7zip-bin'
 import { execa } from 'execa'
+import { inspectUpdateArtifact } from './verify-update-manifests.ts'
 
 const root = resolve(import.meta.dirname, '../..')
 const generatedIconNames = {
@@ -209,15 +210,7 @@ const nativeDesktopArtifactTools: DesktopArtifactTools = {
     }
   },
   async inspectAppImage(path) {
-    const tarListing = await lines('bsdtar', ['-tf', path]).catch(() => undefined)
-    if (tarListing !== undefined) return tarListing
-    const extraction = await mkdtemp(join(tmpdir(), 'harness-desktop-appimage-'))
-    try {
-      await execa(path, ['--appimage-extract'], { cwd: extraction, env: { ...process.env, APPIMAGE_EXTRACT_AND_RUN: '1' } })
-      return await recursiveEntries(join(extraction, 'squashfs-root'))
-    } finally {
-      await rm(extraction, { recursive: true, force: true })
-    }
+    return (await inspectUpdateArtifact(path, 'appimage')).members
   },
   async inspectDeb(path) {
     return lines('dpkg-deb', ['--contents', path])

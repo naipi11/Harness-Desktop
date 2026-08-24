@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-`scripts/release/build-update-manifest.ts` 接受调用方指定的本地产物和 Ed25519 私钥文件。脚本在本地派生 SHA-256 摘要与归档成员，为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），且每个 manifest 只包含一个可选产物。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。builder 仅在所有输入都已读入内存后签名，并通过 `verifySignedUpdateManifest()` 验证结果。随后，脚本通过一次独占 `mkdir` 预留新的最终输出根目录，把完整集合写入私有的内部暂存目录，再把该暂存目录重命名为 `ready`；只有 `ready/` 下的路径才是完整 manifest 集合。若根目录预留失败，脚本不会改动竞争方的输出。之后发生失败时，脚本只删除自己拥有的暂存目录，并且只尝试以非递归方式删除预留的根目录，因此其他内容会阻止删除。
+`scripts/release/build-update-manifest.ts` 将 candidate inventory（候选产物清单）与签名分离。`inventoryUpdateArtifacts()` 不接收签名材料；它读取并检查调用方指定的全部产物，派生 SHA-256 摘要和排序后的归档成员，再用内存中的临时密钥让每个目标通过 `verifySignedUpdateManifest()` 准入。其不可变且名义类型化的验证结果不包含产物路径或候选字节。仅在该阶段成功后，`writeUpdateManifests()` 才读取调用方的 Ed25519 私钥文件；`buildUpdateManifests()` 只接受已验证清单和私钥字节，因此无法调用候选 inspector 或重新打开产物路径。签名阶段会为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），让每个 manifest 只包含一个可选产物，并通过共享策略验证使用生产密钥生成的结果。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。随后，writer 通过一次独占 `mkdir` 预留新的最终输出根目录，把完整集合写入私有的内部暂存目录，再把该暂存目录重命名为 `ready`；只有 `ready/` 下的路径才是完整 manifest 集合。若根目录预留失败，脚本不会改动竞争方的输出。之后发生失败时，脚本只删除自己拥有的暂存目录，并且只尝试以非递归方式删除预留的根目录，因此其他内容会阻止删除。
 
-`scripts/release/verify-update-manifests.ts` 读取调用方提供的 Ed25519 公钥文件，先调用共享 parser 和签名 verifier，再执行 release 布局规则：已签名 manifest 必须只包含一个与预期 channel、消费方、平台、架构和格式匹配的产物。脚本只读取一次指定产物，并在归档解析或原生执行前拒绝 SHA-256 不匹配。基于路径的 inspector 接收包含相同快照的私有文件，ZIP 检查则直接使用内存中的字节。AppImage 检查只接收最小化环境。ZIP 与 tar 检查可跨平台运行；NSIS、DMG、AppImage 和 Deb 检查使用对应的原生 runner。这些脚本既不下载产物，也不会在仓库中保留 release 位置、密钥、签名或 manifest fixture（测试前置数据）。
+`scripts/release/verify-update-manifests.ts` 读取调用方提供的 Ed25519 公钥文件，先调用共享 parser 和签名 verifier，再执行 release 布局规则：已签名 manifest 必须只包含一个与预期 channel、消费方、平台、架构和格式匹配的产物。脚本只读取一次指定产物，并在归档解析或调用原生工具前拒绝 SHA-256 不匹配。基于路径的 inspector 接收包含相同快照的私有文件，ZIP 检查则直接使用内存中的字节。AppImage 检查会验证 type-2 ELF header，截取其中嵌入的 SquashFS 字节并写入不可执行的私有文件，然后仅把该文件系统快照交给 runner 自有的 `7z` parser，并使用最小化环境。`scripts/release/verify-desktop-artifacts.ts` 复用同一个 AppImage 快照 inspector，不会调用候选产物的自解压命令。ZIP 与 tar 检查可跨平台运行；NSIS、DMG、AppImage 和 Deb 检查使用对应的原生 runner。这些脚本既不下载产物，也不会在仓库中保留 release 位置、密钥、签名或 manifest fixture（测试前置数据）。
 
 `.github/workflows/desktop-artifacts.yml` 保持无凭据，并以 `--publish never` 运行 Builder。Windows 负责 NSIS 与 CLI ZIP 证据，macOS 负责 universal DMG 与 CLI tar 证据并执行 `lipo` 检查，Linux 负责 AppImage、Deb 与 CLI tar 证据。每个 runner 都会调用经过测试的 `verify-node-runtime-archive.ts` 命令，根据仓库固定值验证文件名和 SHA-256，standalone builder 随后才能解压或使用该文件；打包后再运行 Desktop 与 CLI updater 或回滚检查。工作流审计要求按既定顺序执行该确切命令，因此仅 echo 标记不能作为证据。Windows 主机不能替代 macOS 或 Linux 任务的证明。
 
@@ -26,6 +26,8 @@ Status: implemented
 
 **提交 fixture 密钥，或通过 false 输入让 candidate 任务保持休眠。** 不采用。提交的签名材料会形成可复用的 secret 状态，而休眠的外部命令仍会扩大工作流权限。测试会生成临时密钥与产物；candidate 工作流只验证隔离规则。
 
+**在加载签名密钥之前或之后运行 AppImage 自解压。** 不采用。候选产物控制其可执行行为，环境清理不能让这种行为变成归档 parser。无凭据阶段只把截取的 SquashFS 字节交给固定 parser，而签名阶段不持有候选产物路径。
+
 ## 后果
 
-release 证据可复现且不发布：确切本地产物、目标标识、签名、摘要、成员、回滚版本和原生冒烟测试必须一致，candidate 才能继续推进。未来的 release 实现必须在一次单独评审的授权变更中加入外部操作；当前工作流无法签名、公证、发布、上传更新或创建 GitHub Release。原生验证仍依赖各操作系统 runner，不能把单个主机的结果当作跨平台证明。
+release 证据可复现且不发布：确切本地产物、目标标识、签名、摘要、成员、回滚版本和原生冒烟测试必须一致，candidate 才能继续推进。未来的 release 实现必须在一次单独评审的授权变更中加入外部操作；当前工作流无法签名、公证、发布、上传更新或创建 GitHub Release。原生验证仍依赖各操作系统 runner，不能把单个主机的结果当作跨平台证明。Linux AppImage 检查需要 runner 提供完整的 `7z` parser，并只接受 Desktop builder 产生的 type-2 ELF 加 SquashFS 格式。

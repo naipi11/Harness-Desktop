@@ -56,6 +56,26 @@ export type UpdateArtifactSnapshotInspector = (
   format: UpdateArtifactFormat,
 ) => Promise<readonly string[]>
 
+/** Options for one fixed inspection tool rather than a candidate executable. */
+export interface UpdateArtifactInspectionCommandOptions {
+  readonly cwd?: string
+  readonly env?: NodeJS.ProcessEnv
+  readonly extendEnv?: boolean
+}
+
+/**
+ * Invoke one fixed archive or platform parser.
+ * @param command - repository- or runner-owned parser executable.
+ * @param args - parser arguments including the private snapshot path.
+ * @param options - isolated working-directory or environment settings.
+ * @returns parser standard output.
+ */
+export type UpdateArtifactInspectionCommandRunner = (
+  command: string,
+  args: readonly string[],
+  options?: UpdateArtifactInspectionCommandOptions,
+) => Promise<string>
+
 /**
  * Inspect one named local artifact without downloading, installing, or publishing it.
  * @param artifactPath - local artifact file selected by the caller.
@@ -74,19 +94,24 @@ export async function inspectUpdateArtifact(
  * Inspect an immutable artifact snapshot without reopening the caller's path.
  * @param snapshot - exact bytes already read and hashed by the caller.
  * @param format - archive format whose portable or native reader applies.
+ * @param runCommand - fixed native parser runner.
+ * @param platform - native platform selecting format-specific parsers.
  * @returns sorted, unique file-member paths from those exact bytes.
  */
 export async function inspectUpdateArtifactSnapshot(
   snapshot: Buffer,
   format: UpdateArtifactFormat,
+  runCommand: UpdateArtifactInspectionCommandRunner = runInspectionCommand,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<readonly string[]> {
   if (format === 'zip') return uniqueSortedMembers(Object.keys(unzipSync(snapshot)).filter(path => !path.endsWith('/')))
 
   const directory = await mkdtemp(join(tmpdir(), 'harness-update-snapshot-'))
   const snapshotPath = join(directory, snapshotFilename(format))
   try {
-    await writeFile(snapshotPath, snapshot, { flag: 'wx', mode: format === 'appimage' ? 0o700 : 0o600 })
-    return uniqueSortedMembers(await inspectSnapshotMembers(snapshotPath, format))
+    const parserBytes = format === 'appimage' ? appImageFilesystemSnapshot(snapshot) : snapshot
+    await writeFile(snapshotPath, parserBytes, { flag: 'wx', mode: 0o600 })
+    return uniqueSortedMembers(await inspectSnapshotMembers(snapshotPath, format, runCommand, platform))
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -206,18 +231,20 @@ function runtimeArchitecture(arch: UpdateArchitecture): string {
 async function inspectSnapshotMembers(
   snapshotPath: string,
   format: UpdateArtifactFormat,
+  runCommand: UpdateArtifactInspectionCommandRunner,
+  platform: NodeJS.Platform,
 ): Promise<readonly string[]> {
   switch (format) {
     case 'tar.gz':
       return inspectTarMembers(snapshotPath)
     case 'nsis':
-      return inspectNsisMembers(snapshotPath)
+      return inspectNsisMembers(snapshotPath, runCommand)
     case 'dmg':
-      return inspectDmgMembers(snapshotPath)
+      return inspectDmgMembers(snapshotPath, runCommand, platform)
     case 'appimage':
-      return inspectAppImageMembers(snapshotPath)
+      return inspectAppImageMembers(snapshotPath, runCommand, platform)
     case 'deb':
-      return inspectDebMembers(snapshotPath)
+      return inspectDebMembers(snapshotPath, runCommand, platform)
     case 'zip':
       throw new Error('ZIP snapshots are inspected in memory')
   }
@@ -230,7 +257,7 @@ function snapshotFilename(format: UpdateArtifactFormat): string {
     case 'tar.gz': return 'artifact.tar.gz'
     case 'nsis': return 'artifact.exe'
     case 'dmg': return 'artifact.dmg'
-    case 'appimage': return 'artifact.AppImage'
+    case 'appimage': return 'artifact.squashfs'
     case 'deb': return 'artifact.deb'
   }
   throw new Error(`unsupported update artifact format ${JSON.stringify(format)}`)
@@ -252,65 +279,145 @@ async function inspectTarMembers(artifactPath: string): Promise<readonly string[
   return members
 }
 
-async function inspectNsisMembers(artifactPath: string): Promise<readonly string[]> {
-  const listing = await execa(path7za, ['l', '-slt', artifactPath], { reject: true })
-  const records = listing.stdout.split(/\r?\n\r?\n/u)
+async function inspectNsisMembers(
+  artifactPath: string,
+  runCommand: UpdateArtifactInspectionCommandRunner,
+): Promise<readonly string[]> {
+  const listing = await runCommand(path7za, ['l', '-slt', artifactPath])
+  const members = parse7ZipMembers(listing)
+  if (members.length === 0) throw new Error('NSIS artifact has no inspectable file members')
+  return members
+}
+
+async function inspectDmgMembers(
+  artifactPath: string,
+  runCommand: UpdateArtifactInspectionCommandRunner,
+  platform: NodeJS.Platform,
+): Promise<readonly string[]> {
+  if (platform !== 'darwin') throw new Error('DMG inspection requires a macOS runner')
+  const mount = await mkdtemp(join(tmpdir(), 'harness-update-dmg-'))
+  let attached = false
+  try {
+    await runCommand('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, artifactPath])
+    attached = true
+    return await listNonDirectoryMembers(mount)
+  } finally {
+    if (attached) await runCommand('hdiutil', ['detach', mount])
+    await rm(mount, { recursive: true, force: true })
+  }
+}
+
+async function inspectAppImageMembers(
+  filesystemPath: string,
+  runCommand: UpdateArtifactInspectionCommandRunner,
+  platform: NodeJS.Platform,
+): Promise<readonly string[]> {
+  if (platform !== 'linux') throw new Error('AppImage inspection requires a Linux runner')
+  const listing = await runCommand('7z', ['l', '-slt', filesystemPath], {
+    env: {
+      HOME: dirname(filesystemPath),
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      TMPDIR: dirname(filesystemPath),
+    },
+    extendEnv: false,
+  })
+  const members = parse7ZipMembers(listing)
+  if (members.length === 0) throw new Error('AppImage filesystem has no inspectable file members')
+  return members
+}
+
+async function inspectDebMembers(
+  artifactPath: string,
+  runCommand: UpdateArtifactInspectionCommandRunner,
+  platform: NodeJS.Platform,
+): Promise<readonly string[]> {
+  if (platform !== 'linux') throw new Error('Deb inspection requires a Linux runner')
+  const extraction = await mkdtemp(join(tmpdir(), 'harness-update-deb-'))
+  try {
+    await runCommand('dpkg-deb', ['--extract', artifactPath, extraction])
+    return await listNonDirectoryMembers(extraction)
+  } finally {
+    await rm(extraction, { recursive: true, force: true })
+  }
+}
+
+async function runInspectionCommand(
+  command: string,
+  args: readonly string[],
+  options: UpdateArtifactInspectionCommandOptions = {},
+): Promise<string> {
+  const result = await execa(command, [...args], { ...options, reject: true })
+  return result.stdout
+}
+
+function parse7ZipMembers(listing: string): string[] {
+  const records = listing.split(/\r?\n\r?\n/u)
   const members: string[] = []
   let inEntries = false
   for (const record of records) {
     if (record.includes('----------')) inEntries = true
     if (!inEntries) continue
-    const path = /^Path = (.+)$/mu.exec(record)?.[1]
-    const attributes = /^Attributes = (.+)$/mu.exec(record)?.[1] ?? ''
-    if (path !== undefined && !attributes.includes('D')) members.push(path.replaceAll('\\', '/'))
+    const entry = record.replace(/^-{10,}\r?$/mu, '').trim()
+    if (entry === '') continue
+    const path = /^Path = (.+)$/mu.exec(entry)?.[1]
+    const attributes = /^Attributes = (.+)$/mu.exec(entry)?.[1] ?? ''
+    const folder = /^Folder = (.+)$/mu.exec(entry)?.[1]
+    if (path === undefined) throw new Error('7z listing contains an entry without a path')
+    if (folder !== undefined && folder !== '+' && folder !== '-') {
+      throw new Error(`7z listing contains an invalid folder marker at ${JSON.stringify(path)}`)
+    }
+    if (folder === undefined && attributes === '') {
+      throw new Error(`7z listing contains an entry without file-type metadata at ${JSON.stringify(path)}`)
+    }
+    if (attributes.includes('D') || folder === '+') continue
+    members.push(path.replaceAll('\\', '/'))
   }
-  if (members.length === 0) throw new Error('NSIS artifact has no inspectable file members')
   return members
 }
 
-async function inspectDmgMembers(artifactPath: string): Promise<readonly string[]> {
-  if (process.platform !== 'darwin') throw new Error('DMG inspection requires a macOS runner')
-  const mount = await mkdtemp(join(tmpdir(), 'harness-update-dmg-'))
-  let attached = false
-  try {
-    await execa('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, artifactPath], { reject: true })
-    attached = true
-    return await listNonDirectoryMembers(mount)
-  } finally {
-    if (attached) await execa('hdiutil', ['detach', mount], { reject: true })
-    await rm(mount, { recursive: true, force: true })
+function appImageFilesystemSnapshot(snapshot: Buffer): Buffer {
+  if (snapshot.length < 64 || !snapshot.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+    || snapshot[8] !== 0x41 || snapshot[9] !== 0x49 || snapshot[10] !== 0x02) {
+    throw new Error('AppImage artifact is not a type-2 ELF image')
   }
+  const elfClass = snapshot[4]
+  const encoding = snapshot[5]
+  if ((elfClass !== 1 && elfClass !== 2) || (encoding !== 1 && encoding !== 2)) {
+    throw new Error('AppImage artifact has an unsupported ELF header')
+  }
+  const littleEndian = encoding === 1
+  const headerSize = elfClass === 1 ? 52 : 64
+  const expectedSectionEntrySize = elfClass === 1 ? 40 : 64
+  const sectionOffset = elfClass === 1
+    ? BigInt(readUInt32(snapshot, 32, littleEndian))
+    : readBigUInt64(snapshot, 40, littleEndian)
+  const sectionEntrySize = readUInt16(snapshot, elfClass === 1 ? 46 : 58, littleEndian)
+  const sectionCount = readUInt16(snapshot, elfClass === 1 ? 48 : 60, littleEndian)
+  if (sectionOffset < BigInt(headerSize) || sectionEntrySize !== expectedSectionEntrySize || sectionCount === 0) {
+    throw new Error('AppImage artifact has no bounded ELF section table')
+  }
+  const filesystemOffset = sectionOffset + BigInt(sectionEntrySize * sectionCount)
+  if (filesystemOffset > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('AppImage filesystem offset exceeds the supported range')
+  }
+  const offset = Number(filesystemOffset)
+  const filesystem = snapshot.subarray(offset)
+  if (offset < 64 || filesystem.length < 4 || filesystem.toString('ascii', 0, 4) !== 'hsqs') {
+    throw new Error('AppImage artifact has no SquashFS payload at its ELF boundary')
+  }
+  return filesystem
 }
 
-async function inspectAppImageMembers(artifactPath: string): Promise<readonly string[]> {
-  if (process.platform !== 'linux') throw new Error('AppImage inspection requires a Linux runner')
-  const extraction = await mkdtemp(join(tmpdir(), 'harness-update-appimage-'))
-  try {
-    await execa(artifactPath, ['--appimage-extract'], {
-      cwd: extraction,
-      env: {
-        HOME: extraction,
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
-        TMPDIR: extraction,
-      },
-      extendEnv: false,
-      reject: true,
-    })
-    return await listNonDirectoryMembers(join(extraction, 'squashfs-root'))
-  } finally {
-    await rm(extraction, { recursive: true, force: true })
-  }
+function readUInt16(bytes: Buffer, offset: number, littleEndian: boolean): number {
+  return littleEndian ? bytes.readUInt16LE(offset) : bytes.readUInt16BE(offset)
 }
 
-async function inspectDebMembers(artifactPath: string): Promise<readonly string[]> {
-  if (process.platform !== 'linux') throw new Error('Deb inspection requires a Linux runner')
-  const extraction = await mkdtemp(join(tmpdir(), 'harness-update-deb-'))
-  try {
-    await execa('dpkg-deb', ['--extract', artifactPath, extraction], { reject: true })
-    return await listNonDirectoryMembers(extraction)
-  } finally {
-    await rm(extraction, { recursive: true, force: true })
-  }
+function readUInt32(bytes: Buffer, offset: number, littleEndian: boolean): number {
+  return littleEndian ? bytes.readUInt32LE(offset) : bytes.readUInt32BE(offset)
+}
+
+function readBigUInt64(bytes: Buffer, offset: number, littleEndian: boolean): bigint {
+  return littleEndian ? bytes.readBigUInt64LE(offset) : bytes.readBigUInt64BE(offset)
 }
 
 async function listNonDirectoryMembers(directory: string, prefix = ''): Promise<string[]> {

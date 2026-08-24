@@ -11,7 +11,11 @@ import {
   type UpdateManifestPayload,
 } from '@harness-desktop/dsh-update-policy'
 import { writeUpdateManifests } from './build-update-manifest.ts'
-import { verifyUpdateManifests, type UpdateManifestVerificationInput } from './verify-update-manifests.ts'
+import {
+  inspectUpdateArtifactSnapshot,
+  verifyUpdateManifests,
+  type UpdateManifestVerificationInput,
+} from './verify-update-manifests.ts'
 
 const roots: string[] = []
 
@@ -103,6 +107,94 @@ async function writeSignedManifest(
 }
 
 describe('verifyUpdateManifests', () => {
+  it('lists a type-2 AppImage filesystem without executing candidate bytes', async () => {
+    const elf = Buffer.alloc(128)
+    elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])
+    elf.set([0x41, 0x49, 0x02], 8)
+    elf.writeBigUInt64LE(64n, 40)
+    elf.writeUInt16LE(64, 58)
+    elf.writeUInt16LE(1, 60)
+    const filesystem = Buffer.from('hsqs credential-free filesystem snapshot')
+    const commands: Array<{ readonly command: string; readonly args: readonly string[] }> = []
+
+    await expect(inspectUpdateArtifactSnapshot(
+      Buffer.concat([elf, filesystem]),
+      'appimage',
+      async (command, args) => {
+        commands.push({ command, args })
+        expect(await readFile(args.at(-1)!)).toEqual(filesystem)
+        return [
+          'Listing archive: artifact.squashfs',
+          '',
+          '----------',
+          'Path = AppRun',
+          'Folder = -',
+          '',
+          'Path = usr/bin/harness-desktop',
+          'Folder = -',
+          '',
+        ].join('\n')
+      },
+      'linux',
+    )).resolves.toEqual(['AppRun', 'usr/bin/harness-desktop'])
+    expect(commands).toEqual([{
+      command: '7z',
+      args: ['l', '-slt', expect.stringMatching(/artifact\.squashfs$/u)],
+    }])
+  })
+
+  it('rejects an AppImage whose ELF section table does not bound the SquashFS payload', async () => {
+    const elf = Buffer.alloc(64)
+    elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])
+    elf.set([0x41, 0x49, 0x02], 8)
+    elf.writeBigUInt64LE(0n, 40)
+    elf.writeUInt16LE(64, 58)
+    elf.writeUInt16LE(1, 60)
+    let commands = 0
+
+    await expect(inspectUpdateArtifactSnapshot(
+      Buffer.concat([elf, Buffer.from('hsqs crafted filesystem offset')]),
+      'appimage',
+      async () => {
+        commands += 1
+        throw new Error('external parser must not receive an unbounded filesystem offset')
+      },
+      'linux',
+    )).rejects.toThrow('no bounded ELF section table')
+    expect(commands).toBe(0)
+  })
+
+  it('rejects a 7z AppImage listing without file-type metadata', async () => {
+    const elf = Buffer.alloc(128)
+    elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])
+    elf.set([0x41, 0x49, 0x02], 8)
+    elf.writeBigUInt64LE(64n, 40)
+    elf.writeUInt16LE(64, 58)
+    elf.writeUInt16LE(1, 60)
+
+    await expect(inspectUpdateArtifactSnapshot(
+      Buffer.concat([elf, Buffer.from('hsqs filesystem snapshot')]),
+      'appimage',
+      async () => '----------\nPath = AppRun\n',
+      'linux',
+    )).rejects.toThrow('entry without file-type metadata')
+  })
+
+  it('rejects malformed AppImage bytes before invoking an external parser', async () => {
+    let commands = 0
+
+    await expect(inspectUpdateArtifactSnapshot(
+      Buffer.from('arbitrary executable candidate'),
+      'appimage',
+      async () => {
+        commands += 1
+        throw new Error('external parser must not receive malformed AppImage bytes')
+      },
+      'linux',
+    )).rejects.toThrow('not a type-2 ELF image')
+    expect(commands).toBe(0)
+  })
+
   it('verifies a signed manifest against its named local artifact and caller-supplied public key', async () => {
     const subject = await fixture()
     await expect(verifyUpdateManifests(subject.input)).resolves.toEqual([])
