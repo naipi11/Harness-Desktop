@@ -36,6 +36,14 @@ Values never enter files this package writes, so the reference metadata is not a
 
 Mutations issued to one provider instance are serialized. The provider atomically persists candidate reference metadata before calling the adapter, so a metadata-write failure leaves the adapter untouched. An adapter mutation must reject without changing its durable value; when it rejects, the provider restores the previous metadata and reports the adapter failure, including a metadata-rollback failure if both occur. After both commits succeed, the provider publishes the update. Concurrently mounting multiple provider instances or processes against the same `HARNESS_HOME` is unsupported because their independently loaded metadata snapshots can lose a reference update.
 
+## Model Experience
+
+Indirectly, through provider adapters that resolve credential references for their own model calls.
+
+#### KV Cache effect
+
+None; this provider neither assembles nor changes model-visible request content.
+
 ## Known Limitations and Deferred Work
 
 - **Environment changes are invisible** — the snapshot is frozen at launch, so a variable exported after startup reaches neither resolution nor `describe`; changing an environment-sourced credential takes a restart.

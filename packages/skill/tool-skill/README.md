@@ -30,6 +30,10 @@ An unresolved name reports that the skill is unknown or no longer available. Inv
 
 Tool execution does not add a synthetic context message. Its freshly loaded result is already recorded as the tool result and becomes available to the next model step without duplicating the body. Only the catalog projection adds replacement summaries.
 
+## User-explicit invocation admission
+
+After both pre-step listeners are live, the plugin attaches the user-invocation consumer to `ctx.skills` through its own registration scope. An unscoped mount serves every Agent, while a preset mount serves only Agents whose scope chain includes that preset. Host prompt admission checks that exact owner-relative registration before trusting a catalog match, so providers or a sibling composition cannot cause raw slash text to enter a model without the listener that loads it. Disposal removes the registration before the listeners unwind, keeping admission fail-closed during teardown.
+
 ## Model Experience
 
 ### Session catalog
@@ -150,8 +154,6 @@ Append-only; newly visible content follows the reusable request prefix and does 
 #### What the model sees
 
 A whitespace-bounded `/name` token anywhere in a claimed user message, naming a user-invocable skill in the workspace catalog, injects that skill's full `<skill_content>` rendering (the exact result-template shape above) as a `user`-role instructions context appended after every other injection of that step — background first, the material to act on last. Only direct user input is scanned, the check runs on the loaded definition, and unknown or user-disabled names stay ordinary prose. This is the sole entry point for `disable-model-invocation` skills, which the catalog and the `skill` tool never expose; the catalog's closing sentence tells the model to follow the injected block instead of re-loading it.
-
-After both pre-step listeners are live, the plugin attaches this user-invocation consumer to `ctx.skills` through its own registration scope. An unscoped mount serves every Agent, while a preset mount serves only Agents whose scope chain includes that preset. Host prompt admission checks that exact owner-relative registration before trusting a catalog match, so providers or a sibling composition cannot cause raw slash text to enter a model without the listener that loads it. Disposal removes the registration before the listeners unwind, keeping admission fail-closed during teardown.
 
 #### Token effect
 

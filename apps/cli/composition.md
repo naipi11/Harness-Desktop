@@ -38,7 +38,7 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_retry
   plugin_dsh_base_settings["settings<br/>@harness-desktop/dsh-settings-file"]
   cfg --> plugin_dsh_base_settings
-  plugin_dsh_base_credentials["credentials<br/>@harness-desktop/dsh-credentials-local"]
+  plugin_dsh_base_credentials["credentials<br/>@harness-desktop/dsh-credentials-platform"]
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@harness-desktop/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
@@ -183,7 +183,7 @@ flowchart LR
 | `jobs` | `@harness-desktop/dsh-jobs-local` |
 | `llm-retry` | `@harness-desktop/dsh-llm-retry` |
 | `settings` | `@harness-desktop/dsh-settings-file` |
-| `credentials` | `@harness-desktop/dsh-credentials-local` |
+| `credentials` | `@harness-desktop/dsh-credentials-platform` |
 | `llm-pi-ai` | `@harness-desktop/dsh-llm-pi-ai` |
 | `session-persistence-jsonl` | `@harness-desktop/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@harness-desktop/dsh-attachment-local` |

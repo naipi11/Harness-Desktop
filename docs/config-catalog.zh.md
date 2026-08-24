@@ -60,7 +60,7 @@ export interface Config {
   /** Tool-registry config — its presentation `mode` (forwarded through agent-spine-demo; see dsh-tools). */
   tools?: ToolsConfig
   /** DeepSeek Harness home directory exposed to bash and used for local skill discovery. */
-  dshHome?: string
+  harnessHome?: string
   /** Fallback session-title limits forwarded through agent-spine-demo. */
   sessionTitle?: NonNullable<agentCore.Config['sessionTitle']>
   /** Directory for JSONL sessions and the derived query index. Defaults to `./.sessions`. */
@@ -111,8 +111,8 @@ export interface Config {
 ```ts config-catalog
 /** User-facing workspace instruction loader configuration. */
 export interface Config {
-  /** Harness home containing the fixed user-global `AGENTS.md`; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected for the fixed user-global `AGENTS.md`. */
+  harnessHome?: string
   /** Directory entries that identify the project root while walking upward from the session cwd. */
   projectRootMarkers?: string[]
   /** UTF-8 byte cap for one rendered baseline or dynamic batch; non-positive or non-finite disables loading. */
@@ -132,7 +132,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/context/agent-instructions/src/config.ts:18`](../packages/context/agent-instructions/src/config.ts)
+来源：[`packages/context/agent-instructions/src/config.ts:17`](../packages/context/agent-instructions/src/config.ts)
 
 <a id="harness-desktopdsh-agent-loop"></a>
 
@@ -175,6 +175,8 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config: which preset is the default, and where presets live. */
 export interface Config {
+  /** The one resolved writable root supplied by the application entrypoint. */
+  harnessHome?: PresetHomeProvider
   /** Preset id mounted when a caller names none. Missing at mount time fails loud. */
   default: string
   /** Scanned roots in precedence order; an earlier root wins a duplicate id. */
@@ -184,6 +186,14 @@ export interface Config {
    * configured root. False mounts a roster over `roots` alone.
    */
   includeUserRoot: boolean
+}
+
+/** Resolved writable-home provider required only when the user preset root is enabled. */
+export interface PresetHomeProvider {
+  /** Absolute writable Harness home selected by the application. */
+  readonly home: string
+  /** @param segments - child segments beneath the selected home. @returns the joined absolute child path. */
+  path(...segments: readonly string[]): string
 }
 
 /** One directory scanned for preset subdirectories. */
@@ -202,7 +212,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-来源：[`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+来源：[`packages/preset/agent-presets/src/preset.ts:60`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="harness-desktopdsh-agent-spine-demo"></a>
 
@@ -216,7 +226,7 @@ export type PresetTrust = 'system' | 'user'
  * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
  * dynamic-context policy, deployment persona, and explicit model-facing tool
  * order), the `tools` object to the tool registry (its presentation `mode`),
- * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
+ * `harnessHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
  * skill registry/local provider/tool consumer, `workspaceContext` to the
  * agent-instructions loader, `jobs` to the process-local job provider, and
@@ -248,7 +258,7 @@ export interface Config {
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
   tools?: ToolsConfig
   /** DeepSeek Harness home directory shared by shell context and local skill discovery. */
-  dshHome?: string
+  harnessHome?: string
   /** Deterministic fallback and accepted-title limits; omission uses the bundle's example policy. */
   sessionTitle?: SessionTitleConfig
   /** Workspace-context loader controls with an explicit byte budget; set `false` for hermetic prompts. */
@@ -294,7 +304,7 @@ export interface GoalConfig {
 
 依赖：[`AgentLoopConfig`](#harness-desktopdsh-agent-loop) · [`GoalDomainConfig`](#harness-desktopdsh-goal) · [`InvariantConfig`](#harness-desktopdsh-invariants) · [`JobsConfig`](#harness-desktopdsh-jobs-local) · [`SessionTitleConfig`](#harness-desktopdsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#harness-desktopdsh-skill) · [`SystemPromptConfig`](#harness-desktopdsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#harness-desktopdsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
 
-来源：[`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
+来源：[`packages/examples/agent-spine-demo/src/index.ts:91`](../packages/examples/agent-spine-demo/src/index.ts)
 
 <a id="harness-desktopdsh-agent-tool-presentation"></a>
 
@@ -327,8 +337,8 @@ export interface Config {
 ```ts config-catalog
 /** Local attachment backend configuration. */
 export interface Config {
-  /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected by the host composition. */
+  harnessHome?: HarnessHomeProvider
   /** Maximum encoded bytes accepted for one image. */
   maxImageBytes?: number
   /** Maximum image count accepted in one submitted message. */
@@ -340,7 +350,9 @@ export interface Config {
 }
 ```
 
-来源：[`packages/attachment/attachment-local/src/index.ts:24`](../packages/attachment/attachment-local/src/index.ts)
+依赖：[`HarnessHomeProvider`](../packages/host/local-runtime/src/index.ts)
+
+来源：[`packages/attachment/attachment-local/src/index.ts:23`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="harness-desktopdsh-bash-local"></a>
 
@@ -412,7 +424,7 @@ export interface ConnectionConfig {
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:63`](../packages/client/connection/src/index.ts)
 
 <a id="harness-desktopdsh-client-hmr"></a>
 
@@ -558,8 +570,8 @@ export interface Config {
 export interface Config {
   /** Credentials document path; defaults to `.credentials.yaml` under the harness home. */
   path?: string
-  /** Harness home used when `path` is omitted; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected when `path` is omitted. */
+  harnessHome?: string
   /** Watch the document and hot-publish external edits; defaults to true. */
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
@@ -567,7 +579,42 @@ export interface Config {
 }
 ```
 
-来源：[`packages/credentials/credentials-local/src/index.ts:55`](../packages/credentials/credentials-local/src/index.ts)
+来源：[`packages/credentials/credentials-local/src/index.ts:61`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="harness-desktopdsh-credentials-platform"></a>
+
+## `@harness-desktop/dsh-credentials-platform`
+
+```ts config-catalog
+/** Plugin config: the home plus an optional platform adapter. */
+export interface Config {
+  /** Absolute Harness home beneath which the metadata document lives. */
+  harnessHome?: string
+  /** Platform adapter; defaults to the read-only launcher environment. */
+  adapter?: PlatformCredentialAdapter
+}
+
+/**
+ * Platform/environment adapter supplying secret values and owning mutations.
+ * A read-only adapter resolves but rejects `set`/`unset`; a writable adapter
+ * is the platform's durable store (keychain, platform vault), never a file
+ * this package writes values into.
+ */
+export interface PlatformCredentialAdapter {
+  /** Whether `set`/`unset` can succeed on this adapter. */
+  readonly writable: boolean
+  /** Resolve one reference to its current value, or `undefined` when unconfigured. */
+  resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>
+  /** Durably store one value; rejection must leave the current value unchanged. */
+  set(ref: CredentialRef, value: string): Promise<void>
+  /** Remove one value; rejection must leave the current value unchanged. */
+  unset(ref: CredentialRef): Promise<void>
+}
+```
+
+依赖：[`CredentialRef`](subsystems/credentials.md) · [`ResolvedCredential`](subsystems/credentials.md)
+
+来源：[`packages/credentials/credentials-platform/src/index.ts:27`](../packages/credentials/credentials-platform/src/index.ts)
 
 <a id="harness-desktopdsh-e2b"></a>
 
@@ -755,7 +802,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+来源：[`packages/host/apiproxy/src/index.ts:42`](../packages/host/apiproxy/src/index.ts)
 
 <a id="harness-desktopdsh-host-directory-picker-browse"></a>
 
@@ -842,7 +889,7 @@ export interface Config {
 
 ## `@harness-desktop/dsh-llm-deepseek`
 
-需要：`llm`
+需要：`llm` · `harnessHome`
 
 ```ts config-catalog
 /**
@@ -891,7 +938,7 @@ export interface DeepSeekCatalogModel {
 
 依赖：[`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/llm/llm-deepseek/src/index.ts:62`](../packages/llm/llm-deepseek/src/index.ts)
+来源：[`packages/llm/llm-deepseek/src/index.ts:63`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="harness-desktopdsh-llm-pi-ai"></a>
 
@@ -1723,7 +1770,7 @@ export interface Config {
 
 ## `@harness-desktop/dsh-session-telemetry-otel`
 
-需要：`sessions`
+需要：`sessions` · `harnessHome`
 
 ```ts config-catalog
 /**
@@ -1763,7 +1810,7 @@ export enum SessionTelemetryMode {
 
 依赖：`BatchLogRecordProcessorOptions`（`@opentelemetry/sdk-logs`）· `OTLPExporterNodeConfigBase`（`@opentelemetry/otlp-exporter-base`）
 
-来源：[`packages/session/session-telemetry-otel/src/index.ts:91`](../packages/session/session-telemetry-otel/src/index.ts)
+来源：[`packages/session/session-telemetry-otel/src/index.ts:92`](../packages/session/session-telemetry-otel/src/index.ts)
 
 <a id="harness-desktopdsh-session-title"></a>
 
@@ -1824,8 +1871,8 @@ export type Config = SessionTitleLlmConfig
 export interface Config {
   /** Settings document path; defaults to `settings.yaml` under the harness home. */
   path?: string
-  /** Harness home used when `path` is omitted; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected when `path` is omitted. */
+  harnessHome?: string
   /** Watch the document and hot-publish external edits; defaults to true. */
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
@@ -1840,14 +1887,14 @@ export interface Config {
 ## `@harness-desktop/dsh-shell-env`
 
 ```ts config-catalog
-/** Plugin config (all optional — the built-in facts resolve without defaults). */
+/** Plugin config receives the host-resolved data root. */
 export interface Config {
-  /** DeepSeek Harness home directory exposed as `DSH_HOME`; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home exposed as `HARNESS_HOME`. */
+  harnessHome?: string
 }
 ```
 
-来源：[`packages/shell/shell-env/src/index.ts:29`](../packages/shell/shell-env/src/index.ts)
+来源：[`packages/shell/shell-env/src/index.ts:28`](../packages/shell/shell-env/src/index.ts)
 
 <a id="harness-desktopdsh-skill"></a>
 
@@ -1861,7 +1908,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/skill/src/index.ts:279`](../packages/skill/skill/src/index.ts)
+来源：[`packages/skill/skill/src/index.ts:301`](../packages/skill/skill/src/index.ts)
 
 <a id="harness-desktopdsh-skill-filesystem"></a>
 
@@ -1876,8 +1923,8 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
-  /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness root injected for the user skill directory. */
+  harnessHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
   agentsHome?: string
   /** Additional skill roots scanned after project roots and before user roots. */
@@ -3063,7 +3110,7 @@ export interface Config {
 - `@harness-desktop/dsh-client-ui-workflow-run`（[`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts)）
 - `@harness-desktop/dsh-client-ui-workspace`（[`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts)）
 - `@harness-desktop/dsh-command-compact` — 需要 `commands` · `compact`（[`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts)）
-- `@harness-desktop/dsh-command-feedback` — 需要 `commands`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
+- `@harness-desktop/dsh-command-feedback` — 需要 `commands` · `harnessHome`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
 - `@harness-desktop/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@harness-desktop/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@harness-desktop/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
@@ -3131,8 +3178,10 @@ export interface Config {
 - `@harness-desktop/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@harness-desktop/dsh-client-web-react`（[`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts)）
 - `@harness-desktop/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
+- `@harness-desktop/dsh-cross-client-runtime`（[`packages/test-support/cross-client-runtime/src/index.ts`](../packages/test-support/cross-client-runtime/src/index.ts)）
 - `@harness-desktop/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@harness-desktop/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
+- `@harness-desktop/dsh-host-local-runtime`（[`packages/host/local-runtime/src/index.ts`](../packages/host/local-runtime/src/index.ts)）
 - `@harness-desktop/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）
 - `@harness-desktop/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）
 - `@harness-desktop/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）

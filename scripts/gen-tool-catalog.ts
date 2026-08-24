@@ -90,6 +90,7 @@ class CatalogAttachmentStore extends AttachmentStore {
 
 const root = resolve(import.meta.dirname, '..')
 const OUT = 'docs/tool-catalog.md'
+const CATALOG_HARNESS_HOME = '/tool-catalog'
 
 /**
  * Register the descriptor needed to mount schema-producing consumers. Declares
@@ -229,7 +230,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(LocalSubprocessRuntime)
-      await ctx.plugin(BashEnvPlugin)
+      await ctx.plugin(BashEnvPlugin, { harnessHome: CATALOG_HARNESS_HOME })
       await ctx.plugin(LocalBashExecutor)
       await ctx.plugin(ToolBash)
     },
@@ -247,7 +248,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       // mounts the pwsh-local implementation so the inject resolves without
       // executing anything (registration never spawns a process).
       await ctx.plugin(LocalSubprocessRuntime)
-      await ctx.plugin(BashEnvPlugin)
+      await ctx.plugin(BashEnvPlugin, { harnessHome: CATALOG_HARNESS_HOME })
       await ctx.plugin(PwshLocalExecutor)
       await ctx.plugin(ToolPwsh)
     },

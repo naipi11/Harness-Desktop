@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-18-legacy-profile-bundle-migration.md
-2026-08-18-legacy-profile-bundle-migration.md: 4a3c0f960a8e5c23c21ad6e7692c275a88f4b8cf
-2026-08-18-legacy-profile-bundle-migration.zh.md: 87d6a501f36666f5dda98b91fbe07d120167d41a
+2026-08-18-legacy-profile-bundle-migration.md: 5e5cce187f8add776b5ec850fd8dddf249315aa7
+2026-08-18-legacy-profile-bundle-migration.zh.md: 1a31cdf4d170be83813582c442896cfa7fde6709
