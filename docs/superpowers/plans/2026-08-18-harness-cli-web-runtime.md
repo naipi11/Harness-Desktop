@@ -359,7 +359,7 @@ Run: `git add apps/cli/src/browser.ts apps/cli/tests/browser-bootstrap.spec.ts a
 - Modify: `apps/cli/src/main.ts`
 - Create: `apps/cli/tests/desktop.spec.ts`
 - Modify: `apps/cli/tests/source-launch.compat.spec.ts`
-- Create: `apps/cli/tests/runtime-clients.acceptance.e2e.ts`
+- Create: `apps/cli/tests/runtime-clients.acceptance.artifact.ts`
 - Modify: `apps/cli/tests/web-daemon.snapshot.ts`
 
 **Interfaces:**
@@ -373,7 +373,9 @@ Assert `harness desktop` calls the activator once and never calls Runtime connec
 
 - [ ] **Step 2: Run the RED tests**
 
-Run: `pnpm exec vitest run apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
+Run: `pnpm exec vitest run apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts`
+
+Run after `pnpm run build`: `pnpm exec vitest run --config vitest.artifact.config.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts`
 
 Expected: FAIL because desktop is not a command and the compatibility entry still has a profile-only dispatch path.
 
@@ -383,7 +385,7 @@ Add the desktop adapter and dispatch branch. It may activate the registered inst
 
 - [ ] **Step 4: Run final client verification**
 
-Run: `pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/main.spec.ts apps/cli/tests/terminal-client.spec.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
+Run: `pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/main.spec.ts apps/cli/tests/terminal-client.spec.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
 
 Run: `pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/web-daemon.snapshot.ts apps/web/tests/runtime-bootstrap.snapshot.ts`
 
@@ -393,11 +395,13 @@ Run:
 pnpm run build
 $env:DSH_EXAMPLE_MODE = 'lib'
 try {
-  pnpm exec vitest run apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts
+  pnpm exec vitest run apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/source-launch.compat.spec.ts
   if ($LASTEXITCODE -ne 0) { throw 'Built CLI Runtime verification failed.' }
 } finally {
   Remove-Item Env:DSH_EXAMPLE_MODE -ErrorAction SilentlyContinue
 }
+pnpm exec vitest run --config vitest.artifact.config.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts
+if ($LASTEXITCODE -ne 0) { throw 'Built shared-client artifact verification failed.' }
 pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/runtime-bootstrap.e2e.ts
 if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap e2e verification failed.' }
 ```
@@ -406,7 +410,7 @@ Expected: PASS in source and built entry modes. All user-visible CLI diagnostics
 
 - [ ] **Step 5: Commit the completed client graph**
 
-Run: `git add apps/cli/src/desktop.ts apps/cli/src/main.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/web-daemon.snapshot.ts && git diff --cached --check && git commit -m "feat(cli): activate installed desktop client"`
+Run: `git add apps/cli/src/desktop.ts apps/cli/src/main.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts apps/cli/tests/web-daemon.snapshot.ts && git diff --cached --check && git commit -m "feat(cli): activate installed desktop client"`
 
 ## Self-review
 

@@ -359,7 +359,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap snapshot verificatio
 - 修改：`apps/cli/src/main.ts`
 - 新建：`apps/cli/tests/desktop.spec.ts`
 - 修改：`apps/cli/tests/source-launch.compat.spec.ts`
-- 新建：`apps/cli/tests/runtime-clients.acceptance.e2e.ts`
+- 新建：`apps/cli/tests/runtime-clients.acceptance.artifact.ts`
 - 修改：`apps/cli/tests/web-daemon.snapshot.ts`
 
 **接口：**
@@ -373,7 +373,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap snapshot verificatio
 
 - [ ] **Step 2：运行 RED 测试**
 
-运行：`pnpm exec vitest run apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
+运行：`pnpm exec vitest run apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts`
+
+在 `pnpm run build` 后运行：`pnpm exec vitest run --config vitest.artifact.config.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts`
 
 预期：FAIL，因为 desktop 尚不是命令，且兼容入口仍是 profile-only 分发路径。
 
@@ -383,7 +385,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap snapshot verificatio
 
 - [ ] **Step 4：运行最终客户端验证**
 
-运行：`pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/main.spec.ts apps/cli/tests/terminal-client.spec.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
+运行：`pnpm exec vitest run apps/cli/tests/args.spec.ts apps/cli/tests/main.spec.ts apps/cli/tests/terminal-client.spec.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-daemon.spec.ts apps/cli/tests/web-daemon.compat.spec.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/source-launch.compat.spec.ts`
 
 运行：`pnpm exec vitest run --config vitest.snapshot.config.ts apps/cli/tests/web-daemon.snapshot.ts apps/web/tests/runtime-bootstrap.snapshot.ts`
 
@@ -393,11 +395,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap snapshot verificatio
 pnpm run build
 $env:DSH_EXAMPLE_MODE = 'lib'
 try {
-  pnpm exec vitest run apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/source-launch.compat.spec.ts
+  pnpm exec vitest run apps/cli/tests/runtime-client.e2e.ts apps/cli/tests/interactive-terminal.pty.e2e.ts apps/cli/tests/web-runtime.e2e.ts apps/cli/tests/source-launch.compat.spec.ts
   if ($LASTEXITCODE -ne 0) { throw 'Built CLI Runtime verification failed.' }
 } finally {
   Remove-Item Env:DSH_EXAMPLE_MODE -ErrorAction SilentlyContinue
 }
+pnpm exec vitest run --config vitest.artifact.config.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts
+if ($LASTEXITCODE -ne 0) { throw 'Built shared-client artifact verification failed.' }
 pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/runtime-bootstrap.e2e.ts
 if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap e2e verification failed.' }
 ```
@@ -406,7 +410,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Built Dashboard bootstrap e2e verification fai
 
 - [ ] **Step 5：提交完成的客户端图**
 
-运行：`git add apps/cli/src/desktop.ts apps/cli/src/main.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/runtime-clients.acceptance.e2e.ts apps/cli/tests/web-daemon.snapshot.ts && git diff --cached --check && git commit -m "feat(cli): activate installed desktop client"`
+运行：`git add apps/cli/src/desktop.ts apps/cli/src/main.ts apps/cli/tests/desktop.spec.ts apps/cli/tests/source-launch.compat.spec.ts apps/cli/tests/runtime-clients.acceptance.artifact.ts apps/cli/tests/web-daemon.snapshot.ts && git diff --cached --check && git commit -m "feat(cli): activate installed desktop client"`
 
 ## 自检
 
