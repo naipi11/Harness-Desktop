@@ -75,6 +75,7 @@ export async function createDesktopUpdateFixture(
     channel: 'stable' as const,
     version: '1.1.0',
     artifacts: [{
+      consumer: 'desktop' as const,
       platform: platform(),
       arch: architecture(),
       format: format(),

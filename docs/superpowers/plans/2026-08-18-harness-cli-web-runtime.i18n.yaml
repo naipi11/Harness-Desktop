@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-18-harness-cli-web-runtime.md
-2026-08-18-harness-cli-web-runtime.md: 81565e0bca722827165341784afe53282b75d001
-2026-08-18-harness-cli-web-runtime.zh.md: 92bf07fb988bee865fb7b99d297077752e29a312
+2026-08-18-harness-cli-web-runtime.md: 44a0e175eb27c8cf24b5da03bbe20edf913ef292
+2026-08-18-harness-cli-web-runtime.zh.md: 3b4ca2f43119638ccb1b53b54aa28d77e686f349

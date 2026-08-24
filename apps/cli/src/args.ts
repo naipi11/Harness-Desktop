@@ -29,8 +29,13 @@ export interface DesktopInvocation {
   mode: 'desktop'
 }
 
+/** Update the standalone CLI or print the package-manager command. */
+export interface UpdateInvocation {
+  mode: 'update'
+}
+
 /** One public Harness Desktop product command. */
-export type ProductInvocation = InteractiveInvocation | RunInvocation | WebInvocation | DesktopInvocation
+export type ProductInvocation = InteractiveInvocation | RunInvocation | WebInvocation | DesktopInvocation | UpdateInvocation
 
 /** A syntax error paired with the product command that corrects it. */
 export class ProductArgumentError extends Error {
@@ -51,12 +56,13 @@ Examples:
   ${commandName} web --background                      open Web and retain its lease
   ${commandName} web --status                          inspect an existing Runtime
   ${commandName} desktop                               activate the installed desktop app
+  ${commandName} update                                update this CLI installation
 `
 }
 
 /** Product syntax shown alongside every parse error. */
 function productSyntax(commandName: CliCommandName): string {
-  return `Use \`${commandName} [task]\`, \`${commandName} run <task> [--json]\`, \`${commandName} web\`, or \`${commandName} desktop\`.`
+  return `Use \`${commandName} [task]\`, \`${commandName} run <task> [--json]\`, \`${commandName} web\`, \`${commandName} desktop\`, or \`${commandName} update\`.`
 }
 
 /** Build the Commander-owned help and version handler. */
@@ -169,6 +175,11 @@ export function parseProductArgs(
         throw new ProductArgumentError('desktop takes no arguments', `Use \`${commandName} desktop\`.`)
       }
       return { mode: 'desktop' }
+    case 'update':
+      if (rest.length > 0) {
+        throw new ProductArgumentError('update takes no arguments', `Use \`${commandName} update\`.`)
+      }
+      return { mode: 'update' }
     default:
       if (command.startsWith('-')) {
         throw new ProductArgumentError(`unknown option ${JSON.stringify(command)}`, productSyntax(commandName))

@@ -15,6 +15,7 @@ harness web --background --no-open
 harness web --status
 harness web --stop
 harness desktop
+harness update
 ```
 
 ## Product commands
@@ -25,9 +26,12 @@ harness desktop
 | `harness run <task> [--json]` | Run exactly one task; `--json` emits JSONL protocol records. |
 | `harness web [options]` | Open, retain, inspect, or release the shared Runtime Dashboard. |
 | `harness desktop` | Select Desktop mode; no arguments are accepted. |
+| `harness update` | Print the npm update command for npm installs, or verify and atomically switch a configured standalone archive. It does not create a Runtime or Web lease. |
 | `dsh <args...>` | Use the same product grammar through the compatible command name. |
 
 The former public profile, plugin-management, headless-profile, patch, and config-dump commands are not part of this product grammar. `--profile` is rejected explicitly. Use `run` for a one-shot task and `web` for the Dashboard.
+
+For a configured standalone archive, `update` verifies the signed candidate and its member list before a sibling swap, checks bundled `harness --help` with the bundled Node runtime, and restores the retained bundle when that health check fails. ZIP archives restore executable paths from their checksummed bundled manifest; this command never creates a Runtime or Web lease.
 
 ## Profiles
 

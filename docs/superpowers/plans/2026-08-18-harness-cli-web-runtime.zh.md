@@ -20,6 +20,7 @@
 - Runtime loopback 控制令牌绝不进入 argv、JSONL stdout、stderr 诊断、浏览器 URL、浏览器存储、快照、会话记录、日志或异常文本。
 - 不带 `--profile` 的 `harness` 是当前目录的交互式终端客户端；`harness "task"` 提供初始任务。
 - `harness run "task" --json` 只向 stdout 输出 JSONL 协议记录；人类可读诊断和所有失败都进入 stderr。
+- 历史更正：本计划早于严格的 CLI JSONL 读取器。读取器只接受一个末尾换行符，并以原始行号拒绝所有开头或内部空白物理记录。
 - `harness web` 启动或连接 Runtime、取得 Runtime 所有的 Dashboard 附加、签发一个高熵、60 秒单次使用的浏览器 handoff，并在验证仅所有者 POSIX mode 或当前用户 Windows ACL、拒绝权限更宽的位置后打开只允许当前用户访问的本地 bootstrap 目录和 document。其不透明 file origin 有意使顶级表单向精确 Runtime `/_harness/handoff` target 发出的 POST 跨 origin；交换只认证其表单正文 handoff、以原子方式消费它、不发送 CORS permission，并返回干净 `303`。launcher 将一个幂等 cleanup timer 绑定到 `expiresAt`，在 dispatch failure、exchange success 或 failure，或 expiry 后精确一次删除所属 document 和目录，包括 never-dispatched document。handoff 绝不进入导航 URL、hash、query、header、referrer、history、存储、日志、诊断或会话记录。只有交换后的会话凭据可使用 Runtime `Set-Cookie`、浏览器 `Cookie` 请求头和浏览器 HttpOnly cookie jar；普通 Dashboard 请求必须使用不带 expiry attribute 的 `HttpOnly; SameSite=Strict; Path=/` 会话 cookie 和精确 Runtime origin。
 - `--daemon` 和 `--background` 是同一个有持久名称的 Runtime 后台租约的别名，而不是分离的 Web 服务器进程。`--status` 绝不启动 Runtime；`--stop` 仅释放该租约，并在租约已不存在时幂等成功。
 - `--no-open` 禁止浏览器导航；除非与 `--daemon` 或 `--background` 组合，否则不创建租约。

@@ -29,8 +29,7 @@ export interface CliJsonLine extends Record<string, unknown> {
  * @throws when a physical record is blank, malformed, or not a JSON object.
  */
 export function parseCliJsonLines(stdout: string): readonly CliJsonLine[] {
-  const lines = stdout.split('\n')
-  if (lines.at(-1) === '') lines.pop()
+  const lines = (stdout.endsWith('\n') ? stdout.slice(0, -1) : stdout).split('\n')
   return lines.map((rawLine, index) => {
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
     if (line.length === 0) throw new Error(`CLI stdout line ${String(index + 1)} is blank`)

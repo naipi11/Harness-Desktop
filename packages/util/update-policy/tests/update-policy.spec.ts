@@ -53,6 +53,7 @@ function generatedMember(): string {
 
 function artifact(fixture: GeneratedFixture, overrides: Partial<UpdateArtifact> = {}): UpdateArtifact {
   return {
+    consumer: 'desktop',
     platform: targetPlatform,
     arch: targetArtifactArchitecture,
     format: targetFormat,
@@ -68,6 +69,7 @@ function policy(fixture: GeneratedFixture, overrides: Partial<UpdateManifestPoli
     appId: fixture.applicationId,
     currentVersion,
     channel: 'stable',
+    consumer: 'desktop',
     platform: targetPlatform,
     arch: targetArchitecture,
     allowedOrigins: [fixture.origin],
@@ -160,6 +162,35 @@ describe('signed update manifest policy', () => {
     ])
 
     expectRejected(manifest, policy(fixture, { platform: 'darwin', arch: 'arm64' }), 'artifact-ambiguous')
+  })
+
+  it('selects the requested consumer before target ambiguity handling', () => {
+    const fixture = generatedFixture()
+    const desktop = artifact(fixture, { consumer: 'desktop' })
+    const cliFormat = targetPlatform === 'win32' ? 'zip' : 'tar.gz'
+    const cli = artifact(fixture, { consumer: 'cli', format: cliFormat })
+    const manifest = signedManifest(fixture, 'stable', '1.1.0', [desktop, cli])
+
+    expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'desktop' }))).toMatchObject({
+      kind: 'accepted', artifact: { consumer: 'desktop', format: targetFormat },
+    })
+    expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'cli' }))).toMatchObject({
+      kind: 'accepted', artifact: { consumer: 'cli', format: cliFormat },
+    })
+  })
+
+  it('ignores duplicate targets owned by another consumer', () => {
+    const fixture = generatedFixture()
+    const cliFormat = targetPlatform === 'win32' ? 'zip' : 'tar.gz'
+    const manifest = signedManifest(fixture, 'stable', '1.1.0', [
+      artifact(fixture, { consumer: 'desktop' }),
+      artifact(fixture, { consumer: 'cli', format: cliFormat }),
+      artifact(fixture, { consumer: 'cli', format: cliFormat }),
+    ])
+
+    expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'desktop' }))).toMatchObject({
+      kind: 'accepted', artifact: { consumer: 'desktop' },
+    })
   })
 
   it('fails closed while the production trust configuration is empty', () => {

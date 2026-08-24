@@ -1,5 +1,5 @@
 import { PassThrough } from 'node:stream'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   RuntimeBusyError,
   RuntimeProtocolError,
@@ -24,6 +24,7 @@ import {
   runTerminalInvocation,
   type InteractiveTerminalSurface,
   type TerminalIO,
+  type TerminalInvocation,
   type TerminalUserAction,
 } from '../src/terminal-client.ts'
 
@@ -237,6 +238,10 @@ function io(
 }
 
 describe('runTerminalInvocation', () => {
+  it('accepts only task-bearing invocation modes', () => {
+    expectTypeOf<TerminalInvocation['mode']>().toEqualTypeOf<'interactive' | 'run'>()
+  })
+
   it('renders JSON mode as protocol-only newline-delimited records and closes only its attachments', async () => {
     const events: TerminalProtocolEvent[] = [
       { kind: 'session-opened', sessionId: sessionId('session-json') },

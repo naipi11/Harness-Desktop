@@ -5,7 +5,8 @@ import { createPublicKey, verify } from 'node:crypto'
 const CHANNELS = ['stable', 'beta', 'nightly'] as const
 const PLATFORMS = ['win32', 'darwin', 'linux'] as const
 const ARCHITECTURES = ['x64', 'arm64', 'universal'] as const
-const FORMATS = ['nsis', 'dmg', 'appimage', 'deb'] as const
+const CONSUMERS = ['desktop', 'cli'] as const
+const FORMATS = ['nsis', 'dmg', 'appimage', 'deb', 'zip', 'tar.gz'] as const
 const SHA256 = /^[0-9a-f]{64}$/
 const BASE64URL = /^[A-Za-z0-9_-]+$/
 const SEMANTIC_VERSION = new RegExp([
@@ -20,11 +21,15 @@ export type UpdateChannel = typeof CHANNELS[number]
 export type UpdatePlatform = typeof PLATFORMS[number]
 /** One supported update artifact architecture. */
 export type UpdateArchitecture = typeof ARCHITECTURES[number]
+/** One application form that can consume a signed update artifact. */
+export type UpdateArtifactConsumer = typeof CONSUMERS[number]
 /** One supported update artifact format. */
 export type UpdateArtifactFormat = typeof FORMATS[number]
 
 /** One signed artifact declaration before download or extraction. */
 export interface UpdateArtifact {
+  /** Application form allowed to install this artifact. */
+  readonly consumer: UpdateArtifactConsumer
   /** Operating-system target. */
   readonly platform: UpdatePlatform
   /** CPU target. */
@@ -85,6 +90,8 @@ export interface UpdateManifestPolicy extends UpdateTrust {
   readonly currentVersion: string
   /** Runtime-owned release channel selected by the user. */
   readonly channel: UpdateChannel
+  /** Application form making this request. */
+  readonly consumer: UpdateArtifactConsumer
   /** Current operating-system target. */
   readonly platform: NodeJS.Platform
   /** Current CPU target. */
@@ -97,6 +104,8 @@ export interface RedactedUpdateArtifact {
   readonly version: string
   /** Verified selected channel. */
   readonly channel: UpdateChannel
+  /** Verified application form allowed to install this artifact. */
+  readonly consumer: UpdateArtifactConsumer
   /** Verified operating-system target. */
   readonly platform: UpdatePlatform
   /** Verified CPU target. */
@@ -141,6 +150,7 @@ export const EMPTY_UPDATE_TRUST: UpdateTrust = Object.freeze({
  */
 export function canonicalizeSignedUpdateManifest(payload: UpdateManifestPayload): Buffer {
   const artifacts = orderedArtifacts(payload.artifacts).map(artifact => ({
+    consumer: artifact.consumer,
     platform: artifact.platform,
     arch: artifact.arch,
     format: artifact.format,
@@ -168,19 +178,18 @@ export function verifySignedUpdateManifest(input: unknown, policy: UpdateManifes
   let manifest: SignedUpdateManifest | undefined
   try { manifest = parseManifest(input) } catch { return rejected('malformed-manifest') }
   if (manifest === undefined) return rejected('malformed-manifest')
-  if (hasDuplicateTargets(manifest.artifacts)) return rejected('artifact-ambiguous')
   if (!verifySignature(manifest, policy.publicKeys)) return rejected('signature-invalid')
   if (manifest.applicationId !== policy.appId) return rejected('application-mismatch')
   if (manifest.channel !== policy.channel) return rejected('channel-mismatch')
   if (!isStrictlyNewer(manifest.version, policy.currentVersion)) return rejected('version-not-newer')
-  const target = selectTarget(manifest.artifacts, policy.platform, policy.arch)
+  const target = selectTarget(manifest.artifacts, policy.consumer, policy.platform, policy.arch)
   if (target.kind === 'ambiguous') return rejected('artifact-ambiguous')
   if (target.kind === 'none') return rejected('target-mismatch')
   if (!isAllowedArtifactUrl(target.artifact.url, policy.allowedOrigins)) return rejected('artifact-origin-invalid')
   if (!SHA256.test(target.artifact.sha256)) return rejected('digest-invalid')
   if (!hasSafeArchiveMembers(target.artifact.members)) return rejected('archive-path-invalid')
   return { kind: 'accepted', artifact: {
-    version: manifest.version, channel: manifest.channel, platform: target.artifact.platform,
+    version: manifest.version, channel: manifest.channel, consumer: target.artifact.consumer, platform: target.artifact.platform,
     arch: target.artifact.arch, format: target.artifact.format, sha256: target.artifact.sha256,
     members: [...target.artifact.members].sort(compareText),
   } }
@@ -212,8 +221,8 @@ function parseManifest(input: unknown): SignedUpdateManifest | undefined {
 }
 
 function parseArtifact(input: unknown): UpdateArtifact | undefined {
-  if (!isExactRecord(input, ['platform', 'arch', 'format', 'url', 'sha256', 'members'])) return undefined
-  if (!isPlatform(input.platform) || !isArchitecture(input.arch) || !isFormat(input.format)
+  if (!isExactRecord(input, ['consumer', 'platform', 'arch', 'format', 'url', 'sha256', 'members'])) return undefined
+  if (!isConsumer(input.consumer) || !isPlatform(input.platform) || !isArchitecture(input.arch) || !isFormat(input.format)
     || !isBoundedText(input.url, 2048) || !isBoundedText(input.sha256, 128)
     || !Array.isArray(input.members) || input.members.length === 0 || input.members.length > 4096) return undefined
   const members: string[] = []
@@ -221,7 +230,15 @@ function parseArtifact(input: unknown): UpdateArtifact | undefined {
     if (!isBoundedText(member, 512)) return undefined
     members.push(member)
   }
-  return { platform: input.platform, arch: input.arch, format: input.format, url: input.url, sha256: input.sha256, members }
+  return {
+    consumer: input.consumer,
+    platform: input.platform,
+    arch: input.arch,
+    format: input.format,
+    url: input.url,
+    sha256: input.sha256,
+    members,
+  }
 }
 
 function parseSignature(input: unknown): UpdateManifestSignature | undefined {
@@ -240,13 +257,18 @@ function verifySignature(manifest: SignedUpdateManifest, publicKeys: Readonly<Re
 
 type TargetSelection = { readonly kind: 'selected'; readonly artifact: UpdateArtifact } | { readonly kind: 'none' } | { readonly kind: 'ambiguous' }
 
-function selectTarget(artifacts: readonly UpdateArtifact[], platform: NodeJS.Platform, arch: string): TargetSelection {
+function selectTarget(
+  artifacts: readonly UpdateArtifact[],
+  consumer: UpdateArtifactConsumer,
+  platform: NodeJS.Platform,
+  arch: string,
+): TargetSelection {
   if (!isPlatform(platform) || !isRuntimeArchitecture(arch)) return { kind: 'none' }
-  const matching = artifacts.filter(artifact => artifact.platform === platform && (artifact.arch === arch || artifact.arch === 'universal'))
+  const matching = artifacts.filter(artifact => artifact.consumer === consumer && artifact.platform === platform && (artifact.arch === arch || artifact.arch === 'universal'))
   if (matching.length === 0) return { kind: 'none' }
   if (matching.length > 1) return { kind: 'ambiguous' }
   const target = matching[0]
-  if (target === undefined || !formatMatchesPlatform(target.format, target.platform, target.arch)) return { kind: 'none' }
+  if (target === undefined || !formatMatchesConsumer(target.consumer, target.format, target.platform, target.arch)) return { kind: 'none' }
   return { kind: 'selected', artifact: target }
 }
 
@@ -265,17 +287,19 @@ function isSafeArchiveMember(value: string): boolean {
   const segments = value.split('/')
   return segments.length > 0 && segments.every(segment => segment.length > 0 && segment !== '.' && segment !== '..')
 }
-function hasDuplicateTargets(artifacts: readonly UpdateArtifact[]): boolean {
-  const targets = new Set<string>()
-  for (const artifact of artifacts) {
-    const target = `${artifact.platform}:${artifact.arch}`
-    if (targets.has(target)) return true
-    targets.add(target)
-  }
-  return false
+function orderedArtifacts(artifacts: readonly UpdateArtifact[]): readonly UpdateArtifact[] {
+  return [...artifacts].sort((left, right) => compareText(
+    `${left.consumer}:${left.platform}:${left.arch}:${left.format}`,
+    `${right.consumer}:${right.platform}:${right.arch}:${right.format}`,
+  ))
 }
-function orderedArtifacts(artifacts: readonly UpdateArtifact[]): readonly UpdateArtifact[] { return [...artifacts].sort((left, right) => compareText(`${left.platform}:${left.arch}:${left.format}`, `${right.platform}:${right.arch}:${right.format}`)) }
-function formatMatchesPlatform(format: UpdateArtifactFormat, platform: UpdatePlatform, arch: UpdateArchitecture): boolean {
+function formatMatchesConsumer(
+  consumer: UpdateArtifactConsumer,
+  format: UpdateArtifactFormat,
+  platform: UpdatePlatform,
+  arch: UpdateArchitecture,
+): boolean {
+  if (consumer === 'cli') return format === 'zip' || format === 'tar.gz'
   if (platform === 'win32') return format === 'nsis'
   if (platform === 'darwin') return format === 'dmg' && arch === 'universal'
   return arch !== 'universal' && (format === 'appimage' || format === 'deb')
@@ -293,6 +317,7 @@ function isBoundedText(value: unknown, maximum: number): value is string { retur
 function isChannel(value: unknown): value is UpdateChannel { return typeof value === 'string' && CHANNELS.includes(value as UpdateChannel) }
 function isPlatform(value: unknown): value is UpdatePlatform { return typeof value === 'string' && PLATFORMS.includes(value as UpdatePlatform) }
 function isArchitecture(value: unknown): value is UpdateArchitecture { return typeof value === 'string' && ARCHITECTURES.includes(value as UpdateArchitecture) }
+function isConsumer(value: unknown): value is UpdateArtifactConsumer { return typeof value === 'string' && CONSUMERS.includes(value as UpdateArtifactConsumer) }
 function isRuntimeArchitecture(value: unknown): value is Exclude<UpdateArchitecture, 'universal'> { return value === 'x64' || value === 'arm64' }
 function isFormat(value: unknown): value is UpdateArtifactFormat { return typeof value === 'string' && FORMATS.includes(value as UpdateArtifactFormat) }
 function isSemanticVersion(value: unknown): value is string { return typeof value === 'string' && value.length <= 128 && SEMANTIC_VERSION.test(value) }

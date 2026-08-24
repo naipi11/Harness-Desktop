@@ -38,6 +38,7 @@ function expectDisposed(snapshot: CrossClientLifecycleSnapshot): void {
 
 describe('built CLI shared Runtime acceptance', () => {
   it.each([
+    { stdout: '', line: 1 },
     { stdout: '\n{}\n', line: 1 },
     { stdout: '{}\n\n{}\n', line: 2 },
     { stdout: '{}\n\n', line: 2 },

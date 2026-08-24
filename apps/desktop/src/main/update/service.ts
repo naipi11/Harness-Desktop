@@ -136,6 +136,7 @@ export class DesktopUpdateService {
       appId: this.options.appId,
       currentVersion: this.options.currentVersion,
       channel,
+      consumer: 'desktop',
       platform: this.options.platform,
       arch: this.options.arch,
       ...this.options.trust,

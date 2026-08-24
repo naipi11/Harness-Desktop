@@ -15,6 +15,7 @@ harness web --background --no-open
 harness web --status
 harness web --stop
 harness desktop
+harness update
 ```
 
 ## 产品命令
@@ -25,9 +26,12 @@ harness desktop
 | `harness run <task> [--json]` | 运行且仅运行一个任务；`--json` 输出 JSONL 协议记录。 |
 | `harness web [options]` | 打开、保留、检查或释放共享 Runtime 的 Dashboard。 |
 | `harness desktop` | 选择 Desktop 模式；不接受参数。 |
+| `harness update` | 对 npm 安装输出更新命令，或校验并原子切换已配置的独立归档。它不会创建 Runtime 或 Web lease。 |
 | `dsh <args...>` | 通过兼容命令名使用相同的产品语法。 |
 
 原公开 profile、插件管理、headless profile、patch 和配置 dump 命令不属于该产品语法。`--profile` 会被显式拒绝。一次性任务使用 `run`，Dashboard 使用 `web`。
+
+对于已配置的独立归档，`update` 会在同级切换前校验签名候选及其成员列表，使用捆绑 Node 运行时检查捆绑的 `harness --help`，并在该健康检查失败时恢复保留的 bundle。ZIP 归档会从其已校验摘要的捆绑 manifest 恢复可执行路径；此命令绝不会创建 Runtime 或 Web lease。
 
 ## Profiles
 

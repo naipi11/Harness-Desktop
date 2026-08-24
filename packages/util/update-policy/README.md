@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`@harness-desktop/dsh-update-policy` verifies a decoded signed update manifest and selects one redacted artifact. It accepts only exact plain-object records, valid Ed25519 signatures, strict semantic versions, configured HTTPS origins, a supported target, lowercase SHA-256 digests, and safe archive member paths. Rejections return stable codes without returning a URL, signature, key identifier, or archive payload.
+`@harness-desktop/dsh-update-policy` verifies a decoded signed update manifest and selects one redacted artifact. It accepts only exact plain-object records, valid Ed25519 signatures, strict semantic versions, configured HTTPS origins, a supported consumer and target, lowercase SHA-256 digests, and safe archive member paths. Rejections return stable codes without returning a URL, signature, key identifier, or archive payload.
 
 The package is a parser and policy only. It does not download artifacts, install software, restart an application, or provide a trust configuration. Consumers supply the application identity, installed version, selected channel, target, allowed origins, and public keys. `EMPTY_UPDATE_TRUST` is the shipped fail-closed default.
 
@@ -10,7 +10,7 @@ The package is a parser and policy only. It does not download artifacts, install
 
 The package entry exports `UpdateChannel`, `SignedUpdateManifest`, `UpdateManifestPolicy`, `RedactedUpdateArtifact`, `verifySignedUpdateManifest`, `canonicalizeSignedUpdateManifest`, and `EMPTY_UPDATE_TRUST`.
 
-`verifySignedUpdateManifest()` canonicalizes artifacts and members before checking the detached signature. A selected macOS artifact must be a universal DMG; Windows accepts NSIS; Linux accepts AppImage or Deb for a concrete architecture.
+`verifySignedUpdateManifest()` canonicalizes artifacts and members before checking the detached signature. `desktop` accepts a universal macOS DMG, Windows NSIS, and Linux AppImage or Deb for a concrete architecture. `cli` accepts ZIP or tar.gz standalone archives. Consumer filtering happens before target ambiguity handling, so one installation cannot accept another consumer's artifact.
 
 ## Model Experience
 

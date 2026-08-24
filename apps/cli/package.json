@@ -69,6 +69,7 @@
     "@harness-desktop/dsh-time-context": "workspace:^",
     "@harness-desktop/dsh-tmux-context": "workspace:^",
     "@harness-desktop/dsh-token-meter": "workspace:^",
+    "@harness-desktop/dsh-update-policy": "workspace:^",
     "@harness-desktop/dsh-tool-ask-user": "workspace:^",
     "@harness-desktop/dsh-tool-bash": "workspace:^",
     "@harness-desktop/dsh-tool-bash-persistent": "workspace:^",
@@ -195,11 +196,13 @@
     "@harness-desktop/dsh-workflow": "workspace:^",
     "@harness-desktop/schemastery": "workspace:^",
     "commander": "^15.0.0",
+    "fflate": "0.8.3",
     "ink": "^5.1.0",
     "js-yaml": "^4.2.0",
     "node-addon-require-builtin": "^0.1.4",
     "react": "^18.3.1",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "tar": "7.5.22"
   },
   "devDependencies": {
     "@harness-desktop/dsh-cross-client-runtime": "workspace:^",

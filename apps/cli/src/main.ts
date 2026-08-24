@@ -1,6 +1,7 @@
 /** Shared command dispatch for the primary Harness CLI and its `dsh` alias. */
 
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { ProductCommandName } from '@harness-desktop/dsh-app-boot/product-metadata'
 import {
   createRuntimeConnector,
@@ -16,6 +17,7 @@ import {
 } from './desktop.ts'
 import { createProcessTerminalIO, runTerminalInvocation, type TerminalIO } from './terminal-client.ts'
 import { runWebInvocation } from './web-daemon.ts'
+import { runUpdateInvocation } from './update.ts'
 
 /** Command names accepted by the shared CLI implementation. */
 export type CliCommandName = ProductCommandName
@@ -52,6 +54,9 @@ export function dispatchInvocation(
       return runWebInvocation(invocation, connector, opener, io)
     case 'desktop':
       return runDesktopInvocation(activator, io)
+    case 'update':
+      return runUpdateInvocation({ entryPath: fileURLToPath(import.meta.url), version: readVersion(), stdout: io.stdout })
+        .then(result => settleUpdateResult(result, io))
     default:
       invocation satisfies never
       throw new Error(`unhandled invocation mode ${JSON.stringify(invocation)}`)
@@ -76,16 +81,50 @@ export function runCli(
   } = {},
 ): Promise<number> {
   const io = dependencies.io ?? createProcessTerminalIO()
-  const connector = dependencies.connector ?? createRuntimeConnector()
-  const opener = dependencies.opener ?? createBrowserHandoffTransport()
-  const activator = dependencies.activator ?? createInstalledDesktopActivator()
   try {
-    return dispatchInvocation(parseProductArgs(argv, commandName, readVersion()), io, connector, opener, activator)
+    const invocation = parseProductArgs(argv, commandName, readVersion())
+    if (invocation.mode === 'update') {
+      return runUpdateInvocation({ entryPath: fileURLToPath(import.meta.url), version: readVersion(), stdout: io.stdout })
+        .then(result => settleUpdateResult(result, io))
+    }
+    const connector = dependencies.connector ?? createRuntimeConnector()
+    const opener = dependencies.opener ?? createBrowserHandoffTransport()
+    const activator = dependencies.activator ?? createInstalledDesktopActivator()
+    return dispatchInvocation(invocation, io, connector, opener, activator)
   } catch (error) {
     if (error instanceof ProductArgumentError) {
       io.stderr.write(`${commandName}: ${error.message}\n${error.correction}\n`)
       return Promise.resolve(2)
     }
     throw error
+  }
+}
+
+/** Render only stable update settlements after the transaction has erased raw release inputs. */
+function settleUpdateResult(
+  result: Awaited<ReturnType<typeof runUpdateInvocation>>,
+  io: TerminalIO,
+): number {
+  switch (result.kind) {
+    case 'managed-by-npm':
+      return 0
+    case 'up-to-date':
+      io.stdout.write('No update available.\n')
+      return 0
+    case 'staged':
+      io.stdout.write('CLI update staged.\n')
+      return 0
+    case 'applied':
+      io.stdout.write('CLI update applied.\n')
+      return 0
+    case 'rolled-back':
+      io.stderr.write('CLI update rolled back.\n')
+      return 1
+    case 'failed':
+      io.stderr.write('CLI update failed.\n')
+      return 1
+    default:
+      result satisfies never
+      throw new Error('unhandled update result')
   }
 }

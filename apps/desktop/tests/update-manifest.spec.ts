@@ -11,6 +11,7 @@ describe('Desktop Main update policy consumer', () => {
       appId: productMetadata.appId,
       currentVersion: '1.0.0',
       channel: 'stable',
+      consumer: 'desktop',
       platform: process.platform,
       arch: process.arch,
       ...EMPTY_UPDATE_TRUST,

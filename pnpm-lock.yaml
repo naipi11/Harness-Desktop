@@ -615,6 +615,9 @@ importers:
       '@harness-desktop/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../packages/typert/registry
+      '@harness-desktop/dsh-update-policy':
+        specifier: workspace:^
+        version: link:../../packages/util/update-policy
       '@harness-desktop/dsh-user-approval':
         specifier: workspace:^
         version: link:../../packages/interaction/user-approval
@@ -651,6 +654,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       ink:
         specifier: ^5.1.0
         version: 5.1.0(@types/react@18.3.31)(react@18.3.1)
@@ -666,6 +672,9 @@ importers:
       react-dom:
         specifier: 18.2.0
         version: 18.2.0(react@18.3.1)
+      tar:
+        specifier: 7.5.22
+        version: 7.5.22
     devDependencies:
       '@harness-desktop/dsh-cross-client-runtime':
         specifier: workspace:^

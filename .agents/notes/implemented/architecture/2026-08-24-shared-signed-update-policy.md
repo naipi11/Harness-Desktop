@@ -10,7 +10,7 @@ Desktop Main owned signed update manifest parsing while Runtime preferences and 
 
 ## Decision
 
-`@harness-desktop/dsh-update-policy` owns exact-record parsing, canonical serialization, Ed25519 verification, semantic-version comparison, target selection, origin checks, digest checks, archive-member checks, and redacted outcomes. `EMPTY_UPDATE_TRUST` contains no origin or public key, so it rejects every candidate. The package does not download, extract, install, restart, or configure trust.
+`@harness-desktop/dsh-update-policy` owns exact-record parsing, canonical serialization, Ed25519 verification, semantic-version comparison, consumer-filtered target selection, origin checks, digest checks, archive-member checks, and redacted outcomes. Every artifact and request declares `desktop` or `cli`; filtering the consumer before ambiguity handling prevents a Desktop installer and a CLI ZIP or tar.gz archive from selecting each other. Duplicate targets matter only within the requested consumer. `EMPTY_UPDATE_TRUST` contains no origin or public key, so it rejects every candidate. The package does not download, extract, install, restart, or configure trust.
 
 Runtime settings, client control requests, and its public `DesktopUpdateChannel` compatibility name use the shared `UpdateChannel` type while retaining the `stable`, `beta`, and `nightly` wire values. Desktop Main keeps only compatibility re-exports. Tests create each signed candidate and origin at runtime from a fresh identifier, so Git contains no raw signed-manifest or release-location fixture.
 

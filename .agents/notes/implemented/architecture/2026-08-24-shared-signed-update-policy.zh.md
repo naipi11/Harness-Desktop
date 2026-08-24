@@ -10,7 +10,7 @@ Desktop Main 曾独自负责签名更新 manifest（元数据清单）解析，�
 
 ## Decision
 
-`@harness-desktop/dsh-update-policy` 负责字段完全一致的记录解析、规范化序列化、Ed25519 校验、语义版本比较、目标选择、源检查、摘要检查、归档成员检查及脱敏结果。`EMPTY_UPDATE_TRUST` 不含源或公钥，因此会拒绝所有候选。该包不下载、不解压、不安装、不重启，也不配置可信根。
+`@harness-desktop/dsh-update-policy` 负责字段完全一致的记录解析、规范化序列化、Ed25519 校验、语义版本比较、按消费方筛选的目标选择、源检查、摘要检查、归档成员检查及脱敏结果。每个产物和请求都声明 `desktop` 或 `cli`；在处理歧义前筛选消费方，防止 Desktop 安装包与 CLI ZIP 或 tar.gz 归档相互选择。重复目标只会在被请求的消费方内产生影响。`EMPTY_UPDATE_TRUST` 不含源或公钥，因此会拒绝所有候选。该包不下载、不解压、不安装、不重启，也不配置可信根。
 
 Runtime 设置、客户端控制请求及其公共 `DesktopUpdateChannel` 兼容名称使用共享的 `UpdateChannel` 类型，同时保留 `stable`、`beta` 和 `nightly` 协议值。Desktop Main 只保留兼容导出。测试从新的标识符在运行时生成每个签名候选和源，因此 Git 不包含原始签名 manifest 或发布位置 fixture（测试前置数据）。
 
