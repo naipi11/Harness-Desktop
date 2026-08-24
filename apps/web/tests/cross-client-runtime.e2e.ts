@@ -7,6 +7,7 @@ import { basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium, type Browser } from 'playwright'
 import { describe, expect, it } from 'vitest'
+import type { HistoryEntry } from '@harness-desktop/dsh-host-apiproxy/api'
 import type { SessionId } from '@harness-desktop/dsh-session/types'
 import type {
   CrossClientFixture,
@@ -40,6 +41,10 @@ function containsExactString(value: unknown, expected: string): boolean {
   if (Array.isArray(value)) return value.some(item => containsExactString(item, expected))
   if (typeof value !== 'object' || value === null) return false
   return Object.values(value).some(item => containsExactString(item, expected))
+}
+
+function assistantReplyCount(history: readonly HistoryEntry[], expected: string): number {
+  return history.filter(entry => entry.event.type === 'assistant/message' && containsExactString(entry.event, expected)).length
 }
 
 function expectDisposed(snapshot: CrossClientLifecycleSnapshot): void {
@@ -135,7 +140,7 @@ describe('built Web shared Runtime acceptance', () => {
         const history = await fixture!.readHistory(opened.sessionId)
         return {
           prompt: history.some(entry => containsExactString(entry, WEB_APPEND_PROMPT)),
-          reply: history.filter(entry => containsExactString(entry, REPLY)).length >= 2,
+          reply: assistantReplyCount(history, REPLY) >= 2,
         }
       }, { timeout: 30_000 }).toEqual({ prompt: true, reply: true })
       await page.getByText(REPLY, { exact: true }).last().waitFor({ timeout: 30_000 })
