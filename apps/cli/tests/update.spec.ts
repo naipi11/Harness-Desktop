@@ -1,6 +1,6 @@
 /** CLI update command parsing and isolated update transaction behavior. */
 
-import { chmod, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto'
@@ -219,8 +219,9 @@ describe('CLI update', () => {
     }
   }, 30_000)
 
-  it('rejects an undeclared tar symlink before candidate extraction', async () => {
+  it('rejects an undeclared tar symlink without materializing archive members', async () => {
     const fixture = await standaloneFixture('healthy', 'linux', true)
+    const rejectedCandidateContents: string[][] = []
     try {
       const archive = await tarCandidate(fixture, '1.1.0', 0o755, true)
       await expect(runUpdateInvocation({
@@ -230,9 +231,16 @@ describe('CLI update', () => {
         trust: fixture.trust,
         loadCandidate: async () => archive,
         platform: 'linux',
-        operations: { stat: async () => ({ mode: 0o100755 }) },
+        operations: {
+          rm: async (path, options) => {
+            rejectedCandidateContents.push((await readdir(path)).toSorted())
+            await rm(path, options)
+          },
+          stat: async () => ({ mode: 0o100755 }),
+        },
         healthCheck: async () => true,
       })).resolves.toEqual({ kind: 'failed', code: 'candidate-rejected' })
+      expect(rejectedCandidateContents).toEqual([['.candidate.tar.gz']])
     } finally {
       await fixture.close()
     }
