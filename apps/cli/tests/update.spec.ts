@@ -173,9 +173,7 @@ describe('CLI update', () => {
       }, 'linux', async () => true)
 
       expect(result).toEqual({ kind: 'applied', version: '1.1.0' })
-      expect(chmodCalls).toContainEqual(expect.objectContaining({
-        path: expect.stringMatching(/[\\/]runtime[\\/]bin[\\/]node$/u), mode: 0o755,
-      }))
+      expect(chmodCalls.some(call => call.mode === 0o755 && /[\\/]runtime[\\/]bin[\\/]node$/u.test(call.path))).toBe(true)
     } finally {
       await fixture.close()
     }
@@ -317,7 +315,7 @@ function update(
     loadCandidate: async () => ({ manifest: candidate(fixture, candidateVersion), bytes: fixture.bytes }),
     operations,
     platform: target,
-    healthCheck,
+    ...(healthCheck === undefined ? {} : { healthCheck }),
   })
 }
 

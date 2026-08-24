@@ -71,7 +71,7 @@ export class LocalDashboardAuth {
     const id = randomSecret()
     const expiresAt = this.now() + HANDOFF_LIFETIME_MS
     const expiryTimer = setTimeout(() => { this.handoffs.delete(id) }, HANDOFF_LIFETIME_MS)
-    expiryTimer.unref?.()
+    expiryTimer.unref()
     this.handoffs.set(id, { expiresAt, expiryTimer, ...(owner === undefined ? {} : { owner }) })
     return { id, expiresAt }
   }
@@ -230,7 +230,7 @@ export async function verifyBootstrapDocument(
 
 /** Remove only the owned bootstrap leaf, then its now-empty owner directory. */
 async function removeOwnedBootstrapDocument(path: string): Promise<void> {
-  const entry = await lstat(path).catch((error) => {
+  const entry = await lstat(path).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   })
@@ -238,7 +238,7 @@ async function removeOwnedBootstrapDocument(path: string): Promise<void> {
     if (entry.isDirectory()) throw new Error('host-local-runtime: bootstrap document path must not be a directory')
     await unlink(path)
   }
-  await rmdir(dirname(path)).catch((error) => {
+  await rmdir(dirname(path)).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   })
 }

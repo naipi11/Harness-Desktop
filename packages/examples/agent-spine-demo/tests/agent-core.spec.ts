@@ -78,7 +78,8 @@ async function mount(config: agentCore.Config, withBash = false): Promise<Contex
     })
   }
   try {
-    await ctx.plugin(agentCore, { harnessHome, ...config })
+    config.harnessHome ??= harnessHome
+    await ctx.plugin(agentCore, config)
     // The bundle mounts its children inside apply() (not awaited there); let their
     // fibers settle so the spine services and any pre-created agent are ready.
     await new Promise(resolve => setTimeout(resolve, 50))

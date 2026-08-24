@@ -230,18 +230,18 @@ async function extractVerifiedArchive(
 }
 
 async function verifyTarMembers(archive: string, declared: readonly string[]): Promise<void> {
-  const members: string[] = []
-  let rejected = false
+  const entries: Array<{ readonly path: string; readonly type: tar.types.EntryTypeName }> = []
   await tar.t({
     file: archive,
     strict: true,
-    onentry(entry) {
-      if (entry.type !== 'File' || !isSafeMember(entry.path)) rejected = true
-      else members.push(entry.path)
-      entry.resume()
+    onReadEntry(entry) {
+      entries.push({ path: entry.path, type: entry.type })
     },
   })
-  if (rejected || !sameMembers(members, declared)) throw new Error('archive members do not match signed manifest')
+  if (entries.some(entry => entry.type !== 'File' || !isSafeMember(entry.path))
+    || !sameMembers(entries.map(entry => entry.path), declared)) {
+    throw new Error('archive members do not match signed manifest')
+  }
 }
 
 async function restoreStandaloneExecutablePaths(
@@ -255,7 +255,7 @@ async function restoreStandaloneExecutablePaths(
   const parsed = JSON.parse((await operations.readFile(manifestPath)).toString('utf8')) as unknown
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('standalone manifest is invalid')
   const executablePaths = (parsed as { readonly executablePaths?: unknown }).executablePaths
-  if (!Array.isArray(executablePaths) || executablePaths.some(path => typeof path !== 'string')) {
+  if (!isStringArray(executablePaths)) {
     throw new Error('standalone executable paths are invalid')
   }
   const sorted = [...new Set(executablePaths)].toSorted()
@@ -292,6 +292,10 @@ function sameMembers(actual: readonly string[], declared: readonly string[]): bo
 function isSafeMember(path: string): boolean {
   return !path.startsWith('/') && !path.includes('\\') && !path.includes(':')
     && path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string')
 }
 
 function digest(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex') }

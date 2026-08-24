@@ -814,7 +814,7 @@ export async function boot(
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     ctx.provide('harnessHome', harnessHomeProvider.home)
     ctx.provide('harnessHomeProvider', harnessHomeProvider)
-    ctx.provide('harnessHomePath', harnessHomeProvider.path)
+    ctx.provide('harnessHomePath', (...segments) => harnessHomeProvider.path(...segments))
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

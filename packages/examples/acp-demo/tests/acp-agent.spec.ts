@@ -33,7 +33,8 @@ async function mount(config: acpAgent.Config, withBash = false): Promise<Context
   }
   config.persistenceRoot ??= await mkdtemp(join(tmpdir(), 'dsh-acp-demo-persistence-'))
   const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-home-'))
-  await ctx.plugin(acpAgent, { harnessHome, ...config })
+  config.harnessHome ??= harnessHome
+  await ctx.plugin(acpAgent, config)
   return ctx
 }
 
