@@ -28,10 +28,19 @@ jobs:
         include:
           - os: windows-2025
             label: windows-nsis
+            desktop-formats: nsis
+            cli-format: zip
+            cli-artifact: dist/cli-standalone/harness-cli-*.zip
           - os: macos-15
             label: macos-universal-dmg
+            desktop-formats: dmg-universal
+            cli-format: tar.gz
+            cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
           - os: ubuntu-24.04
             label: linux-appimage-deb
+            desktop-formats: appimage-deb
+            cli-format: tar.gz
+            cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
     steps:
       - uses: actions/checkout@v6
         with:
@@ -84,7 +93,32 @@ jobs:
             "https://nodejs.org/dist/v${version}/${filename}" \
             --output "${runtime_root}/${filename}"
           echo "DSH_NODE_RUNTIME_ROOT=${runtime_root}" >> "${GITHUB_ENV}"
+          echo "DSH_NODE_RUNTIME_FILENAME=${filename}" >> "${GITHUB_ENV}"
           echo "DSH_NODE_RUNTIME_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Verify pinned Node distribution checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(node --input-type=module --eval '
+            import checksums from "./scripts/release/node-runtime-checksums.json" with { type: "json" };
+            const platform = { Windows: "win32", macOS: "darwin", Linux: "linux" }[process.env.RUNNER_OS];
+            const arch = { X64: "x64", ARM64: "arm64" }[process.env.RUNNER_ARCH];
+            const entry = checksums[process.env.DSH_NODE_RUNTIME_VERSION]?.[platform]?.[arch];
+            if (entry?.filename !== process.env.DSH_NODE_RUNTIME_FILENAME) process.exit(1);
+            process.stdout.write(entry.sha256);
+          ')
+          actual=$(node --input-type=module --eval '
+            import { createHash } from "node:crypto";
+            import { readFileSync } from "node:fs";
+            import { join } from "node:path";
+            const path = join(process.env.DSH_NODE_RUNTIME_ROOT, process.env.DSH_NODE_RUNTIME_FILENAME);
+            process.stdout.write(createHash("sha256").update(readFileSync(path)).digest("hex"));
+          ')
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "Downloaded Node runtime checksum mismatch." >&2
+            exit 1
+          fi
 
       - name: Generate product icons
         run: pnpm run generate:icons
@@ -101,6 +135,9 @@ jobs:
       - name: Inspect native Desktop artifacts
         run: pnpm run release:verify-desktop-artifacts
 
+      - name: Test Desktop updater and rollback
+        run: pnpm run desktop:test-updater
+
       - name: Verify packed CLI from an empty offline prefix
         env:
           DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
@@ -111,6 +148,12 @@ jobs:
 
       - name: Verify standalone CLI archives
         run: pnpm run release:verify-cli-standalone
+
+      - name: Verify update manifests with ephemeral fixtures
+        run: pnpm run release:verify-update-manifests
+
+      - name: Test CLI updater and rollback
+        run: pnpm run release:test-cli-update
 
       - name: Smoke installed Desktop artifacts
         run: pnpm run release:smoke-installed-desktop
@@ -123,8 +166,7 @@ jobs:
             apps/desktop/release/Harness Desktop-*-universal.dmg
             apps/desktop/release/Harness Desktop-*.AppImage
             apps/desktop/release/harness-desktop_*_*.deb
-            dist/cli-standalone/harness-cli-*.zip
-            dist/cli-standalone/harness-cli-*.tar.gz
+            ${{ matrix.cli-artifact }}
             dist/cli-standalone/harness-cli-*.sha256
           if-no-files-found: error
           retention-days: 7

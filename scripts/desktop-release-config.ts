@@ -20,8 +20,27 @@ const linuxTargets = ['AppImage', 'deb'] as const
 const linuxIcon = 'apps/desktop/resources/icons/linux/harness-desktop-512.png'
 const linuxCategory = 'Development'
 const artifactRunners = ['windows-2025', 'macos-15', 'ubuntu-24.04'] as const
+const candidateOperations = [
+  'sign-windows',
+  'notarize-macos',
+  'sign-update-manifests',
+  'publish-npm',
+  'create-github-release',
+] as const
 const desktopArtifactsForbiddenMarkers = ['NODE_AUTH_TOKEN', 'release:publish', 'gh release'] as const
 const releaseForbiddenMarkers = ['NODE_AUTH_TOKEN', 'release:publish', 'inputs.publish'] as const
+const releaseCredentialVariables = [
+  'APPLE_APP_SPECIFIC_PASSWORD',
+  'APPLE_ID',
+  'APPLE_TEAM_ID',
+  'CSC_KEY_PASSWORD',
+  'CSC_LINK',
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'NPM_TOKEN',
+  'NODE_AUTH_TOKEN',
+  'WIN_CSC_LINK',
+] as const
 const builderConfigFlag = '--config electron-builder.config.mjs' as const
 
 /** Electron Builder options relevant to the closed desktop artifact matrix. */
@@ -46,7 +65,9 @@ export interface DesktopBuilderConfig {
 export interface DesktopReleaseFiles {
   readonly builderConfig: DesktopBuilderConfig
   readonly desktopManifest: string
+  readonly desktopArtifactVerifier: string
   readonly desktopArtifactsWorkflow: string
+  readonly releaseCandidatesWorkflow: string
   readonly releaseWorkflow: string
 }
 
@@ -70,6 +91,9 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
         `productMetadata: appId ${JSON.stringify(productMetadata.appId)} does not match repository ${JSON.stringify(productMetadata.repository)}`,
       )
     }
+  }
+  if (productMetadata.appId !== 'io.github.naipi11.harness-desktop') {
+    violations.push('productMetadata: appId must remain io.github.naipi11.harness-desktop')
   }
 
   if (config.appId !== productMetadata.appId) {
@@ -169,6 +193,11 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
       violations.push(`desktopArtifactsWorkflow: forbidden publish marker ${marker}`)
     }
   }
+  violations.push(...auditDesktopArtifactsWorkflow(files.desktopArtifactsWorkflow))
+  if (!files.desktopArtifactVerifier.includes("'lipo'") || !files.desktopArtifactVerifier.includes("'-info'")) {
+    violations.push('desktopArtifactVerifier: macOS universal artifact inspection must invoke lipo -info')
+  }
+  violations.push(...auditReleaseCandidatesWorkflow(files.releaseCandidatesWorkflow))
   for (const marker of releaseForbiddenMarkers) {
     if (files.releaseWorkflow.includes(marker)) {
       violations.push(`releaseWorkflow: forbidden publish marker ${marker}`)
@@ -176,6 +205,198 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   }
 
   return violations
+}
+
+function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
+  const workflow = parseWorkflow(workflowText)
+  if (workflow === undefined) return ['desktopArtifactsWorkflow: invalid YAML']
+  const violations: string[] = []
+  const triggers = recordKeys(workflow.on)
+  if (!sameStrings(triggers, ['pull_request', 'workflow_dispatch'])) {
+    violations.push('desktopArtifactsWorkflow: pull_request and workflow_dispatch must be the only triggers')
+  }
+  if (!hasReadOnlyContentsPermission(workflow.permissions)) {
+    violations.push('desktopArtifactsWorkflow: permissions must grant contents read only')
+  }
+  const packageJob = workflowJob(workflow, 'package')
+  if (packageJob === undefined) return [...violations, 'desktopArtifactsWorkflow: package job is missing']
+  if (!isRecord(workflow.jobs) || !sameStrings(Object.keys(workflow.jobs), ['package'])) {
+    violations.push('desktopArtifactsWorkflow: package must be the only job')
+  }
+  if (containsKey(workflow, 'environment') || containsKey(workflow, 'secrets')
+    || workflowText.includes('${{ secrets.') || containsAnyKey(workflow, releaseCredentialVariables)) {
+    violations.push('desktopArtifactsWorkflow: credential or release-environment access is forbidden')
+  }
+
+  const commands = jobRunCommands(packageJob)
+  const commandText = commands.join('\n')
+  if (/\b(?:npm|pnpm)\s+publish\b/u.test(commandText) || commandText.includes('release:publish')) {
+    violations.push('desktopArtifactsWorkflow: publish command is forbidden')
+  }
+  if (/\b(?:codesign|signtool|notarytool)\b/u.test(commandText)) {
+    violations.push('desktopArtifactsWorkflow: signing or notarization command is forbidden')
+  }
+  if (/\bgh\s+release\s+upload\b|\brelease:upload\b|\bupdate-upload\b/u.test(commandText)) {
+    violations.push('desktopArtifactsWorkflow: release upload command is forbidden')
+  }
+  const actionText = jobActions(packageJob).join('\n')
+  if (/action-gh-release|upload-release|codesign|notar|signtool/iu.test(actionText)) {
+    violations.push('desktopArtifactsWorkflow: release signing or upload action is forbidden')
+  }
+
+  const rows = matrixRows(packageJob)
+  const expectedRows = [
+    { os: 'windows-2025', desktop: 'nsis', cli: 'zip' },
+    { os: 'macos-15', desktop: 'dmg-universal', cli: 'tar.gz' },
+    { os: 'ubuntu-24.04', desktop: 'appimage-deb', cli: 'tar.gz' },
+  ]
+  for (const expected of expectedRows) {
+    const row = rows.find(candidate => candidate.os === expected.os)
+    if (row === undefined || row['desktop-formats'] !== expected.desktop || row['cli-format'] !== expected.cli) {
+      violations.push(
+        `desktopArtifactsWorkflow: ${expected.os} must own ${expected.desktop} Desktop and ${expected.cli} CLI artifacts`,
+      )
+    }
+  }
+
+  const requiredCommands = [
+    'scripts/release/node-runtime-checksums.json',
+    '--publish never',
+    'release:verify-desktop-artifacts',
+    'desktop:test-updater',
+    'release:verify-packed-cli',
+    'release:build-cli-standalone',
+    'release:verify-cli-standalone',
+    'release:verify-update-manifests',
+    'release:test-cli-update',
+    'release:smoke-installed-desktop',
+  ]
+  let previousIndex = -1
+  for (const expected of requiredCommands) {
+    const index = commands.findIndex((command, candidateIndex) => candidateIndex > previousIndex && command.includes(expected))
+    if (index === -1) violations.push(`desktopArtifactsWorkflow: missing ordered native check ${expected}`)
+    else previousIndex = index
+  }
+  const checksum = commands.find(command => command.includes('scripts/release/node-runtime-checksums.json'))
+  if (checksum === undefined || !checksum.includes('sha256') || !checksum.includes('checksum mismatch')) {
+    violations.push('desktopArtifactsWorkflow: downloaded Node runtime must match the repository-pinned SHA-256 before use')
+  }
+  const uploadSteps = Array.isArray(packageJob.steps)
+    ? packageJob.steps.filter(isRecord).filter(step => typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@'))
+    : []
+  const uploadPath = uploadSteps.length === 1 && isRecord(uploadSteps[0]?.with) ? uploadSteps[0].with.path : undefined
+  if (typeof uploadPath !== 'string' || uploadPath.split(/\r?\n/u).filter(Boolean).some(path => (
+    !path.trim().startsWith('apps/desktop/release/')
+    && !path.trim().startsWith('dist/cli-standalone/')
+    && !path.trim().startsWith('dist/release-logs/')
+    && path.trim() !== '${{ matrix.cli-artifact }}'
+  ))) {
+    violations.push('desktopArtifactsWorkflow: upload step may contain only native artifacts and redacted release logs')
+  }
+  return violations
+}
+
+function auditReleaseCandidatesWorkflow(workflowText: string): string[] {
+  const workflow = parseWorkflow(workflowText)
+  if (workflow === undefined) return ['releaseCandidatesWorkflow: invalid YAML']
+  const violations: string[] = []
+  const triggers = recordKeys(workflow.on)
+  if (!sameStrings(triggers, ['workflow_dispatch'])) {
+    violations.push('releaseCandidatesWorkflow: workflow_dispatch must be the only trigger')
+  }
+  const dispatch = isRecord(workflow.on) ? workflow.on.workflow_dispatch : undefined
+  const inputs = isRecord(dispatch) && isRecord(dispatch.inputs) ? dispatch.inputs : undefined
+  if (inputs === undefined || !sameStrings(Object.keys(inputs), candidateOperations)) {
+    violations.push('releaseCandidatesWorkflow: exactly five release operation inputs are required')
+  }
+  for (const operation of candidateOperations) {
+    const input = inputs?.[operation]
+    if (!isRecord(input) || input.type !== 'boolean' || input.default !== false) {
+      violations.push(`releaseCandidatesWorkflow: input ${operation} must be boolean and default false`)
+    }
+  }
+  if (!isRecord(workflow.permissions) || Object.keys(workflow.permissions).length !== 0) {
+    violations.push('releaseCandidatesWorkflow: permissions must remain empty')
+  }
+  if (!isRecord(workflow.jobs) || !sameStrings(Object.keys(workflow.jobs), ['preflight'])) {
+    violations.push('releaseCandidatesWorkflow: preflight must be the only job')
+  }
+  if (containsKey(workflow, 'environment') || containsKey(workflow, 'secrets')
+    || workflowText.includes('${{ secrets.') || containsAnyKey(workflow, releaseCredentialVariables)) {
+    violations.push('releaseCandidatesWorkflow: credentials and release environments are forbidden')
+  }
+  const preflight = workflowJob(workflow, 'preflight')
+  if (preflight === undefined) return [...violations, 'releaseCandidatesWorkflow: preflight job is missing']
+  const steps = Array.isArray(preflight.steps) ? preflight.steps.filter(isRecord) : []
+  const preflightStep = steps.find(step => step.name === 'Require exactly one candidate operation')
+  const preflightRun = typeof preflightStep?.run === 'string' ? preflightStep.run : ''
+  if (!preflightRun.includes('selected_count') || !preflightRun.includes('-ne 1')) {
+    violations.push('releaseCandidatesWorkflow: preflight must reject any selection count other than one')
+  }
+  if (steps.length !== 1 || typeof preflightStep?.uses === 'string') {
+    violations.push('releaseCandidatesWorkflow: the one validation step must be the only step')
+  }
+  const preflightEnvironment = isRecord(preflightStep?.env) ? preflightStep.env : undefined
+  if (preflightEnvironment === undefined
+    || !['SIGN_WINDOWS', 'NOTARIZE_MACOS', 'SIGN_UPDATE_MANIFESTS', 'PUBLISH_NPM', 'CREATE_GITHUB_RELEASE']
+      .every(name => typeof preflightEnvironment[name] === 'string')) {
+    violations.push('releaseCandidatesWorkflow: preflight must isolate all five operation selectors')
+  }
+  const commands = jobRunCommands(preflight).join('\n')
+  if (/\b(?:npm|pnpm)\s+publish\b|\bgh\s+release\b|\b(?:codesign|signtool|notarytool)\b|\bcurl\b/u.test(commands)) {
+    violations.push('releaseCandidatesWorkflow: external release actions are forbidden')
+  }
+  return violations
+}
+
+function parseWorkflow(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = load(text)
+    return isRecord(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function recordKeys(value: unknown): string[] {
+  return isRecord(value) ? Object.keys(value).sort() : []
+}
+
+function sameStrings(actual: readonly string[], expected: readonly string[]): boolean {
+  return JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort())
+}
+
+function hasReadOnlyContentsPermission(value: unknown): boolean {
+  return isRecord(value) && value.contents === 'read' && Object.keys(value).length === 1
+}
+
+function workflowJob(workflow: Record<string, unknown>, name: string): Record<string, unknown> | undefined {
+  return isRecord(workflow.jobs) && isRecord(workflow.jobs[name]) ? workflow.jobs[name] : undefined
+}
+
+function jobRunCommands(job: Record<string, unknown>): string[] {
+  if (!Array.isArray(job.steps)) return []
+  return job.steps.filter(isRecord).flatMap(step => typeof step.run === 'string' ? [step.run] : [])
+}
+
+function jobActions(job: Record<string, unknown>): string[] {
+  if (!Array.isArray(job.steps)) return []
+  return job.steps.filter(isRecord).flatMap(step => typeof step.uses === 'string' ? [step.uses] : [])
+}
+
+function matrixRows(job: Record<string, unknown>): readonly Record<string, unknown>[] {
+  if (!isRecord(job.strategy) || !isRecord(job.strategy.matrix) || !Array.isArray(job.strategy.matrix.include)) return []
+  return job.strategy.matrix.include.filter(isRecord)
+}
+
+function containsKey(value: unknown, key: string): boolean {
+  if (Array.isArray(value)) return value.some(item => containsKey(item, key))
+  if (!isRecord(value)) return false
+  return Object.entries(value).some(([candidate, nested]) => candidate === key || containsKey(nested, key))
+}
+
+function containsAnyKey(value: unknown, keys: readonly string[]): boolean {
+  return keys.some(key => containsKey(value, key))
 }
 
 function desktopBuilderIconPath(repositoryPath: string): string {
@@ -236,7 +457,9 @@ export async function readDesktopReleaseFiles(): Promise<DesktopReleaseFiles> {
   return {
     builderConfig: (builderModule as { readonly default: DesktopBuilderConfig }).default,
     desktopManifest: readFileSync(resolve(root, 'apps/desktop/package.json'), 'utf8'),
+    desktopArtifactVerifier: readFileSync(resolve(root, 'scripts/release/verify-desktop-artifacts.ts'), 'utf8'),
     desktopArtifactsWorkflow: readFileSync(resolve(root, '.github/workflows/desktop-artifacts.yml'), 'utf8'),
+    releaseCandidatesWorkflow: readFileSync(resolve(root, '.github/workflows/release-candidates.yml'), 'utf8'),
     releaseWorkflow: readFileSync(resolve(root, '.github/workflows/release.yml'), 'utf8'),
   }
 }

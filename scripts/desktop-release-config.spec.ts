@@ -39,24 +39,85 @@ function conformingFiles(): DesktopReleaseFiles {
         'package:dir': 'electron-builder --dir --config electron-builder.config.mjs --publish never',
       },
     }),
+    desktopArtifactVerifier: "execa('lipo', ['-info'])",
     desktopArtifactsWorkflow: `
+name: Desktop artifacts
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   package:
     strategy:
       matrix:
         include:
           - os: windows-2025
+            desktop-formats: nsis
+            cli-format: zip
           - os: macos-15
+            desktop-formats: dmg-universal
+            cli-format: tar.gz
           - os: ubuntu-24.04
+            desktop-formats: appimage-deb
+            cli-format: tar.gz
     steps:
       - name: Configure pnpm store path
         shell: bash
         run: pnpm store path
-      - run: pnpm --filter desktop run package --publish never
+      - name: Verify pinned Node distribution checksum
+        run: node scripts/release/node-runtime-checksums.json sha256 checksum mismatch
+      - name: Package installer
+        run: pnpm --filter desktop run package --publish never
+      - name: Inspect native Desktop artifacts
+        run: pnpm run release:verify-desktop-artifacts
+      - name: Test Desktop updater and rollback
+        run: pnpm run desktop:test-updater
       - name: Verify packed CLI from an empty offline prefix
         env:
           DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
         run: pnpm run release:verify-packed-cli
+      - name: Build standalone CLI archives
+        run: pnpm run release:build-cli-standalone
+      - name: Verify standalone CLI archives
+        run: pnpm run release:verify-cli-standalone
+      - name: Verify update manifests with ephemeral fixtures
+        run: pnpm run release:verify-update-manifests
+      - name: Test CLI updater and rollback
+        run: pnpm run release:test-cli-update
+      - name: Smoke installed Desktop artifacts
+        run: pnpm run release:smoke-installed-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          path: |
+            apps/desktop/release/Harness Desktop Setup *.exe
+            dist/cli-standalone/harness-cli-*.zip
+`,
+    releaseCandidatesWorkflow: `
+name: Release candidate preflight
+on:
+  workflow_dispatch:
+    inputs:
+      sign-windows: { type: boolean, default: false }
+      notarize-macos: { type: boolean, default: false }
+      sign-update-manifests: { type: boolean, default: false }
+      publish-npm: { type: boolean, default: false }
+      create-github-release: { type: boolean, default: false }
+permissions: {}
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require exactly one candidate operation
+        env:
+          SIGN_WINDOWS: inputs sign-windows
+          NOTARIZE_MACOS: inputs notarize-macos
+          SIGN_UPDATE_MANIFESTS: inputs sign-update-manifests
+          PUBLISH_NPM: inputs publish-npm
+          CREATE_GITHUB_RELEASE: inputs create-github-release
+        run: |
+          selected_count=0
+          test "$selected_count" -ne 1 && exit 1
 `,
     releaseWorkflow: 'name: Release dsh (legacy pack audit)',
   }
@@ -82,9 +143,11 @@ describe('desktop release config gate', () => {
         linux: { target: [], category: '' },
       },
       desktopManifest: '{}',
+      desktopArtifactVerifier: '',
       desktopArtifactsWorkflow: 'NODE_AUTH_TOKEN release:publish gh release',
+      releaseCandidatesWorkflow: 'on: push\nsecrets: inherit\nrun: npm publish && gh release create',
       releaseWorkflow: 'release:publish NODE_AUTH_TOKEN inputs.publish',
-    })).toEqual([
+    })).toEqual(expect.arrayContaining([
       'builderConfig.appId: expected ' + JSON.stringify(productMetadata.appId),
       'builderConfig.productName: expected ' + JSON.stringify(productMetadata.productName),
       'builderConfig.executableName: expected "harness-desktop"',
@@ -119,7 +182,7 @@ describe('desktop release config gate', () => {
       'releaseWorkflow: forbidden publish marker NODE_AUTH_TOKEN',
       'releaseWorkflow: forbidden publish marker release:publish',
       'releaseWorkflow: forbidden publish marker inputs.publish',
-    ])
+    ]))
   })
 
   it('reports an icon outside the generated desktop asset directory', () => {
@@ -175,9 +238,58 @@ describe('desktop release config gate', () => {
     )
   })
 
+  it('rejects credentials, publishing, signing, and release upload commands in the pull-request workflow', () => {
+    const files = conformingFiles()
+    const violations = collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace(
+        '      - name: Smoke installed Desktop artifacts',
+        '      - run: npm publish && codesign && gh release upload\n        env:\n          CSC_LINK: credential\n        secrets: inherit\n      - name: Smoke installed Desktop artifacts',
+      ),
+    })
+
+    expect(violations).toEqual(expect.arrayContaining([
+      expect.stringContaining('credential'),
+      expect.stringContaining('publish'),
+      expect.stringContaining('signing'),
+      expect.stringContaining('release upload'),
+    ]))
+  })
+
+  it('requires a workflow-dispatch-only candidate preflight with five isolated false inputs', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      releaseCandidatesWorkflow: files.releaseCandidatesWorkflow.replace(
+        '      sign-update-manifests: { type: boolean, default: false }',
+        '      sign-update-manifests: { type: boolean, default: true }',
+      ),
+    })).toContain(
+      'releaseCandidatesWorkflow: input sign-update-manifests must be boolean and default false',
+    )
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      releaseCandidatesWorkflow: files.releaseCandidatesWorkflow.replace('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'),
+    })).toContain('releaseCandidatesWorkflow: workflow_dispatch must be the only trigger')
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      releaseCandidatesWorkflow: files.releaseCandidatesWorkflow.replace('-ne 1', '-eq 0'),
+    })).toContain('releaseCandidatesWorkflow: preflight must reject any selection count other than one')
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      releaseCandidatesWorkflow: `${files.releaseCandidatesWorkflow}\n  external-release:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: npm publish`,
+    })).toContain('releaseCandidatesWorkflow: preflight must be the only job')
+  })
+
   it('accepts the repository-owned builder, manifest, and workflows', async () => {
     const files = await readDesktopReleaseFiles()
     expect(collectDesktopReleaseViolations(files)).toEqual([])
+    expect(productMetadata.appId).toBe('io.github.naipi11.harness-desktop')
+    expect(files.desktopArtifactsWorkflow).toContain('scripts/release/node-runtime-checksums.json')
+    expect(files.desktopArtifactsWorkflow).toContain('desktop:test-updater')
+    expect(files.desktopArtifactsWorkflow).toContain('release:test-cli-update')
+    expect(files.desktopArtifactsWorkflow).toContain('release:verify-update-manifests')
+    expect(files.desktopArtifactVerifier).toContain("'lipo'")
     expect(files.desktopArtifactsWorkflow).toContain('dist/cli-standalone')
     expect(files.desktopArtifactsWorkflow).not.toContain('apps/desktop/test-results')
     expect(files.desktopArtifactsWorkflow).not.toContain('apps/desktop/release/*')
@@ -189,5 +301,14 @@ describe('desktop release config gate', () => {
     expect(files.desktopArtifactsWorkflow).toContain('dist/cli-standalone/harness-cli-*.zip')
     expect(files.desktopArtifactsWorkflow).toContain('dist/cli-standalone/harness-cli-*.tar.gz')
     expect(files.desktopArtifactsWorkflow).toContain('dist/cli-standalone/harness-cli-*.sha256')
+    for (const input of [
+      'sign-windows',
+      'notarize-macos',
+      'sign-update-manifests',
+      'publish-npm',
+      'create-github-release',
+    ]) {
+      expect(files.releaseCandidatesWorkflow).toContain(input)
+    }
   })
 })

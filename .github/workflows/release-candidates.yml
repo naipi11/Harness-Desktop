@@ -1,0 +1,66 @@
+# Validate one manual release-candidate request without performing the selected
+# signing, notarization, publication, upload, or release operation.
+name: Release candidate preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      sign-windows:
+        description: Validate a future Windows signing request
+        type: boolean
+        default: false
+      notarize-macos:
+        description: Validate a future macOS notarization request
+        type: boolean
+        default: false
+      sign-update-manifests:
+        description: Validate a future update-manifest signing request
+        type: boolean
+        default: false
+      publish-npm:
+        description: Validate a future npm publication request
+        type: boolean
+        default: false
+      create-github-release:
+        description: Validate a future GitHub Release request
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  preflight:
+    name: Require one isolated candidate operation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require exactly one candidate operation
+        shell: bash
+        env:
+          SIGN_WINDOWS: ${{ inputs['sign-windows'] }}
+          NOTARIZE_MACOS: ${{ inputs['notarize-macos'] }}
+          SIGN_UPDATE_MANIFESTS: ${{ inputs['sign-update-manifests'] }}
+          PUBLISH_NPM: ${{ inputs['publish-npm'] }}
+          CREATE_GITHUB_RELEASE: ${{ inputs['create-github-release'] }}
+        run: |
+          set -euo pipefail
+          selected_count=0
+          selected_operation=''
+          for candidate in \
+            "sign-windows:${SIGN_WINDOWS}" \
+            "notarize-macos:${NOTARIZE_MACOS}" \
+            "sign-update-manifests:${SIGN_UPDATE_MANIFESTS}" \
+            "publish-npm:${PUBLISH_NPM}" \
+            "create-github-release:${CREATE_GITHUB_RELEASE}"
+          do
+            operation=${candidate%%:*}
+            selected=${candidate#*:}
+            if [[ "${selected}" == 'true' ]]; then
+              selected_count=$((selected_count + 1))
+              selected_operation=${operation}
+            fi
+          done
+          if [[ "${selected_count}" -ne 1 ]]; then
+            echo 'Select exactly one release-candidate operation.' >&2
+            exit 1
+          fi
+          echo "Validated ${selected_operation}; this workflow performs no release action."
