@@ -85,9 +85,9 @@ describe('writeUpdateManifests', () => {
     const secondNames = await writeUpdateManifests(input(subject, second))
 
     expect(firstNames).toEqual([
-      'stable-cli-win32-x64-zip.json',
-      'beta-cli-win32-x64-zip.json',
-      'nightly-cli-win32-x64-zip.json',
+      join('ready', 'stable-cli-win32-x64-zip.json'),
+      join('ready', 'beta-cli-win32-x64-zip.json'),
+      join('ready', 'nightly-cli-win32-x64-zip.json'),
     ])
     expect(secondNames).toEqual(firstNames)
     for (const name of firstNames) {
@@ -153,8 +153,8 @@ describe('writeUpdateManifests', () => {
         },
       ],
     })).resolves.toEqual([
-      'stable-cli-win32-x64-tar-gz.json',
-      'stable-cli-win32-x64-zip.json',
+      join('ready', 'stable-cli-win32-x64-tar-gz.json'),
+      join('ready', 'stable-cli-win32-x64-zip.json'),
     ])
   })
 
@@ -184,7 +184,6 @@ describe('writeUpdateManifests', () => {
 
     expect(writes).toBe(2)
     await expect(access(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect((await readdir(subject.root)).filter(name => name.startsWith('.atomic-output-stage-'))).toEqual([])
   })
 
   it('rejects and preserves a pre-existing output directory', async () => {
@@ -199,6 +198,33 @@ describe('writeUpdateManifests', () => {
     )
     await expect(readFile(sentinel, 'utf8')).resolves.toBe('keep existing output')
     await expect(readdir(outputDirectory)).resolves.toEqual(['owned.txt'])
+  })
+
+  it('preserves a competitor that wins atomic final-root mkdir before staging', async () => {
+    const subject = await fixture()
+    const outputDirectory = join(subject.root, 'reservation-race-output')
+    const sentinel = join(outputDirectory, 'competitor.txt')
+    let reservations = 0
+    let writes = 0
+
+    await expect(writeUpdateManifests(
+      input(subject, outputDirectory, ['stable']),
+      async () => {
+        writes += 1
+        throw new Error('staging must not start after a lost reservation')
+      },
+      async (path) => {
+        reservations += 1
+        await mkdir(path)
+        await writeFile(sentinel, 'competitor owns this output')
+        throw Object.assign(new Error('simulated competing atomic mkdir'), { code: 'EEXIST' })
+      },
+    )).rejects.toThrow('output directory already exists')
+
+    expect(reservations).toBe(1)
+    expect(writes).toBe(0)
+    await expect(readFile(sentinel, 'utf8')).resolves.toBe('competitor owns this output')
+    await expect(readdir(outputDirectory)).resolves.toEqual(['competitor.txt'])
   })
 
   it('rejects unsafe archive members before signing or output', async () => {

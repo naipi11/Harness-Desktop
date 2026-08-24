@@ -1,8 +1,8 @@
 /** Build deterministic signed update manifests from named local artifacts. */
 
 import { createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { mkdir, mkdtemp, readFile, rename, rm, rmdir, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   canonicalizeSignedUpdateManifest,
@@ -53,6 +53,13 @@ export interface BuiltUpdateManifest {
  * @returns when the complete staged file is durable to the writer.
  */
 export type UpdateManifestWriter = (path: string, bytes: Buffer) => Promise<void>
+
+/**
+ * Atomically reserve the final release-owned output root.
+ * @param path - final output root that must not already exist.
+ * @returns when this writer exclusively created the root.
+ */
+export type UpdateManifestRootReservation = (path: string) => Promise<void>
 
 const channelOrder: readonly UpdateChannel[] = ['stable', 'beta', 'nightly']
 
@@ -129,52 +136,72 @@ export async function buildUpdateManifests(
 }
 
 /**
- * Write a fully validated manifest set without creating output for invalid signing input.
+ * Reserve a new output root and expose its complete set only under `ready/`.
  * @param input - release version, local artifacts, private-key file, and output directory.
  * @param writeManifest - exclusive staged-file writer; tests inject a write failure.
- * @returns deterministic manifest filenames.
+ * @param reserveOutputRoot - atomic exclusive-create operation; tests inject a competing winner.
+ * @returns deterministic manifest paths relative to the reserved output root.
  */
 export async function writeUpdateManifests(
   input: UpdateManifestBuildInput,
   writeManifest: UpdateManifestWriter = writeManifestExclusive,
+  reserveOutputRoot: UpdateManifestRootReservation = reserveManifestOutputRoot,
 ): Promise<readonly string[]> {
   const manifests = await buildUpdateManifests(input)
   const outputDirectory = resolve(input.outputDirectory)
   const parent = dirname(outputDirectory)
   await mkdir(parent, { recursive: true })
-  if (await pathExists(outputDirectory)) {
-    throw new Error(`update manifest: output directory already exists at ${outputDirectory}`)
+  try {
+    await reserveOutputRoot(outputDirectory)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`update manifest: output directory already exists at ${outputDirectory}`, { cause: error })
+    }
+    throw error
   }
 
-  const stagingDirectory = await mkdtemp(join(parent, `.${basename(outputDirectory)}-stage-`))
-  let published = false
+  let stagingDirectory: string | undefined
   try {
+    stagingDirectory = await mkdtemp(join(outputDirectory, '.staging-'))
     for (const manifest of manifests) {
       await writeManifest(join(stagingDirectory, manifest.filename), manifest.bytes)
     }
-    if (await pathExists(outputDirectory)) {
-      throw new Error(`update manifest: output directory already exists at ${outputDirectory}`)
-    }
-    await rename(stagingDirectory, outputDirectory)
-    published = true
-  } finally {
-    if (!published) await rm(stagingDirectory, { recursive: true, force: true })
+    await rename(stagingDirectory, join(outputDirectory, 'ready'))
+    return manifests.map(manifest => join('ready', manifest.filename))
+  } catch (error) {
+    return cleanFailedManifestOutput(outputDirectory, stagingDirectory, error)
   }
-  return manifests.map(manifest => manifest.filename)
 }
 
 async function writeManifestExclusive(path: string, bytes: Buffer): Promise<void> {
   await writeFile(path, bytes, { flag: 'wx' })
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
+async function reserveManifestOutputRoot(path: string): Promise<void> {
+  await mkdir(path)
+}
+
+async function cleanFailedManifestOutput(
+  outputDirectory: string,
+  stagingDirectory: string | undefined,
+  primary: unknown,
+): Promise<never> {
+  const errors = [primary]
+  if (stagingDirectory !== undefined && dirname(stagingDirectory) === outputDirectory) {
+    try {
+      await rm(stagingDirectory, { recursive: true, force: true })
+    } catch (error) {
+      errors.push(error)
+    }
   }
+  try {
+    await rmdir(outputDirectory)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST') errors.push(error)
+  }
+  if (errors.length === 1) throw primary
+  throw new AggregateError(errors, 'update manifest: failed to clean owned staging output')
 }
 
 function assertUniqueTargets(artifacts: readonly UpdateManifestArtifactInput[]): void {

@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-`scripts/release/build-update-manifest.ts` 接受调用方指定的本地产物和 Ed25519 私钥文件。脚本在本地派生 SHA-256 摘要与归档成员，为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），且每个 manifest 只包含一个可选产物。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。builder 仅在所有输入都已读入内存后签名，并通过 `verifySignedUpdateManifest()` 验证结果。脚本以独占方式把完整集合写入随机命名的同级目录，拒绝已存在的输出目录，再通过一次目录重命名完成发布；暂存写入失败后不会留下最终集合或暂存集合。
+`scripts/release/build-update-manifest.ts` 接受调用方指定的本地产物和 Ed25519 私钥文件。脚本在本地派生 SHA-256 摘要与归档成员，为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），且每个 manifest 只包含一个可选产物。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。builder 仅在所有输入都已读入内存后签名，并通过 `verifySignedUpdateManifest()` 验证结果。随后，脚本通过一次独占 `mkdir` 预留新的最终输出根目录，把完整集合写入私有的内部暂存目录，再把该暂存目录重命名为 `ready`；只有 `ready/` 下的路径才是完整 manifest 集合。若根目录预留失败，脚本不会改动竞争方的输出。之后发生失败时，脚本只删除自己拥有的暂存目录，并且只尝试以非递归方式删除预留的根目录，因此其他内容会阻止删除。
 
 `scripts/release/verify-update-manifests.ts` 读取调用方提供的 Ed25519 公钥文件，先调用共享 parser 和签名 verifier，再执行 release 布局规则：已签名 manifest 必须只包含一个与预期 channel、消费方、平台、架构和格式匹配的产物。脚本只读取一次指定产物，并在归档解析或原生执行前拒绝 SHA-256 不匹配。基于路径的 inspector 接收包含相同快照的私有文件，ZIP 检查则直接使用内存中的字节。AppImage 检查只接收最小化环境。ZIP 与 tar 检查可跨平台运行；NSIS、DMG、AppImage 和 Deb 检查使用对应的原生 runner。这些脚本既不下载产物，也不会在仓库中保留 release 位置、密钥、签名或 manifest fixture（测试前置数据）。
 
