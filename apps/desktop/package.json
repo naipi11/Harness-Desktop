@@ -76,6 +76,7 @@
     "@harness-desktop/dsh-llm-retry": "workspace:^",
     "@harness-desktop/dsh-message-feedback": "workspace:^",
     "@harness-desktop/dsh-output-retention": "workspace:^",
+    "@harness-desktop/dsh-update-policy": "workspace:^",
     "@harness-desktop/dsh-permission-presets": "workspace:^",
     "@harness-desktop/dsh-plan-mode": "workspace:^",
     "@harness-desktop/dsh-pwsh-local": "workspace:^",

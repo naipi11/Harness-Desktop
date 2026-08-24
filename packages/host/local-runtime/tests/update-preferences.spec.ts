@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import { SettingsProvider } from '@harness-desktop/dsh-settings'
+import type { UpdateChannel } from '@harness-desktop/dsh-update-policy'
 import type { SettingsNamespace } from '@harness-desktop/dsh-settings'
 import {
+  DESKTOP_UPDATE_CHANNELS,
   DesktopUpdatePreferences,
 } from '../src/update-preferences.ts'
 
@@ -54,6 +56,12 @@ async function boot(options?: {
 }
 
 describe('DesktopUpdatePreferences', () => {
+  it('uses the shared policy release channel type for every persisted Runtime channel', () => {
+    const channels: readonly UpdateChannel[] = DESKTOP_UPDATE_CHANNELS
+
+    expect(channels).toEqual(['stable', 'beta', 'nightly'])
+  })
+
   it('defaults to stable and persists a user-selected channel through the settings provider', async () => {
     const { preferences, settings } = await boot()
 

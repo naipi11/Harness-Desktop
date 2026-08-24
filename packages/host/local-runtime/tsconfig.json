@@ -24,6 +24,9 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../util/update-policy"
+    },
+    {
       "path": "../../util/home-paths"
     },
     {

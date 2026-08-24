@@ -1,6 +1,7 @@
 /** Runtime-owned Desktop update preference and redacted outcome persistence. */
 
 import z from '@harness-desktop/schemastery'
+import type { UpdateChannel } from '@harness-desktop/dsh-update-policy'
 import {
   settingsNamespace,
   type SettingsProvider,
@@ -16,10 +17,10 @@ const SEMANTIC_VERSION_PATTERN = new RegExp([
 export const DESKTOP_UPDATE_SETTINGS_NAMESPACE = settingsNamespace('desktop-update')
 
 /** Release channels a Harness Desktop client may select. */
-export const DESKTOP_UPDATE_CHANNELS = ['stable', 'beta', 'nightly'] as const
+export const DESKTOP_UPDATE_CHANNELS = ['stable', 'beta', 'nightly'] as const satisfies readonly UpdateChannel[]
 
 /** One selected Desktop update channel. */
-export type DesktopUpdateChannel = typeof DESKTOP_UPDATE_CHANNELS[number]
+export type DesktopUpdateChannel = UpdateChannel
 
 /** Terminal states a verified updater may record without exposing implementation detail. */
 export const DESKTOP_UPDATE_OUTCOME_KINDS = ['up-to-date', 'staged', 'applied', 'rolled-back', 'failed'] as const
@@ -48,7 +49,7 @@ export interface DesktopUpdateOutcome {
   /** Candidate or current Harness Desktop semantic version. */
   readonly version: string
   /** Selected release channel at the time of the result. */
-  readonly channel: DesktopUpdateChannel
+  readonly channel: UpdateChannel
   /** Coarse verified updater result. */
   readonly kind: DesktopUpdateOutcomeKind
   /** Stable redacted cause or result code. */
@@ -60,7 +61,7 @@ export interface DesktopUpdateOutcome {
 /** One user's stored Desktop update selection and last redacted outcome. */
 export interface DesktopUpdateSettings {
   /** Release channel used by a later native updater. */
-  readonly channel: DesktopUpdateChannel
+  readonly channel: UpdateChannel
   /** Most recently committed redacted outcome, when one exists. */
   readonly lastOutcome?: DesktopUpdateOutcome | undefined
 }
@@ -89,8 +90,8 @@ function hasExactKeys(value: object, keys: readonly string[]): boolean {
  * @param value - untrusted candidate value.
  * @returns whether the value names one supported Desktop update channel.
  */
-export function isDesktopUpdateChannel(value: unknown): value is DesktopUpdateChannel {
-  return typeof value === 'string' && DESKTOP_UPDATE_CHANNELS.includes(value as DesktopUpdateChannel)
+export function isDesktopUpdateChannel(value: unknown): value is UpdateChannel {
+  return typeof value === 'string' && DESKTOP_UPDATE_CHANNELS.includes(value as UpdateChannel)
 }
 
 /**
@@ -152,7 +153,7 @@ export class DesktopUpdatePreferences {
   }
 
   /** @returns the resolved selected update channel. */
-  getChannel(): DesktopUpdateChannel {
+  getChannel(): UpdateChannel {
     return this.scope.get().channel
   }
 
@@ -161,7 +162,7 @@ export class DesktopUpdatePreferences {
    * @param channel - one accepted release channel.
    * @returns fulfillment after the serialized settings write commits.
    */
-  setChannel(channel: DesktopUpdateChannel): Promise<void> {
+  setChannel(channel: UpdateChannel): Promise<void> {
     return this.scope.update({ channel })
   }
 

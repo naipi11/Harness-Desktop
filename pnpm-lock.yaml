@@ -961,6 +961,9 @@ importers:
       '@harness-desktop/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../packages/typert/registry
+      '@harness-desktop/dsh-update-policy':
+        specifier: workspace:^
+        version: link:../../packages/util/update-policy
       '@harness-desktop/dsh-user-approval':
         specifier: workspace:^
         version: link:../../packages/interaction/user-approval
@@ -5660,6 +5663,9 @@ importers:
       '@harness-desktop/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
+      '@harness-desktop/dsh-update-policy':
+        specifier: workspace:^
+        version: link:../../util/update-policy
       '@harness-desktop/dsh-web-app':
         specifier: workspace:^
         version: link:../../bundle/web-app
@@ -8761,6 +8767,15 @@ importers:
         version: link:../../runtime-diagnostics/invariants
 
   packages/util/timeout:
+    devDependencies:
+      '@harness-desktop/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@harness-desktop/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/util/update-policy:
     devDependencies:
       '@harness-desktop/cordis':
         specifier: workspace:^

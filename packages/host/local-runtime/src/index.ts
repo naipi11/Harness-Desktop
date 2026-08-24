@@ -22,11 +22,12 @@ export type { ProcessIdentity } from './process-identity.ts'
 export type { RedactedRuntimeStatus } from './endpoint-record.ts'
 
 export type {
-  DesktopUpdateChannel,
   DesktopUpdateOutcome,
   DesktopUpdateOutcomeCode,
   DesktopUpdateOutcomeKind,
 } from './update-preferences.ts'
+
+export type { UpdateChannel as DesktopUpdateChannel } from '@harness-desktop/dsh-update-policy'
 
 export {
   createRuntimeConnector,

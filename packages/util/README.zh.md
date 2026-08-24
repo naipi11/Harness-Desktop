@@ -7,6 +7,7 @@
 | 包 | 职责 |
 |---|---|
 | [`brand/`](brand/README.md) | 提供带名义品牌的类型 |
+| [`update-policy/`](update-policy/README.md) | 校验签名更新清单并选择脱敏制品 |
 | [`paths/`](home-paths/README.md) | 解析 Harness 数据根目录和共享路径 |
 | [`timeout/`](timeout/README.md) | 提供截止时间和超时分类原语 |
 | [`retention/`](output-retention/README.md) | 限制保留文本和项集合的大小 |

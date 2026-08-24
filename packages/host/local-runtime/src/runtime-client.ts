@@ -4,11 +4,11 @@ import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { Branded } from '@harness-desktop/dsh-brand'
+import type { UpdateChannel } from '@harness-desktop/dsh-update-policy'
 import { readPrivateEndpointRecord, type PrivateEndpointRecord, type RuntimeId } from './endpoint-record.ts'
 import { resolveHarnessHome, type HarnessHomeInput } from './data-root.ts'
 import {
   isDesktopUpdateChannel,
-  type DesktopUpdateChannel,
   type DesktopUpdateOutcome,
 } from './update-preferences.ts'
 
@@ -235,7 +235,7 @@ export type RuntimeControlRequest =
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
   | { readonly operation: 'get-desktop-update-channel' }
-  | { readonly operation: 'set-desktop-update-channel'; readonly channel: DesktopUpdateChannel }
+  | { readonly operation: 'set-desktop-update-channel'; readonly channel: UpdateChannel }
   | { readonly operation: 'record-desktop-update-outcome'; readonly outcome: DesktopUpdateOutcome }
   | { readonly operation: 'observe-active-work' }
   | { readonly operation: 'stop-own-ui-work' }
@@ -247,7 +247,7 @@ export type DashboardControlRequest =
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
   | { readonly operation: 'get-desktop-update-channel' }
-  | { readonly operation: 'set-desktop-update-channel'; readonly channel: DesktopUpdateChannel }
+  | { readonly operation: 'set-desktop-update-channel'; readonly channel: UpdateChannel }
   | { readonly operation: 'observe-active-work' }
   | { readonly operation: 'stop-own-ui-work' }
 
@@ -292,13 +292,13 @@ export interface RuntimeClient {
   /** @returns the durable result after retrying only an exact retryable collision/failure state. */
   retryLegacyMigration(): Promise<LegacyMigrationState>
   /** @returns the Runtime-owned selected Desktop update channel. */
-  getDesktopUpdateChannel(): Promise<DesktopUpdateChannel>
+  getDesktopUpdateChannel(): Promise<UpdateChannel>
   /**
    * Persist one selected Desktop update channel through the shared Runtime.
    * @param channel - selected release channel.
    * @returns the committed selected channel.
    */
-  setDesktopUpdateChannel(channel: DesktopUpdateChannel): Promise<DesktopUpdateChannel>
+  setDesktopUpdateChannel(channel: UpdateChannel): Promise<UpdateChannel>
   /**
    * Persist one native updater result without exposing a location, manifest, or raw error.
    * @param outcome - fixed-format redacted updater result.
@@ -556,12 +556,12 @@ class RuntimeClientConnection implements RuntimeClient {
     return this.wire.control(this.clientId, { operation: 'retry-legacy-migration' })
   }
 
-  getDesktopUpdateChannel(): Promise<DesktopUpdateChannel> {
+  getDesktopUpdateChannel(): Promise<UpdateChannel> {
     this.ensureOpen()
     return this.wire.control(this.clientId, { operation: 'get-desktop-update-channel' })
   }
 
-  setDesktopUpdateChannel(channel: DesktopUpdateChannel): Promise<DesktopUpdateChannel> {
+  setDesktopUpdateChannel(channel: UpdateChannel): Promise<UpdateChannel> {
     this.ensureOpen()
     return this.wire.control(this.clientId, { operation: 'set-desktop-update-channel', channel })
   }
@@ -843,7 +843,7 @@ function parseLegacyMigrationState(value: unknown): LegacyMigrationState {
   }
 }
 
-function parseDesktopUpdateChannel(value: unknown): DesktopUpdateChannel {
+function parseDesktopUpdateChannel(value: unknown): UpdateChannel {
   if (!isDesktopUpdateChannel(value)) throw new RuntimeProtocolError()
   return value
 }
