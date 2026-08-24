@@ -27,6 +27,8 @@ harness web
 
 CLI 以 `@harness-desktop/cli` 发布；`dsh` 保留为兼容命令名，并使用相同的数据与 profile 布局。
 
+`harness update`（或 `dsh update`）会根据检测到的安装形式执行相应行为。npm 安装只输出 `npm update -g @harness-desktop/cli`，不会执行该命令。独立归档的校验与回滚行为见 [CLI 更新参考](apps/cli/README.md#update)。
+
 ### 从源码运行
 
 如需从仓库源码运行：
@@ -43,7 +45,7 @@ pnpm harness web
 
 ### 桌面客户端
 
-Electron 客户端支持 Windows、macOS 与 Linux。安装包发布在 [GitHub Releases](https://github.com/naipi11/Harness-Desktop/releases)。从仓库源码目录运行：
+Electron 客户端支持 Windows、macOS 与 Linux。安装包分发已具备签名前准备，但仍受审批约束：Windows 签名、macOS 公证、更新 manifest 签名、npm 发布、更新产物上传及创建 GitHub Release 均需分别授权。从仓库源码目录运行：
 
 ```sh
 git clone https://github.com/naipi11/Harness-Desktop.git
@@ -59,7 +61,17 @@ pnpm desktop
 pnpm --filter @harness-desktop/dsh-desktop run package
 ```
 
-安装包目标为 Windows NSIS、macOS universal DMG，以及 Linux AppImage 和 deb。如需免安装目录而非安装包，将 `package` 替换为 `package:dir`。产物位于 `apps/desktop/release/`。
+发布产物与证据矩阵如下：
+
+| 平台 | Desktop 产物 | 独立 CLI 产物 | 原生证据负责人 |
+|---|---|---|---|
+| Windows | NSIS | ZIP | Windows CI |
+| macOS | Universal DMG | tar.gz | macOS CI，包括 `lipo` 检查 |
+| Linux | AppImage 与 Deb | tar.gz | Linux CI |
+
+CI 使用 `--publish never` 构建每一行；在当前平台进行的本地构建不能证明其他操作系统的产物。如需免安装目录而非安装包，将 `package` 替换为 `package:dir`。本地产物位于 `apps/desktop/release/`。
+
+Desktop 与 CLI 的发布默认值均会拒绝未配置的更新：代码中不含生产更新公钥、不可变 HTTPS 源或发布位置，因此未配置可实际运行的自动更新。启用更新前，必须对这些先决条件以及上述每项外部发布审批分别进行审计。
 
 ## 社区与支持
 

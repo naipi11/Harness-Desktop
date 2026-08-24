@@ -27,6 +27,8 @@ For a background server, use `harness web --daemon` (or `--background`); the par
 
 The CLI is published as `@harness-desktop/cli`; `dsh` remains a compatible command name with the same data and profile layout.
 
+`harness update` (or `dsh update`) follows the detected install form. An npm installation prints `npm update -g @harness-desktop/cli` but does not run it. See the [CLI update reference](apps/cli/README.md#update) for standalone verification and rollback behavior.
+
 ### Run from source
 
 To run from a repository checkout:
@@ -43,7 +45,7 @@ pnpm harness web
 
 ### Desktop app
 
-The Electron client supports Windows, macOS, and Linux. Installers are published on [GitHub Releases](https://github.com/naipi11/Harness-Desktop/releases). To run from a repository checkout:
+The Electron client supports Windows, macOS, and Linux. Installer distribution is signing-ready but approval-gated: Windows signing, macOS notarization, update-manifest signing, npm publication, update upload, and GitHub Release creation each require separate authorization. To run from a repository checkout:
 
 ```sh
 git clone https://github.com/naipi11/Harness-Desktop.git
@@ -59,7 +61,17 @@ To build an installer for the current platform:
 pnpm --filter @harness-desktop/dsh-desktop run package
 ```
 
-The installer matrix is Windows NSIS, macOS universal DMG, and Linux AppImage and deb. For an unpacked directory instead of an installer, replace `package` with `package:dir`. Artifacts land in `apps/desktop/release/`.
+The release artifact and evidence matrix is:
+
+| Platform | Desktop artifact | Standalone CLI artifact | Native evidence owner |
+|---|---|---|---|
+| Windows | NSIS | ZIP | Windows CI |
+| macOS | Universal DMG | tar.gz | macOS CI, including `lipo` inspection |
+| Linux | AppImage and Deb | tar.gz | Linux CI |
+
+CI builds every row with `--publish never`; a local current-platform build does not prove another operating system's artifacts. For an unpacked directory instead of an installer, replace `package` with `package:dir`. Local artifacts land in `apps/desktop/release/`.
+
+Desktop and CLI shipped defaults are fail-closed: they contain no production update public key, immutable HTTPS origin, or release location, so no live automatic update is configured. Enabling updates requires those prerequisites to be audited separately from every external release approval above.
 
 ## Community and support
 

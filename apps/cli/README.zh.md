@@ -31,7 +31,32 @@ harness update
 
 原公开 profile、插件管理、headless profile、patch 和配置 dump 命令不属于该产品语法。`--profile` 会被显式拒绝。一次性任务使用 `run`，Dashboard 使用 `web`。
 
-对于已配置的独立归档，`update` 会在同级切换前校验签名候选及其成员列表，使用捆绑 Node 运行时检查捆绑的 `harness --help`，并在该健康检查失败时恢复保留的 bundle。ZIP 归档会从其已校验摘要的捆绑 manifest 恢复可执行路径；此命令绝不会创建 Runtime 或 Web lease。
+## 更新
+
+`harness update` 与 `dsh update` 不接受参数，并且只根据解析后的安装布局选择行为：
+
+| 安装形式 | 行为 |
+|---|---|
+| npm | 只有解析到 `node_modules/@harness-desktop/cli` 布局时才符合条件。该命令输出 `npm update -g @harness-desktop/cli` 并成功退出，不会运行 npm，也不会加载候选。 |
+| 独立 ZIP 或 tar.gz | 只有解析到独立 bundle 根目录下的 `cli/package/lib` 位置时才符合条件。经过单独配置的发行包可以提供已审计的信任配置与一个候选源。 |
+| 源码或其他布局 | 该安装不受支持；命令向 stderr 输出 `CLI update failed.`，并以 `1` 退出。 |
+
+当前独立构建既不提供生产信任配置，也不提供发布源。未配置公钥或允许源时，`update` 会返回代码为 `unconfigured-trust-root` 的 `up-to-date`，输出 `No update available.`，并在任何候选 I/O 或文件系统变更之前以 `0` 退出。已校验候选的版本不高于当前版本时，会以代码 `version-not-newer` 产生相同的可见结果。
+
+独立发行包经过单独配置后，`update` 会使用共享签名 manifest 策略，为当前平台与架构选择更新的 stable CLI 目标。该命令会先校验签名、不可变 HTTPS 源、归档摘要、完整成员集合及可执行路径，再发布随机同级候选。事务把当前 bundle 保留到另一个随机同级目录，然后使用候选捆绑的 Node 可执行文件运行 `cli/package/lib/bin.js --help`；它绝不会使用 `PATH` 中的 Node。
+
+健康的候选会成为当前 bundle，保留的同级目录随后被删除。健康检查失败时，事务会移开候选、恢复保留的 bundle，并且仅在清理成功后报告 `rolled-back`。恢复失败时会报告 `transaction-failed`，不会声称已经回滚。该事务绝不会读取、创建或修改 `HARNESS_HOME`，也不会创建 Runtime 或 Web lease。
+
+当前独立更新结果如下：
+
+| 结果 | 可见输出 | 退出码 |
+|---|---|---|
+| `up-to-date`（`unconfigured-trust-root` 或 `version-not-newer`） | 向 stdout 输出 `No update available.` | `0` |
+| `applied` | 向 stdout 输出 `CLI update applied.` | `0` |
+| `rolled-back` | 向 stderr 输出 `CLI update rolled back.` | `1` |
+| `failed`（`candidate-rejected`、`transaction-failed` 或 `unsupported-installation`） | 向 stderr 输出 `CLI update failed.` | `1` |
+
+打包平台与原生 CI 证据范围由根目录的[发布产物矩阵](../../README.md#desktop-app)统一说明。通过本地检查不会配置生产更新信任，也不会授权签名、公证、发布、上传或创建 GitHub Release。
 
 ## Profiles
 
