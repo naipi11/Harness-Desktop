@@ -3199,3 +3199,4 @@ export interface Config {
 - `@harness-desktop/dsh-typert-generator`（[`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts)）
 - `@harness-desktop/dsh-typert-protocol`（[`packages/typert/protocol/src/index.ts`](../packages/typert/protocol/src/index.ts)）
 - `@harness-desktop/dsh-typert-registry`（[`packages/typert/registry/src/index.ts`](../packages/typert/registry/src/index.ts)）
+- `@harness-desktop/dsh-update-policy`（[`packages/util/update-policy/src/index.ts`](../packages/util/update-policy/src/index.ts)）
