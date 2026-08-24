@@ -7,6 +7,7 @@ import {
   type RedactedRuntimeDiagnostic,
   type RuntimeClient,
 } from '@harness-desktop/dsh-host-local-runtime'
+import { EMPTY_UPDATE_TRUST } from '@harness-desktop/dsh-update-policy'
 import {
   app,
   BrowserWindow,
@@ -28,6 +29,8 @@ import {
 } from './close-policy.ts'
 import { registerDesktopIpc } from './desktop-ipc.ts'
 import { DesktopReadiness } from './readiness.ts'
+import { DesktopUpdateService } from './update/service.ts'
+import { createUnconfiguredStageAdapter } from './update/staged-install.ts'
 import {
   RuntimeDashboardController,
   type DesktopStartupResult as ControllerStartupResult,
@@ -44,6 +47,15 @@ import {
 
 const runtimeConnector = createRuntimeConnector()
 const desktopReadiness = new DesktopReadiness()
+const desktopUpdateService = new DesktopUpdateService({
+  appId: productMetadata.appId,
+  currentVersion: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  trust: EMPTY_UPDATE_TRUST,
+  adapter: createUnconfiguredStageAdapter(),
+})
+void desktopUpdateService
 const startupTasks = new Set<Promise<unknown>>()
 const recoveryDiagnostics = new WeakMap<BrowserWindow, RedactedRuntimeDiagnostic>()
 const recoveryFlights = new WindowRecoveryFlights<BrowserWindow>()

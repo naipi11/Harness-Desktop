@@ -48,6 +48,7 @@ async function runAuthenticatedDashboardJourney(fixture: DesktopRuntimeFixture):
   await expect.poll(() => fixture.desktopOutput().split(/\r?\n/u).filter(
     line => line === '{"kind":"desktop-dashboard-ready","version":1}',
   ).length).toBe(1)
+  expect(fixture.desktopOutput()).not.toMatch(/candidate-(?:staged|applied)|desktop-health-check-failed/u)
   const notice = page.getByRole('dialog').getByRole('button', { name: 'Continue' })
   if (await notice.count()) await notice.click()
   await expect(page.getByRole('button', { name: 'Choose workspace', exact: true })).toContainText('desktop-workspace')

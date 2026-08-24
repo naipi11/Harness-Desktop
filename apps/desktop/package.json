@@ -13,6 +13,7 @@
     "prepackage:dir": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure",
     "package:dir": "electron-builder --dir --config electron-builder.config.mjs --publish never",
     "test": "vitest run --root ../.. apps/desktop/tests",
+    "test:update": "vitest run --root ../.. apps/desktop/tests/update-service.spec.ts apps/desktop/tests/update-manifest.spec.ts",
     "test:e2e": "playwright test --grep-invert unpacked",
     "test:e2e:cross-client": "playwright test --config playwright.config.ts tests/cross-client-runtime.e2e.ts",
     "test:e2e:unpacked": "pnpm run build && pnpm run package:dir && playwright test --config playwright.config.ts tests/desktop-dashboard.e2e.ts --grep unpacked",

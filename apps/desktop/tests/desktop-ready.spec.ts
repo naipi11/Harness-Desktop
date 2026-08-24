@@ -2,7 +2,11 @@
 
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
-import { DesktopReadiness, type DashboardReadyWindow } from '../src/main/readiness.ts'
+import {
+  DesktopReadiness,
+  isDesktopReadyAcknowledgement,
+  type DashboardReadyWindow,
+} from '../src/main/readiness.ts'
 
 const ORIGIN = 'http://127.0.0.1:43123'
 
@@ -26,6 +30,14 @@ class FakeWindow implements DashboardReadyWindow {
 }
 
 describe('Desktop Dashboard readiness', () => {
+  it.each([
+    ['a non-enumerable extra field', () => Object.defineProperty({ kind: 'desktop-dashboard-ready', version: 1 }, 'extra', { value: true })],
+    ['an enumerable symbol field', () => ({ kind: 'desktop-dashboard-ready', version: 1, [Symbol('extra')]: true })],
+    ['an acknowledgement accessor', () => Object.defineProperty({ version: 1 }, 'kind', { enumerable: true, get: () => 'desktop-dashboard-ready' })],
+  ])('rejects %s', (_name, create) => {
+    expect(isDesktopReadyAcknowledgement(create())).toBe(false)
+  })
+
   it('writes one constant JSONL record only after exact-origin authenticated readiness', async () => {
     const chunks: string[] = []
     const readiness = new DesktopReadiness({ write: chunk => chunks.push(chunk) })

@@ -33,6 +33,30 @@ export const desktopReadyAcknowledgement: DesktopReadyAcknowledgement = {
   version: 1,
 }
 
+/**
+ * Checks the exact public acknowledgement accepted after authenticated Dashboard boot.
+ * @param value - untrusted candidate-process result.
+ * @returns whether the result has only the established acknowledgement fields and values.
+ */
+export function isDesktopReadyAcknowledgement(value: unknown): value is DesktopReadyAcknowledgement {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  if (Object.getPrototypeOf(value) !== Object.prototype) return false
+  const keys = Reflect.ownKeys(value)
+  if (keys.length !== 2 || !keys.includes('kind') || !keys.includes('version')) return false
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const kind = descriptors.kind
+  const version = descriptors.version
+  return isAcknowledgementField(kind, desktopReadyAcknowledgement.kind)
+    && isAcknowledgementField(version, desktopReadyAcknowledgement.version)
+}
+
+function isAcknowledgementField(descriptor: PropertyDescriptor | undefined, expected: unknown): boolean {
+  return descriptor !== undefined
+    && descriptor.enumerable === true
+    && 'value' in descriptor
+    && descriptor.value === expected
+}
+
 const READY_RECORD = `${JSON.stringify(desktopReadyAcknowledgement)}\n`
 const READY_PROBE = `new Promise(resolve => {
   const ready = () => document.querySelector('[data-harness-dashboard-ready="true"]') !== null
