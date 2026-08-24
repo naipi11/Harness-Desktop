@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-24-cross-client-runtime-fixture.md
-2026-08-24-cross-client-runtime-fixture.md: 5b6f99127cff47b25464aea9eaea5289f4e06a41
-2026-08-24-cross-client-runtime-fixture.zh.md: 627d1f09eaa899e7f05cce6f85c1be5db15e91ea
+2026-08-24-cross-client-runtime-fixture.md: 4ae96e8f6863c99033f1917a060bdcc040e26a9e
+2026-08-24-cross-client-runtime-fixture.zh.md: c26cf551a912cd55a5729a3cad1b92b5979222a4

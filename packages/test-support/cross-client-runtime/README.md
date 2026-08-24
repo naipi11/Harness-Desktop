@@ -26,6 +26,8 @@ The Web adapter dynamically imports the physical built public local-Runtime entr
 
 The cumulative Web acceptance first creates state through built `harness run --json`: the known Workspace remains unchanged and the cwd-only CLI Session appears under Ungrouped. The real Dashboard dismisses its first-use notice, expands and selects that Session through accessible UI, renders the existing prompt/reply, submits a second prompt through the composer, and confirms both turns through the fixture's public history API. This semantic DOM coverage changes no product-visible string, so it requires no snapshot update.
 
+The Desktop adapter refuses a missing built `apps/desktop/out/main/index.js` and launches that real Electron entry with only the fixture roots and system executable paths; it passes no provider key, Runtime token, endpoint path, or `DSH_HOME`. Desktop itself attaches the already healthy Runtime through its product connector. The adapter owns only the Playwright-returned Electron child, requests graceful application closure before a bounded exact-child `SIGKILL`, and still releases the Playwright application after an unexpected child exit. The cumulative Desktop lane waits for the authenticated-ready workbench, selects the CLI Session under Ungrouped, appends through the native renderer, proves the public history survives the kill, then launches Desktop again and renders the same history. Linux consumer CI runs that built lane under `xvfb-run`; it adds no product-visible string or snapshot.
+
 ## Model Experience
 
 None, as the fixture drives ordinary public prompt and terminal operations while the canonical Runtime's composed plugins own every model-visible input.

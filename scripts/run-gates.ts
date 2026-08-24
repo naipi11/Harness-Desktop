@@ -450,6 +450,7 @@ function ciConsumerGates(): Gate[] {
     }),
     snapshotGate(validatedBuild),
     webSnapshotGate(validatedBuild),
+    desktopCrossClientGate(validatedBuild),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
@@ -469,6 +470,19 @@ function webSnapshotGate(needs: string[]): Gate {
     env: { DSH_SNAPSHOT: 'replay' },
     needs,
   })
+}
+
+/** Run the real Electron shared-state lane inside the Linux display server supplied by Playwright dependencies. */
+function desktopCrossClientGate(needs: string[]): Gate {
+  const invocation = pnpmInvocation(['run', 'desktop:e2e:cross-client'])
+  return {
+    id: 'desktop-cross-client',
+    label: 'Desktop cross-client acceptance',
+    displayCommand: 'xvfb-run -a pnpm run desktop:e2e:cross-client',
+    command: 'xvfb-run',
+    args: ['-a', invocation.command, ...invocation.args],
+    needs,
+  }
 }
 
 function ciWindowsBlockingGates(): Gate[] {

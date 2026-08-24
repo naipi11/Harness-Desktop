@@ -26,6 +26,8 @@ Web 适配器会动态 import 物理构建版 local-Runtime 公开入口，并�
 
 累积式 Web 验收先通过构建版 `harness run --json` 创建状态：已知 Workspace 保持不变，只按 cwd 创建的 CLI Session 出现在 Ungrouped 下。真实 Dashboard 会通过可访问 UI 关闭首次使用提示、展开并选择该 Session，渲染已有提示词／回复，通过输入框提交第二条提示词，再由 fixture 的公开历史 API 确认两个轮次。该语义 DOM 覆盖没有更改任何产品可见字符串，因此无需更新 snapshot。
 
+Desktop 适配器会在缺少构建版 `apps/desktop/out/main/index.js` 时拒绝运行，并只以 fixture 根目录和系统可执行路径启动该真实 Electron 入口；它不传递提供方 key、Runtime token、端点路径或 `DSH_HOME`。Desktop 自己通过产品 connector 附加到已经健康的 Runtime。适配器只拥有 Playwright 返回的 Electron 子进程，先请求应用优雅关闭，再在有界时间内只对该子进程发送 `SIGKILL`，并在子进程意外退出后仍释放 Playwright 应用。累积式 Desktop 通道会等待认证就绪的 workbench、在 Ungrouped 下选择 CLI Session、通过原生 renderer 追加内容、证明公开历史在强制终止后仍存在，再次启动 Desktop 并渲染同一历史。Linux consumer CI 在 `xvfb-run` 下运行该构建版通道；它不引入产品可见字符串或 snapshot。
+
 ## 模型体验
 
 无，因为 fixture 只驱动普通的公开提示词和终端操作，所有模型可见输入均由规范运行时的组合插件负责。

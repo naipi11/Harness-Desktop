@@ -20,11 +20,13 @@ CLI、Web 和 Desktop 验收需要一个共享的本地运行时以及耐久的�
 
 应用所属的 Web 适配器会动态 import 物理构建版 local-Runtime 公开入口，拒绝缺失的 Web dist，以 `start: false` 连接，并创建独立的 Dashboard 附加项。它只把 handoff 写入 fixture 平台 home 下随机命名、独占创建且采用 POSIX 仅所有者 mode 的表单文件；Chromium 打开干净的文件 URL，只提交一个含 handoff 的 POST 正文，跟随干净的运行时重定向，并等待认证就绪标记与真实 Engineering workbench。适配器分别关闭页面、浏览器上下文、Dashboard 附加项、运行时客户端和 bootstrap 文件；暂时性所有者关闭失败会重试，尚未解决的打开与清理双重失败只聚合稳定的阶段错误。实时探针只返回页面与不含 token 的审计，绝不返回 handoff、cookie、请求内容、storage 内容、console 内容或 history 记录。
 
+应用所属的 Desktop 适配器要求物理构建版 Electron Main 入口，以隔离的 fixture 根目录环境启动它，并让 Desktop 自己的 `start: true` connector 附加到已经健康的 Runtime。Desktop 通道通过 renderer 等待真实的就绪 workbench、首次使用提示和 Ungrouped 选择。其探针只保留 Playwright 返回的子进程：意外退出只会向该准确子进程发送 `SIGKILL` 并等待退出；正常或崩溃后的句柄关闭仍会调用 Playwright 应用释放，使 Chromium 用户数据文件在删除 fixture 根目录前结束。有限时的优雅关闭只会回退到该子进程；打开失败时会重试一次所属关闭，并只报告稳定的脱敏错误。
+
 启动把同级目录创建视为一个事务：只有在每个尝试结束后才开始回滚。每个就绪状态异步公开操作都会在首次 await 之前同步进入准入计数器。运行时停止或清理会先改变状态，等待该计数器归零，再对每个应用句柄、终端、Dashboard、API 客户端和基础客户端执行关闭尝试。任何未确认关闭的所有者都会在运行时标准输入、mock 关闭或根目录删除之前中止清理；成功关闭的所有者会保留记录，失败的 one-flight 关闭以及静默前失败的停止／清理 flight 会被清除以供重试。状态改变后才创建的句柄会先注册并关闭，再返回拒绝，不会以存活状态返回。只有所有者全部关闭后，运行时关闭才会结束标准输入并恰好结束一次。随后 mock 关闭与根目录删除分别结算：mock 失败会保留根目录，根目录失败后的重试会跳过已关闭的 mock，已经结算的阶段绝不重复。已观测到的异常运行时退出只记录一个 stopped 事件，并在所有资源结束后保留其终态拒绝的停止／清理 flight。必须存在的 Cordis `./invariant` 配套项保持为有说明的空 installer。
 
 ## 验证
 
-宿主测试注入文件系统、进程、健康状态、API 和应用适配器，验证根目录所有权、不传递环境中的 `DSH_HOME`、等待全部目录结束的启动回滚、非启动状态重试、状态观测、延迟状态／CLI／应用／终端操作的同步准入、迟到句柄关闭、清理顺序、永久所有者阻止清理、暂时性应用／终端关闭重试、成功的并发清理、异常停止幂等性、mock 先于根目录的顺序、mock／根目录独立重试、准确私有值和带标签标记的 CLI 拒绝、清理开始后的准入拒绝、稳定的独立失败聚合、强制终止兜底、启动失败清理、缺少停止事件时拒绝，以及禁止的浏览器／Electron／客户端 fixture 依赖。纳入覆盖率的 Dashboard 载体测试会拒绝不安全的 scheme／host／port／path／query／fragment／凭据、跨 origin cookie 请求、无效重定向响应，以及缺失或畸形的 cookie，同时验证仅正文 handoff 交换、准确 handoff／cookie 比较、值清除和不含密钥的诊断。包级构建产物通道导入该包构建后的公开入口，拒绝继承恶意 Node loader，然后通过规范运行时与公开 mock 服务器验证公开健康状态、工作区／会话／历史持久化、包含自动标题请求的成功场景、停滞的终端工作、准确的同一会话忙碌拒绝、取消和清理。应用所属的 CLI 产物通道会导入同一个构建版公开 fixture，运行两个构建版命令名，拒绝每个开头或中间的空白物理 JSONL 记录且只允许一个末尾换行，并验证准确的会话 id、只按 cwd 创建的 Ungrouped 状态、提示词／回复历史、不含密钥的输出和完成清理后的生命周期。应用所属的 Web 通道会导入物理构建版 fixture 与 connector 入口，拒绝缺失的 Web dist，通过仅正文 handoff、首次使用提示、Ungrouped 选择、已有 transcript 与真实输入框追加来驱动实际 Chromium，再要求公开历史收敛、不含 token 的请求／DOM／history／storage／console 证据、无 page 或 console 错误以及完成清理后的生命周期。针对性适配器覆盖要求有界清理重试，并要求打开与清理同时失败时返回稳定且不含密钥的聚合错误。该通道断言已有语义 DOM，未引入产品可见字符串，因此不更改 snapshot。V8 逐文件门禁只排除 `cross-client-defaults.ts`，其中已声明二进制命令、经过清理的进程环境、公开 mock 与公开 connector 的粘合代码会在插桩单元测试程序之外执行；生命周期、状态与 Dashboard 安全模块仍受 100% 逐文件门禁约束。
+宿主测试注入文件系统、进程、健康状态、API 和应用适配器，验证根目录所有权、不传递环境中的 `DSH_HOME`、等待全部目录结束的启动回滚、非启动状态重试、状态观测、延迟状态／CLI／应用／终端操作的同步准入、迟到句柄关闭、清理顺序、永久所有者阻止清理、暂时性应用／终端关闭重试、成功的并发清理、异常停止幂等性、mock 先于根目录的顺序、mock／根目录独立重试、准确私有值和带标签标记的 CLI 拒绝、清理开始后的准入拒绝、稳定的独立失败聚合、强制终止兜底、启动失败清理、缺少停止事件时拒绝，以及禁止的浏览器／Electron／客户端 fixture 依赖。纳入覆盖率的 Dashboard 载体测试会拒绝不安全的 scheme／host／port／path／query／fragment／凭据、跨 origin cookie 请求、无效重定向响应，以及缺失或畸形的 cookie，同时验证仅正文 handoff 交换、准确 handoff／cookie 比较、值清除和不含密钥的诊断。包级构建产物通道导入该包构建后的公开入口，拒绝继承恶意 Node loader，然后通过规范运行时与公开 mock 服务器验证公开健康状态、工作区／会话／历史持久化、包含自动标题请求的成功场景、停滞的终端工作、准确的同一会话忙碌拒绝、取消和清理。应用所属的 CLI 产物通道会导入同一个构建版公开 fixture，运行两个构建版命令名，拒绝每个开头或中间的空白物理 JSONL 记录且只允许一个末尾换行，并验证准确的会话 id、只按 cwd 创建的 Ungrouped 状态、提示词／回复历史、不含密钥的输出和完成清理后的生命周期。应用所属的 Web 通道会导入物理构建版 fixture 与 connector 入口，拒绝缺失的 Web dist，通过仅正文 handoff、首次使用提示、Ungrouped 选择、已有 transcript 与真实输入框追加来驱动实际 Chromium，再要求公开历史收敛、不含 token 的请求／DOM／history／storage／console 证据、无 page 或 console 错误以及完成清理后的生命周期。应用所属的 Desktop 通道会导入物理构建版 fixture 与 Electron Main 入口，通过原生 renderer 运行 CLI 创建的 Ungrouped Session、由公开历史证明追加内容、只杀死准确的 Desktop 子进程、证明 Runtime 保持就绪，并重新启动 Desktop 渲染原有和追加的 transcript。针对性 Desktop 适配器测试要求优雅关闭回退、准确子进程退出确认和崩溃后 Playwright 释放；Linux consumer gate 在 built-package invariants 之后通过 `xvfb-run` 运行该通道。这些通道断言已有语义 DOM，未引入产品可见字符串，因此不更改 snapshot。V8 逐文件门禁只排除 `cross-client-defaults.ts`，其中已声明二进制命令、经过清理的进程环境、公开 mock 与公开 connector 的粘合代码会在插桩单元测试程序之外执行；生命周期、状态与 Dashboard 安全模块仍受 100% 逐文件门禁约束。
 
 ## 曾考虑的替代方案
 
@@ -33,6 +35,8 @@ CLI、Web 和 Desktop 验收需要一个共享的本地运行时以及耐久的�
 **检查运行时存储和端点文件**：不予采纳。它们属于私有恢复机制，并且可能在经过认证的载体不可用时让测试误判为就绪。直接格式测试仍由各自所属包负责。
 
 **使用 replay 适配器或仅源码后端**：不予采纳。跨客户端发布验收必须执行交付的提供方路径和构建版运行时路径。公开 mock 服务器可以提供确定性的成功与停滞行为，而不会绕过 HTTP/SSE（Server-Sent Events）。
+
+**复用 Desktop Runtime fixture**：不予采纳。它会读取私有端点记录并直接 seed 持久化。跨客户端 Desktop 通道只启动公开 fixture Runtime，再使用 Desktop 的产品 connector 和 renderer。
 
 **对成功、标题生成和停滞使用一个混合 mock 脚本**：不予采纳。自动标题请求是独立的模型请求，其时序不应决定停滞步骤。构建验收使用独立的可重复成功 fixture 和可重复停滞 fixture。
 

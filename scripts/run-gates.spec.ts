@@ -262,7 +262,7 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 10,
+      workers: 11,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -273,6 +273,7 @@ describe('Node 24 lane ownership', () => {
       'lint-and-duplication',
       'snapshot',
       'web-snapshot',
+      'desktop-cross-client',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
@@ -283,6 +284,7 @@ describe('Node 24 lane ownership', () => {
     for (const id of [
       'snapshot',
       'web-snapshot',
+      'desktop-cross-client',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
@@ -302,6 +304,12 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
+    })
+    expect(subject.find(item => item.id === 'desktop-cross-client')).toMatchObject({
+      displayCommand: 'xvfb-run -a pnpm run desktop:e2e:cross-client',
+      command: 'xvfb-run',
+      args: ['-a', process.execPath, '/private/pnpm.cjs', 'run', 'desktop:e2e:cross-client'],
+      needs: ['built-package-invariants'],
     })
   })
 

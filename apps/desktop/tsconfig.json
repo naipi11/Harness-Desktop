@@ -19,6 +19,14 @@
     "tests",
     "../../scripts/release/verify-desktop-artifacts.ts"
   ],
+  // The cross-client Electron lane starts a Host Runtime and imports the
+  // Host-only fixture. Its program belongs to tsconfig.host.json with the
+  // other Host browser-process acceptance tests, not this Desktop app face.
+  "exclude": [
+    "tests/cross-client-runtime.e2e.ts",
+    "tests/support/cross-client-desktop-adapter.ts",
+    "tests/support/cross-client-desktop-adapter.spec.ts"
+  ],
   "references": [
     {
       "path": "../../packages/host/local-runtime"
