@@ -75,18 +75,21 @@ describe('CLI update', () => {
     }
   })
 
-  it('keeps a standalone installation untouched while production trust is empty', async () => {
+  it('fails closed without candidate or filesystem I/O while production trust is empty', async () => {
     const fixture = await standaloneFixture('healthy')
+    const calls: string[] = []
     try {
       const before = await readFile(join(fixture.root, 'version'), 'utf8')
       const result = await runUpdateInvocation({
         entryPath: fixture.entryPath,
         version: '1.0.0',
         stdout: { write: () => true },
-        loadCandidate: async () => { throw new Error('empty trust must not load a candidate') },
+        loadCandidate: async () => { calls.push('load'); throw new Error('empty trust must not load a candidate') },
+        operations: forbiddenOperations(calls),
       })
 
-      expect(result).toEqual({ kind: 'up-to-date', code: 'unconfigured-trust-root' })
+      expect(result).toEqual({ kind: 'failed', code: 'unconfigured-update-source' })
+      expect(calls).toEqual([])
       await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe(before)
     } finally {
       await fixture.close()
@@ -111,6 +114,24 @@ describe('CLI update', () => {
       await fixture.close()
     }
   }, 60_000)
+
+  it('reports retained cleanup failure after a healthy candidate instead of reporting fully applied', async () => {
+    const fixture = await standaloneFixture('healthy')
+    try {
+      const result = await update(fixture, '1.0.0', '1.1.0', {
+        rm: async (path, options) => {
+          if (path.includes('.retained-')) throw new Error('fixture retained cleanup failure')
+          await rm(path, options)
+        },
+      }, process.platform, async () => true)
+
+      expect(result).toEqual({ kind: 'applied-with-cleanup-failure', code: 'retained-cleanup-failed', version: '1.1.0' })
+      await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe('1.1.0')
+      await expect(retainedVersions(fixture.root)).resolves.toEqual(['1.0.0'])
+    } finally {
+      await fixture.close()
+    }
+  })
 
   it('restores the retained standalone installation when the bundled health check fails', async () => {
     const fixture = await standaloneFixture('unhealthy')

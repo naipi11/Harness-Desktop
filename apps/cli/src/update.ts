@@ -17,11 +17,12 @@ import {
 /** Result of one package-manager or standalone CLI update invocation. */
 export type UpdateInvocationResult =
   | { readonly kind: 'managed-by-npm' }
-  | { readonly kind: 'up-to-date'; readonly code: 'unconfigured-trust-root' | 'version-not-newer' }
+  | { readonly kind: 'up-to-date'; readonly code: 'version-not-newer' }
   | { readonly kind: 'staged'; readonly version: string }
   | { readonly kind: 'applied'; readonly version: string }
+  | { readonly kind: 'applied-with-cleanup-failure'; readonly code: 'retained-cleanup-failed'; readonly version: string }
   | { readonly kind: 'rolled-back'; readonly version: string }
-  | { readonly kind: 'failed'; readonly code: 'candidate-rejected' | 'transaction-failed' | 'unsupported-installation' }
+  | { readonly kind: 'failed'; readonly code: 'candidate-rejected' | 'transaction-failed' | 'unconfigured-update-source' | 'unsupported-installation' }
 
 /** Signed archive bytes supplied by a configured release source. */
 interface LoadedCandidate {
@@ -89,7 +90,7 @@ export async function runUpdateInvocation(options: UpdateInvocationOptions): Pro
   const operations = { ...defaultOperations, ...options.operations }
   const trust = options.trust ?? EMPTY_UPDATE_TRUST
   if (trust.allowedOrigins.length === 0 || Object.keys(trust.publicKeys).length === 0) {
-    return { kind: 'up-to-date', code: 'unconfigured-trust-root' }
+    return { kind: 'failed', code: 'unconfigured-update-source' }
   }
   if (options.loadCandidate === undefined) return { kind: 'failed', code: 'transaction-failed' }
 
@@ -176,7 +177,11 @@ async function applyStandaloneCandidate(
     ? candidateIsHealthy(layout.root, platform)
     : healthCheck(layout.root, platform)
   if (await healthy) {
-    try { await operations.rm(retained, { recursive: true, force: true }) } catch {}
+    try {
+      await operations.rm(retained, { recursive: true, force: true })
+    } catch {
+      return { kind: 'applied-with-cleanup-failure', code: 'retained-cleanup-failed', version }
+    }
     return { kind: 'applied', version }
   }
   const displaced = `${layout.root}.failed-${randomUUID()}`

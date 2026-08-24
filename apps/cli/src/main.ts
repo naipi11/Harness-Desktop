@@ -117,10 +117,17 @@ function settleUpdateResult(
     case 'applied':
       io.stdout.write('CLI update applied.\n')
       return 0
+    case 'applied-with-cleanup-failure':
+      io.stderr.write('CLI update applied, but cleanup failed.\n')
+      return 1
     case 'rolled-back':
       io.stderr.write('CLI update rolled back.\n')
       return 1
     case 'failed':
+      if (result.code === 'unconfigured-update-source') {
+        io.stderr.write('CLI update unavailable [unconfigured-update-source]. Install a current standalone release.\n')
+        return 1
+      }
       io.stderr.write('CLI update failed.\n')
       return 1
     default:
