@@ -20,11 +20,11 @@ The CLI owns its package-manager guidance and standalone sibling transaction wit
 
 ## Release evidence and approvals
 
-`writeUpdateManifests()` prepares every target manifest in memory, reserves the final output root with one exclusive directory creation, writes the set into a private inner stage, and renames that stage to `ready`. Only `ready/<manifest>` paths are complete and consumable. A competing root owner remains untouched, and failure cleanup never recursively removes the reserved root.
+`writeUpdateManifests()` prepares every target manifest in memory, reserves the final output root with one exclusive directory creation, writes the set into a private inner stage, and renames that stage to `ready`. After reservation, the builder publishes and returns `ready/<manifest>` paths only after the inner rename. Current consumers do not enforce manifest paths; consumer-side path enforcement remains an additional requirement. A competing root owner remains untouched, and failure cleanup never recursively removes the reserved root.
 
 The credential-free Desktop artifact workflow packages with `--publish never`. Native CI owns Windows NSIS and CLI ZIP evidence, macOS universal DMG and CLI tar evidence with `lipo` inspection, and Linux AppImage, Deb, and CLI tar evidence. One host's local or cached artifacts do not prove another native row or a fresh independent archive.
 
-Production update trust remains a separate operator prerequisite: the public key, immutable HTTPS origin, and release location require independent audit before a caller can configure either updater. Windows signing, macOS notarization, production update-manifest signing, npm publication, update upload, and GitHub Release creation are separate approval actions. The manual candidate workflow only validates that exactly one future operation was selected; it has no credentials, release permissions, environment, or external-action step.
+Production update trust remains a separate operator prerequisite: the public key, configured exact HTTPS origin, and release location require independent audit before a caller can configure either updater. Windows signing, macOS notarization, production update-manifest signing, npm publication, update upload, and GitHub Release creation are separate approval actions. The manual candidate workflow only validates that exactly one future operation was selected; it has no credentials, release permissions, environment, or external-action step.
 
 ## Alternatives considered
 
@@ -35,4 +35,4 @@ Production update trust remains a separate operator prerequisite: the public key
 
 ## Consequences
 
-Repository verification can establish signing readiness without configuring live automatic updates or granting external release authority. Operators must provide audited production trust and obtain each external approval separately. Native evidence remains platform-owned, and consumers must reject manifest paths outside `ready/`.
+Repository verification can establish signing readiness without configuring live automatic updates or granting external release authority. Operators must provide audited production trust and obtain each external approval separately. Native evidence remains platform-owned, and current consumers do not reject manifest paths outside `ready/`.

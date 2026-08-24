@@ -38,12 +38,12 @@ harness update
 | 安装形式 | 行为 |
 |---|---|
 | npm | 只有解析到 `node_modules/@harness-desktop/cli` 布局时才符合条件。该命令输出 `npm update -g @harness-desktop/cli` 并成功退出，不会运行 npm，也不会加载候选。 |
-| 独立 ZIP 或 tar.gz | 只有解析到独立 bundle 根目录下的 `cli/package/lib` 位置时才符合条件。经过单独配置的发行包可以提供已审计的信任配置与一个候选源。 |
+| 独立 ZIP 或 tar.gz | 解析到独立 bundle 根目录下 `cli/package/<entry>` 的入口即符合条件，且 `<entry>` 不要求位于 `lib` 目录。经过单独配置的发行包可以提供已审计的信任配置与一个候选源。 |
 | 源码或其他布局 | 该安装不受支持；命令向 stderr 输出 `CLI update failed.`，并以 `1` 退出。 |
 
 当前独立构建既不提供生产信任配置，也不提供发布源。未配置公钥或允许源时，`update` 会返回代码为 `unconfigured-trust-root` 的 `up-to-date`，输出 `No update available.`，并在任何候选 I/O 或文件系统变更之前以 `0` 退出。已校验候选的版本不高于当前版本时，会以代码 `version-not-newer` 产生相同的可见结果。
 
-独立发行包经过单独配置后，`update` 会使用共享签名 manifest 策略，为当前平台与架构选择更新的 stable CLI 目标。该命令会先校验签名、不可变 HTTPS 源、归档摘要、完整成员集合及可执行路径，再发布随机同级候选。事务把当前 bundle 保留到另一个随机同级目录，然后使用候选捆绑的 Node 可执行文件运行 `cli/package/lib/bin.js --help`；它绝不会使用 `PATH` 中的 Node。
+独立发行包经过单独配置后，`update` 会使用共享签名 manifest 策略，为当前平台与架构选择更新的 stable CLI 目标。该命令会先校验签名、已配置的精确 HTTPS 源、归档摘要、完整成员集合及可执行路径，再发布随机同级候选。事务把当前 bundle 保留到另一个随机同级目录，然后使用候选捆绑的 Node 可执行文件运行 `cli/package/lib/bin.js --help`；它绝不会使用 `PATH` 中的 Node。
 
 健康的候选会成为当前 bundle，保留的同级目录随后被删除。健康检查失败时，事务会移开候选、恢复保留的 bundle，并且仅在清理成功后报告 `rolled-back`。恢复失败时会报告 `transaction-failed`，不会声称已经回滚。该事务绝不会读取、创建或修改 `HARNESS_HOME`，也不会创建 Runtime 或 Web lease。
 

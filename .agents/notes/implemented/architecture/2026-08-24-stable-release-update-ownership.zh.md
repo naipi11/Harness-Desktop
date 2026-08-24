@@ -20,11 +20,11 @@ CLI 持有自身的包管理器提示与独立同级事务，不使用 Runtime �
 
 ## 发布证据与审批
 
-`writeUpdateManifests()` 会先在内存中准备每个目标 manifest，再通过一次独占目录创建预留最终输出根目录，把集合写入私有内部暂存目录，并把该暂存目录重命名为 `ready`。只有 `ready/<manifest>` 路径才是完整且可消费的。脚本不会改动竞争方持有的根目录，失败清理也绝不会递归删除已预留的根目录。
+`writeUpdateManifests()` 会先在内存中准备每个目标 manifest，再通过一次独占目录创建预留最终输出根目录，把集合写入私有内部暂存目录，并把该暂存目录重命名为 `ready`。预留后，构建器仅在内部重命名完成后发布并返回 `ready/<manifest>` 路径。当前消费方不会强制 manifest 路径；消费方侧路径强制仍是额外要求。脚本不会改动竞争方持有的根目录，失败清理也绝不会递归删除已预留的根目录。
 
 无凭据的 Desktop 产物工作流使用 `--publish never` 打包。原生 CI 分别持有 Windows NSIS 与 CLI ZIP 证据、macOS universal DMG 与 CLI tar 证据（包括 `lipo` 检查），以及 Linux AppImage、Deb 与 CLI tar 证据。单个主机的本地或缓存产物不能证明其他原生行，也不能证明新建的独立归档。
 
-生产更新信任仍是单独的运维先决条件：调用方配置任一 updater 前，公钥、不可变 HTTPS 源及发布位置均需独立审计。Windows 签名、macOS 公证、生产更新 manifest 签名、npm 发布、更新产物上传及创建 GitHub Release 均为单独审批操作。手动 candidate 工作流只验证是否恰好选择了一个未来操作；它不含凭据、release 权限、环境或外部操作步骤。
+生产更新信任仍是单独的运维先决条件：调用方配置任一 updater 前，公钥、已配置的精确 HTTPS 源及发布位置均需独立审计。Windows 签名、macOS 公证、生产更新 manifest 签名、npm 发布、更新产物上传及创建 GitHub Release 均为单独审批操作。手动 candidate 工作流只验证是否恰好选择了一个未来操作；它不含凭据、release 权限、环境或外部操作步骤。
 
 ## Alternatives considered
 
@@ -35,4 +35,4 @@ CLI 持有自身的包管理器提示与独立同级事务，不使用 Runtime �
 
 ## Consequences
 
-仓库验证可以证明签名前准备就绪，但不会配置可实际运行的自动更新，也不会授予外部发布权限。运维方必须提供已审计的生产信任，并分别取得每项外部审批。原生证据仍由各平台持有，消费方必须拒绝 `ready/` 之外的 manifest 路径。
+仓库验证可以证明签名前准备就绪，但不会配置可实际运行的自动更新，也不会授予外部发布权限。运维方必须提供已审计的生产信任，并分别取得每项外部审批。原生证据仍由各平台持有，当前消费方不会拒绝 `ready/` 之外的 manifest 路径。

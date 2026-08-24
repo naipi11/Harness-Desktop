@@ -38,12 +38,12 @@ The former public profile, plugin-management, headless-profile, patch, and confi
 | Installed form | Behavior |
 |---|---|
 | npm | Only a resolved `node_modules/@harness-desktop/cli` layout qualifies. The command prints `npm update -g @harness-desktop/cli` and exits successfully without running npm or loading a candidate. |
-| Standalone ZIP or tar.gz | Only the resolved `cli/package/lib` position under a standalone bundle root qualifies. A separately configured distribution may supply audited trust and one candidate source. |
+| Standalone ZIP or tar.gz | A resolved entry at `cli/package/<entry>` under a standalone bundle root qualifies; `<entry>` need not be under a `lib` directory. A separately configured distribution may supply audited trust and one candidate source. |
 | Source or another layout | The installation is unsupported; the command prints `CLI update failed.` to stderr and exits `1`. |
 
 Current standalone builds supply neither production trust nor a release source. With no configured public key or allowed origin, `update` returns `up-to-date` with code `unconfigured-trust-root`, prints `No update available.`, and exits `0` before candidate I/O or filesystem mutation. A verified candidate whose version is not newer produces the same visible result with code `version-not-newer`.
 
-When a standalone distribution is separately configured, `update` uses the shared signed-manifest policy to select a newer stable CLI target for the current platform and architecture. It verifies the signature, immutable HTTPS origin, archive digest, exact member set, and executable paths before publishing a random sibling candidate. The transaction retains the current bundle in another random sibling, then runs the candidate's bundled Node executable with `cli/package/lib/bin.js --help`; it never uses Node from `PATH`.
+When a standalone distribution is separately configured, `update` uses the shared signed-manifest policy to select a newer stable CLI target for the current platform and architecture. It verifies the signature, configured exact HTTPS origin, archive digest, exact member set, and executable paths before publishing a random sibling candidate. The transaction retains the current bundle in another random sibling, then runs the candidate's bundled Node executable with `cli/package/lib/bin.js --help`; it never uses Node from `PATH`.
 
 A healthy candidate becomes the live bundle and the retained sibling is removed. A failed health check moves the candidate aside, restores the retained bundle, and reports `rolled-back` only after cleanup succeeds. A failed restore reports `transaction-failed` instead of claiming rollback. The transaction never reads, creates, or modifies `HARNESS_HOME`, and never creates a Runtime or Web lease.
 

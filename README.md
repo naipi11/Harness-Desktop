@@ -71,7 +71,7 @@ The release artifact and evidence matrix is:
 
 CI builds every row with `--publish never`; a local current-platform build does not prove another operating system's artifacts. For an unpacked directory instead of an installer, replace `package` with `package:dir`. Local artifacts land in `apps/desktop/release/`.
 
-Desktop and CLI shipped defaults are fail-closed: they contain no production update public key, immutable HTTPS origin, or release location, so no live automatic update is configured. Enabling updates requires those prerequisites to be audited separately from every external release approval above.
+Desktop and CLI shipped defaults are fail-closed: they contain no production update public key, configured exact HTTPS origin, or release location, so no live automatic update is configured. Enabling updates requires those prerequisites to be audited separately from every external release approval above.
 
 ## Community and support
 

@@ -71,7 +71,7 @@ pnpm --filter @harness-desktop/dsh-desktop run package
 
 CI 使用 `--publish never` 构建每一行；在当前平台进行的本地构建不能证明其他操作系统的产物。如需免安装目录而非安装包，将 `package` 替换为 `package:dir`。本地产物位于 `apps/desktop/release/`。
 
-Desktop 与 CLI 的发布默认值均会拒绝未配置的更新：代码中不含生产更新公钥、不可变 HTTPS 源或发布位置，因此未配置可实际运行的自动更新。启用更新前，必须对这些先决条件以及上述每项外部发布审批分别进行审计。
+Desktop 与 CLI 的发布默认值均会拒绝未配置的更新：代码中不含生产更新公钥、已配置的精确 HTTPS 源或发布位置，因此未配置可实际运行的自动更新。启用更新前，必须对这些先决条件以及上述每项外部发布审批分别进行审计。
 
 ## 社区与支持
 
