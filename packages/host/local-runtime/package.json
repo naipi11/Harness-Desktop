@@ -54,7 +54,9 @@
     "@harness-desktop/dsh-llm": "workspace:^",
     "@harness-desktop/dsh-permission-presets": "workspace:^",
     "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
     "@harness-desktop/dsh-web-app": "workspace:^",
+    "@harness-desktop/schemastery": "workspace:^",
     "proper-lockfile": "4.1.2"
   },
   "peerDependencies": {
