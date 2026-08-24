@@ -63,6 +63,7 @@ export interface DesktopUpdateServiceOptions {
 export class DesktopUpdateService {
   private staged: StagedDesktopCandidate | undefined
   private applying: Promise<DesktopUpdateResult> | undefined
+  private transaction: Promise<void> = Promise.resolve()
 
   /** @param options - immutable Main-process policy and transaction collaborators. */
   constructor(private readonly options: DesktopUpdateServiceOptions) {}
@@ -71,7 +72,14 @@ export class DesktopUpdateService {
    * Verifies, downloads, and stages one candidate without launching it.
    * @returns a stable redacted staging result.
    */
-  async checkAndStage(): Promise<DesktopUpdateResult> {
+  checkAndStage(): Promise<DesktopUpdateResult> {
+    return this.serialize(async () => {
+      this.staged = undefined
+      return await this.checkAndStageTransaction()
+    })
+  }
+
+  private async checkAndStageTransaction(): Promise<DesktopUpdateResult> {
     if (trustIsEmpty(this.options.trust)) return { kind: 'up-to-date', code: 'unconfigured-trust-root' }
     const runtime = this.options.runtime
     const loadManifest = this.options.loadManifest
@@ -102,10 +110,12 @@ export class DesktopUpdateService {
    */
   applyStagedUpdate(): Promise<DesktopUpdateResult> {
     if (this.applying !== undefined) return this.applying
-    const candidate = this.staged
-    if (candidate === undefined) return Promise.resolve({ kind: 'up-to-date', code: 'no-staged-candidate' })
-    this.staged = undefined
-    const flight = this.applyCandidate(candidate).finally(() => {
+    const flight = this.serialize(async () => {
+      const candidate = this.staged
+      if (candidate === undefined) return { kind: 'up-to-date', code: 'no-staged-candidate' } as const
+      this.staged = undefined
+      return await this.applyCandidate(candidate)
+    }).finally(() => {
       if (this.applying === flight) this.applying = undefined
     })
     this.applying = flight
@@ -218,6 +228,12 @@ export class DesktopUpdateService {
     try { await runtime.recordDesktopUpdateOutcome(outcome) } catch {
       // Runtime persistence is observational after the installation transaction has settled.
     }
+  }
+
+  private serialize<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const transaction = this.transaction.then(operation)
+    this.transaction = transaction.then(() => undefined, () => undefined)
+    return transaction
   }
 }
 

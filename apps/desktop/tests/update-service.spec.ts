@@ -132,6 +132,50 @@ describe('DesktopUpdateService', () => {
     }
   })
 
+  it('waits for an applying candidate before staging a new candidate', async () => {
+    const fixture = await createDesktopUpdateFixture()
+    const { runtime } = runtimeFixture()
+    let releaseLaunch!: () => void
+    const launchReleased = new Promise<void>((resolve) => { releaseLaunch = resolve })
+    try {
+      const adapter = {
+        ...fixture.adapter,
+        launchCandidate: async (candidate: Parameters<typeof fixture.adapter.launchCandidate>[0]) => {
+          await launchReleased
+          return await fixture.adapter.launchCandidate(candidate)
+        },
+      }
+      const service = new DesktopUpdateService({
+        appId: fixture.manifest.applicationId,
+        currentVersion: '1.0.0',
+        platform: process.platform,
+        arch: process.arch,
+        trust: fixture.trust,
+        runtime,
+        loadManifest: fixture.loadManifest,
+        adapter,
+      })
+      await service.checkAndStage()
+
+      const applying = service.applyStagedUpdate()
+      const checking = service.checkAndStage()
+      await Promise.resolve()
+      expect(fixture.calls).toMatchObject({ stage: 1, launch: 0 })
+      releaseLaunch()
+
+      await expect(applying).resolves.toEqual({
+        kind: 'applied', code: 'candidate-applied', version: '1.1.0', channel: 'stable',
+      })
+      await expect(checking).resolves.toEqual({
+        kind: 'staged', code: 'candidate-staged', version: '1.1.0', channel: 'stable',
+      })
+      expect(fixture.calls).toMatchObject({ stage: 2, launch: 1 })
+    } finally {
+      releaseLaunch()
+      await fixture.close()
+    }
+  })
+
   it('preserves the current installation when retaining it fails before publication', async () => {
     const fixture = await createDesktopUpdateFixture('ready', { failRetain: true })
     const { runtime, outcomes } = runtimeFixture()
@@ -163,6 +207,8 @@ describe('DesktopUpdateService', () => {
       await expect(readFile(fixture.retainedVersion, 'utf8')).resolves.toBe('1.0.0')
       await expect(readFile(fixture.installationVersion, 'utf8')).resolves.toBe('1.0.0')
       await expect(readFile(fixture.harnessSentinel, 'utf8')).resolves.toBe('keep')
+      await expect(service.applyStagedUpdate()).resolves.toEqual({ kind: 'up-to-date', code: 'no-staged-candidate' })
+      expect(fixture.calls.launch).toBe(0)
     } finally {
       await fixture.close()
     }
@@ -234,6 +280,41 @@ describe('DesktopUpdateService', () => {
       expect(fixture.calls.stage).toBe(0)
       expect(outcomes).toEqual([{ version: '1.1.0', channel: 'stable', kind: 'failed', code: 'artifact-rejected' }])
       expect(createHash('sha256').update(fixture.archive).digest('hex')).not.toBe(createHash('sha256').update('modified').digest('hex'))
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('rejects mismatched actual members before staging or switching', async () => {
+    const fixture = await createDesktopUpdateFixture()
+    const { runtime, outcomes } = runtimeFixture()
+    let inspections = 0
+    try {
+      const adapter = {
+        ...fixture.adapter,
+        inspect: async () => {
+          inspections += 1
+          return ['unexpected-member']
+        },
+      }
+      const service = new DesktopUpdateService({
+        appId: fixture.manifest.applicationId,
+        currentVersion: '1.0.0',
+        platform: process.platform,
+        arch: process.arch,
+        trust: fixture.trust,
+        runtime,
+        loadManifest: fixture.loadManifest,
+        adapter,
+      })
+
+      await expect(service.checkAndStage()).resolves.toEqual({
+        kind: 'failed', code: 'candidate-members-rejected', version: '1.1.0', channel: 'stable',
+      })
+      await expect(service.applyStagedUpdate()).resolves.toEqual({ kind: 'up-to-date', code: 'no-staged-candidate' })
+      expect(inspections).toBe(1)
+      expect(fixture.calls).toMatchObject({ stage: 0, launch: 0 })
+      expect(outcomes).toEqual([{ version: '1.1.0', channel: 'stable', kind: 'failed', code: 'artifact-rejected' }])
     } finally {
       await fixture.close()
     }
