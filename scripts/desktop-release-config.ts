@@ -259,27 +259,29 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
     }
   }
 
-  const requiredCommands = [
-    'scripts/release/node-runtime-checksums.json',
-    '--publish never',
-    'release:verify-desktop-artifacts',
-    'desktop:test-updater',
-    'release:verify-packed-cli',
-    'release:build-cli-standalone',
-    'release:verify-cli-standalone',
-    'release:verify-update-manifests',
-    'release:test-cli-update',
-    'release:smoke-installed-desktop',
+  const requiredSteps = [
+    ['Verify pinned Node distribution checksum', 'pnpm exec tsx scripts/release/verify-node-runtime-archive.ts'],
+    ['Package installer', 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never'],
+    ['Inspect native Desktop artifacts', 'pnpm run release:verify-desktop-artifacts'],
+    ['Test Desktop updater and rollback', 'pnpm run desktop:test-updater'],
+    ['Verify packed CLI from an empty offline prefix', 'pnpm run release:verify-packed-cli'],
+    ['Build standalone CLI archives', 'pnpm run release:build-cli-standalone'],
+    ['Verify standalone CLI archives', 'pnpm run release:verify-cli-standalone'],
+    ['Verify update manifests with ephemeral fixtures', 'pnpm run release:verify-update-manifests'],
+    ['Test CLI updater and rollback', 'pnpm run release:test-cli-update'],
+    ['Smoke installed Desktop artifacts', 'pnpm run release:smoke-installed-desktop'],
   ]
+  const steps = workflowSteps(packageJob)
   let previousIndex = -1
-  for (const expected of requiredCommands) {
-    const index = commands.findIndex((command, candidateIndex) => candidateIndex > previousIndex && command.includes(expected))
-    if (index === -1) violations.push(`desktopArtifactsWorkflow: missing ordered native check ${expected}`)
+  for (const [name, command] of requiredSteps) {
+    const index = steps.findIndex((step, candidateIndex) => candidateIndex > previousIndex
+      && step.name === name && normalizedRun(step.run) === command)
+    if (index === -1) {
+      violations.push(name === 'Verify pinned Node distribution checksum'
+        ? 'desktopArtifactsWorkflow: Verify pinned Node distribution checksum must execute the exact verifier command'
+        : `desktopArtifactsWorkflow: missing ordered exact command ${command}`)
+    }
     else previousIndex = index
-  }
-  const checksum = commands.find(command => command.includes('scripts/release/node-runtime-checksums.json'))
-  if (checksum === undefined || !checksum.includes('sha256') || !checksum.includes('checksum mismatch')) {
-    violations.push('desktopArtifactsWorkflow: downloaded Node runtime must match the repository-pinned SHA-256 before use')
   }
   const uploadSteps = Array.isArray(packageJob.steps)
     ? packageJob.steps.filter(isRecord).filter(step => typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@'))
@@ -327,19 +329,28 @@ function auditReleaseCandidatesWorkflow(workflowText: string): string[] {
   }
   const preflight = workflowJob(workflow, 'preflight')
   if (preflight === undefined) return [...violations, 'releaseCandidatesWorkflow: preflight job is missing']
-  const steps = Array.isArray(preflight.steps) ? preflight.steps.filter(isRecord) : []
+  const steps = workflowSteps(preflight)
+  const checkoutStep = steps[0]
   const preflightStep = steps.find(step => step.name === 'Require exactly one candidate operation')
-  const preflightRun = typeof preflightStep?.run === 'string' ? preflightStep.run : ''
-  if (!preflightRun.includes('selected_count') || !preflightRun.includes('-ne 1')) {
-    violations.push('releaseCandidatesWorkflow: preflight must reject any selection count other than one')
+  if (checkoutStep?.uses !== 'actions/checkout@v6' || !isRecord(checkoutStep.with)
+    || checkoutStep.with['persist-credentials'] !== false) {
+    violations.push('releaseCandidatesWorkflow: checkout must disable persisted credentials')
   }
-  if (steps.length !== 1 || typeof preflightStep?.uses === 'string') {
-    violations.push('releaseCandidatesWorkflow: the one validation step must be the only step')
+  if (normalizedRun(preflightStep?.run) !== 'node scripts/release/select-release-candidate-operation.mjs') {
+    violations.push('releaseCandidatesWorkflow: preflight must execute the exact candidate validator command')
+  }
+  if (steps.length !== 2 || steps[1] !== preflightStep || typeof preflightStep?.uses === 'string') {
+    violations.push('releaseCandidatesWorkflow: credential-free checkout and validation must be the only steps')
   }
   const preflightEnvironment = isRecord(preflightStep?.env) ? preflightStep.env : undefined
-  if (preflightEnvironment === undefined
-    || !['SIGN_WINDOWS', 'NOTARIZE_MACOS', 'SIGN_UPDATE_MANIFESTS', 'PUBLISH_NPM', 'CREATE_GITHUB_RELEASE']
-      .every(name => typeof preflightEnvironment[name] === 'string')) {
+  const expectedEnvironment = {
+    SIGN_WINDOWS: "${{ inputs['sign-windows'] }}",
+    NOTARIZE_MACOS: "${{ inputs['notarize-macos'] }}",
+    SIGN_UPDATE_MANIFESTS: "${{ inputs['sign-update-manifests'] }}",
+    PUBLISH_NPM: "${{ inputs['publish-npm'] }}",
+    CREATE_GITHUB_RELEASE: "${{ inputs['create-github-release'] }}",
+  }
+  if (preflightEnvironment === undefined || !sameRecord(preflightEnvironment, expectedEnvironment)) {
     violations.push('releaseCandidatesWorkflow: preflight must isolate all five operation selectors')
   }
   const commands = jobRunCommands(preflight).join('\n')
@@ -377,6 +388,19 @@ function workflowJob(workflow: Record<string, unknown>, name: string): Record<st
 function jobRunCommands(job: Record<string, unknown>): string[] {
   if (!Array.isArray(job.steps)) return []
   return job.steps.filter(isRecord).flatMap(step => typeof step.run === 'string' ? [step.run] : [])
+}
+
+function workflowSteps(job: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(job.steps) ? job.steps.filter(isRecord) : []
+}
+
+function normalizedRun(value: unknown): string {
+  return typeof value === 'string' ? value.replaceAll('\r\n', '\n').trim() : ''
+}
+
+function sameRecord(actual: Record<string, unknown>, expected: Readonly<Record<string, string>>): boolean {
+  return sameStrings(Object.keys(actual), Object.keys(expected))
+    && Object.entries(expected).every(([key, value]) => actual[key] === value)
 }
 
 function jobActions(job: Record<string, unknown>): string[] {

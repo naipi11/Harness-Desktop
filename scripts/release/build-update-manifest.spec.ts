@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -169,6 +169,36 @@ describe('writeUpdateManifests', () => {
       signingKeyPath,
     })).rejects.toThrow('update manifest: signing key')
     await expect(access(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('leaves no final or staged manifest set when a staged write fails', async () => {
+    const subject = await fixture()
+    const outputDirectory = join(subject.root, 'atomic-output')
+    let writes = 0
+
+    await expect(writeUpdateManifests(input(subject, outputDirectory), async (path, bytes) => {
+      writes += 1
+      if (writes === 2) throw new Error('injected second manifest write failure')
+      await writeFile(path, bytes, { flag: 'wx' })
+    })).rejects.toThrow('injected second manifest write failure')
+
+    expect(writes).toBe(2)
+    await expect(access(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(subject.root)).filter(name => name.startsWith('.atomic-output-stage-'))).toEqual([])
+  })
+
+  it('rejects and preserves a pre-existing output directory', async () => {
+    const subject = await fixture()
+    const outputDirectory = join(subject.root, 'existing-output')
+    const sentinel = join(outputDirectory, 'owned.txt')
+    await mkdir(outputDirectory)
+    await writeFile(sentinel, 'keep existing output')
+
+    await expect(writeUpdateManifests(input(subject, outputDirectory, ['stable']))).rejects.toThrow(
+      'output directory already exists',
+    )
+    await expect(readFile(sentinel, 'utf8')).resolves.toBe('keep existing output')
+    await expect(readdir(outputDirectory)).resolves.toEqual(['owned.txt'])
   })
 
   it('rejects unsafe archive members before signing or output', async () => {

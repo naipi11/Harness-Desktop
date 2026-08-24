@@ -66,9 +66,9 @@ jobs:
         shell: bash
         run: pnpm store path
       - name: Verify pinned Node distribution checksum
-        run: node scripts/release/node-runtime-checksums.json sha256 checksum mismatch
+        run: pnpm exec tsx scripts/release/verify-node-runtime-archive.ts
       - name: Package installer
-        run: pnpm --filter desktop run package --publish never
+        run: pnpm --filter @harness-desktop/dsh-desktop run package --publish never
       - name: Inspect native Desktop artifacts
         run: pnpm run release:verify-desktop-artifacts
       - name: Test Desktop updater and rollback
@@ -108,16 +108,17 @@ jobs:
   preflight:
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Require exactly one candidate operation
         env:
-          SIGN_WINDOWS: inputs sign-windows
-          NOTARIZE_MACOS: inputs notarize-macos
-          SIGN_UPDATE_MANIFESTS: inputs sign-update-manifests
-          PUBLISH_NPM: inputs publish-npm
-          CREATE_GITHUB_RELEASE: inputs create-github-release
-        run: |
-          selected_count=0
-          test "$selected_count" -ne 1 && exit 1
+          SIGN_WINDOWS: \${{ inputs['sign-windows'] }}
+          NOTARIZE_MACOS: \${{ inputs['notarize-macos'] }}
+          SIGN_UPDATE_MANIFESTS: \${{ inputs['sign-update-manifests'] }}
+          PUBLISH_NPM: \${{ inputs['publish-npm'] }}
+          CREATE_GITHUB_RELEASE: \${{ inputs['create-github-release'] }}
+        run: node scripts/release/select-release-candidate-operation.mjs
 `,
     releaseWorkflow: 'name: Release dsh (legacy pack audit)',
   }
@@ -273,19 +274,35 @@ describe('desktop release config gate', () => {
     })).toContain('releaseCandidatesWorkflow: workflow_dispatch must be the only trigger')
     expect(collectDesktopReleaseViolations({
       ...files,
-      releaseCandidatesWorkflow: files.releaseCandidatesWorkflow.replace('-ne 1', '-eq 0'),
-    })).toContain('releaseCandidatesWorkflow: preflight must reject any selection count other than one')
+      releaseCandidatesWorkflow: files.releaseCandidatesWorkflow.replace(
+        'run: node scripts/release/select-release-candidate-operation.mjs',
+        'run: echo node scripts/release/select-release-candidate-operation.mjs',
+      ),
+    })).toContain('releaseCandidatesWorkflow: preflight must execute the exact candidate validator command')
     expect(collectDesktopReleaseViolations({
       ...files,
       releaseCandidatesWorkflow: `${files.releaseCandidatesWorkflow}\n  external-release:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: npm publish`,
     })).toContain('releaseCandidatesWorkflow: preflight must be the only job')
   })
 
+  it('rejects a checksum step that only echoes the trusted verifier command', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace(
+        'run: pnpm exec tsx scripts/release/verify-node-runtime-archive.ts',
+        'run: echo pnpm exec tsx scripts/release/verify-node-runtime-archive.ts',
+      ),
+    })).toContain(
+      'desktopArtifactsWorkflow: Verify pinned Node distribution checksum must execute the exact verifier command',
+    )
+  })
+
   it('accepts the repository-owned builder, manifest, and workflows', async () => {
     const files = await readDesktopReleaseFiles()
     expect(collectDesktopReleaseViolations(files)).toEqual([])
     expect(productMetadata.appId).toBe('io.github.naipi11.harness-desktop')
-    expect(files.desktopArtifactsWorkflow).toContain('scripts/release/node-runtime-checksums.json')
+    expect(files.desktopArtifactsWorkflow).toContain('scripts/release/verify-node-runtime-archive.ts')
     expect(files.desktopArtifactsWorkflow).toContain('desktop:test-updater')
     expect(files.desktopArtifactsWorkflow).toContain('release:test-cli-update')
     expect(files.desktopArtifactsWorkflow).toContain('release:verify-update-manifests')

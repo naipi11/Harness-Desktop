@@ -10,13 +10,13 @@ Status: implemented
 
 ## 决策
 
-`scripts/release/build-update-manifest.ts` 接受调用方指定的本地产物和 Ed25519 私钥文件。脚本在本地派生 SHA-256 摘要与归档成员，为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），且每个 manifest 只包含一个可选产物。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。builder 仅在所有输入都已读入内存后签名，通过 `verifySignedUpdateManifest()` 验证结果，并在签名输入或其他 release 规则无效时不创建输出目录。
+`scripts/release/build-update-manifest.ts` 接受调用方指定的本地产物和 Ed25519 私钥文件。脚本在本地派生 SHA-256 摘要与归档成员，为每组 channel、消费方、平台、架构和格式生成一个 manifest（元数据清单），且每个 manifest 只包含一个可选产物。所有 manifest 均使用 `io.github.naipi11.harness-desktop`；Linux AppImage 与 Deb 使用独立 endpoint，不向共享策略加入格式偏好。builder 仅在所有输入都已读入内存后签名，并通过 `verifySignedUpdateManifest()` 验证结果。脚本以独占方式把完整集合写入随机命名的同级目录，拒绝已存在的输出目录，再通过一次目录重命名完成发布；暂存写入失败后不会留下最终集合或暂存集合。
 
-`scripts/release/verify-update-manifests.ts` 读取调用方提供的 Ed25519 公钥文件，调用共享 parser 和签名 verifier，再把已接受的摘要与成员集合和指定本地产物进行比较。ZIP 与 tar 检查可跨平台运行；NSIS、DMG、AppImage 和 Deb 检查使用对应的原生 runner。这些脚本既不下载产物，也不会在仓库中保留 release 位置、密钥、签名或 manifest fixture（测试前置数据）。
+`scripts/release/verify-update-manifests.ts` 读取调用方提供的 Ed25519 公钥文件，先调用共享 parser 和签名 verifier，再执行 release 布局规则：已签名 manifest 必须只包含一个与预期 channel、消费方、平台、架构和格式匹配的产物。脚本只读取一次指定产物，并在归档解析或原生执行前拒绝 SHA-256 不匹配。基于路径的 inspector 接收包含相同快照的私有文件，ZIP 检查则直接使用内存中的字节。AppImage 检查只接收最小化环境。ZIP 与 tar 检查可跨平台运行；NSIS、DMG、AppImage 和 Deb 检查使用对应的原生 runner。这些脚本既不下载产物，也不会在仓库中保留 release 位置、密钥、签名或 manifest fixture（测试前置数据）。
 
-`.github/workflows/desktop-artifacts.yml` 保持无凭据，并以 `--publish never` 运行 Builder。Windows 负责 NSIS 与 CLI ZIP 证据，macOS 负责 universal DMG 与 CLI tar 证据并执行 `lipo` 检查，Linux 负责 AppImage、Deb 与 CLI tar 证据。每个 runner 都会先根据仓库固定值验证 Node 归档的 SHA-256，standalone builder 随后才能解压或使用该文件；打包后再运行 Desktop 与 CLI updater 或回滚检查。Windows 主机不能替代 macOS 或 Linux 任务的证明。
+`.github/workflows/desktop-artifacts.yml` 保持无凭据，并以 `--publish never` 运行 Builder。Windows 负责 NSIS 与 CLI ZIP 证据，macOS 负责 universal DMG 与 CLI tar 证据并执行 `lipo` 检查，Linux 负责 AppImage、Deb 与 CLI tar 证据。每个 runner 都会调用经过测试的 `verify-node-runtime-archive.ts` 命令，根据仓库固定值验证文件名和 SHA-256，standalone builder 随后才能解压或使用该文件；打包后再运行 Desktop 与 CLI updater 或回滚检查。工作流审计要求按既定顺序执行该确切命令，因此仅 echo 标记不能作为证据。Windows 主机不能替代 macOS 或 Linux 任务的证明。
 
-`.github/workflows/release-candidates.yml` 只能手动 dispatch。其 `sign-windows`、`notarize-macos`、`sign-update-manifests`、`publish-npm` 与 `create-github-release` 输入均默认为 false；唯一的任务会拒绝选择数量不等于 1 的请求，并报告选中的未来操作，但不会执行它。该工作流不包含权限、environment、凭据、checkout、签名、公证、发布、上传或 GitHub Release 步骤。
+`.github/workflows/release-candidates.yml` 只能手动 dispatch。其 `sign-windows`、`notarize-macos`、`sign-update-manifests`、`publish-npm` 与 `create-github-release` 输入均默认为 false。唯一的任务会在不保留凭据的情况下 checkout 源码，再运行经过测试的 `select-release-candidate-operation.mjs` 命令；该命令拒绝选择数量不等于 1 的请求，并报告选中的未来操作，但不会执行它。该工作流不包含权限、release environment、凭据、签名、公证、发布、上传或 GitHub Release 步骤，审计还会要求使用确切的 validator 命令与输入映射。
 
 ## 考虑过的替代方案
 

@@ -1,7 +1,7 @@
 /** Verify signed update manifests against named local artifacts without publishing them. */
 
 import { createHash, createPublicKey } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -46,6 +46,17 @@ export interface InspectedUpdateArtifact {
 }
 
 /**
+ * Inspect archive members from caller-owned snapshot bytes.
+ * @param snapshot - exact bytes already matched to the signed digest.
+ * @param format - archive format whose inspector applies.
+ * @returns file-member paths from the snapshot.
+ */
+export type UpdateArtifactSnapshotInspector = (
+  snapshot: Buffer,
+  format: UpdateArtifactFormat,
+) => Promise<readonly string[]>
+
+/**
  * Inspect one named local artifact without downloading, installing, or publishing it.
  * @param artifactPath - local artifact file selected by the caller.
  * @param format - archive format whose native reader applies.
@@ -56,17 +67,40 @@ export async function inspectUpdateArtifact(
   format: UpdateArtifactFormat,
 ): Promise<InspectedUpdateArtifact> {
   const bytes = await readFile(artifactPath)
-  const members = await inspectMembers(artifactPath, format, bytes)
-  return { bytes, members: uniqueSortedMembers(members) }
+  return { bytes, members: await inspectUpdateArtifactSnapshot(bytes, format) }
+}
+
+/**
+ * Inspect an immutable artifact snapshot without reopening the caller's path.
+ * @param snapshot - exact bytes already read and hashed by the caller.
+ * @param format - archive format whose portable or native reader applies.
+ * @returns sorted, unique file-member paths from those exact bytes.
+ */
+export async function inspectUpdateArtifactSnapshot(
+  snapshot: Buffer,
+  format: UpdateArtifactFormat,
+): Promise<readonly string[]> {
+  if (format === 'zip') return uniqueSortedMembers(Object.keys(unzipSync(snapshot)).filter(path => !path.endsWith('/')))
+
+  const directory = await mkdtemp(join(tmpdir(), 'harness-update-snapshot-'))
+  const snapshotPath = join(directory, snapshotFilename(format))
+  try {
+    await writeFile(snapshotPath, snapshot, { flag: 'wx', mode: format === 'appimage' ? 0o700 : 0o600 })
+    return uniqueSortedMembers(await inspectSnapshotMembers(snapshotPath, format))
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 }
 
 /**
  * Verify every manifest with the shared update-policy parser and its named local artifact.
  * @param input - expected targets, rollback version, and caller-supplied public-key file.
+ * @param inspectSnapshot - inspector for bytes already matched to the signed digest.
  * @returns stable redacted diagnostics; empty means every target verified.
  */
 export async function verifyUpdateManifests(
   input: UpdateManifestVerificationInput,
+  inspectSnapshot: UpdateArtifactSnapshotInspector = inspectUpdateArtifactSnapshot,
 ): Promise<readonly string[]> {
   const duplicates = duplicateTargetDiagnostics(input.manifests)
   if (duplicates.length > 0) return duplicates
@@ -109,6 +143,10 @@ export async function verifyUpdateManifests(
       violations.push(`update manifest ${label}: shared policy rejected ${verification.code}`)
       continue
     }
+    if (!hasExactExpectedArtifact(manifest, target)) {
+      violations.push(`update manifest ${label}: must contain exactly one expected target artifact ${targetKey(target)}`)
+      continue
+    }
     const artifact = verification.artifact
     if (artifact.channel !== target.channel || artifact.consumer !== target.consumer
       || artifact.platform !== target.platform || artifact.arch !== target.arch || artifact.format !== target.format) {
@@ -116,17 +154,25 @@ export async function verifyUpdateManifests(
       continue
     }
 
-    let inspected: InspectedUpdateArtifact
+    let snapshot: Buffer
     try {
-      inspected = await inspectUpdateArtifact(target.artifactPath, target.format)
+      snapshot = await readFile(target.artifactPath)
+    } catch (error) {
+      violations.push(`update manifest ${label}: local artifact read failed: ${errorMessage(error)}`)
+      continue
+    }
+    if (sha256(snapshot) !== artifact.sha256) {
+      violations.push(`update manifest ${label}: local artifact digest does not match signed digest`)
+      continue
+    }
+    let members: readonly string[]
+    try {
+      members = uniqueSortedMembers(await inspectSnapshot(snapshot, target.format))
     } catch (error) {
       violations.push(`update manifest ${label}: local artifact inspection failed: ${errorMessage(error)}`)
       continue
     }
-    if (sha256(inspected.bytes) !== artifact.sha256) {
-      violations.push(`update manifest ${label}: local artifact digest does not match signed digest`)
-    }
-    if (!sameMembers(inspected.members, artifact.members)) {
+    if (!sameMembers(members, artifact.members)) {
       violations.push(`update manifest ${label}: local artifact members do not match signed members`)
     }
   }
@@ -157,24 +203,35 @@ function runtimeArchitecture(arch: UpdateArchitecture): string {
   return arch === 'universal' ? 'x64' : arch
 }
 
-async function inspectMembers(
-  artifactPath: string,
+async function inspectSnapshotMembers(
+  snapshotPath: string,
   format: UpdateArtifactFormat,
-  bytes: Buffer,
 ): Promise<readonly string[]> {
   switch (format) {
-    case 'zip':
-      return Object.keys(unzipSync(bytes)).filter(path => !path.endsWith('/'))
     case 'tar.gz':
-      return inspectTarMembers(artifactPath)
+      return inspectTarMembers(snapshotPath)
     case 'nsis':
-      return inspectNsisMembers(artifactPath)
+      return inspectNsisMembers(snapshotPath)
     case 'dmg':
-      return inspectDmgMembers(artifactPath)
+      return inspectDmgMembers(snapshotPath)
     case 'appimage':
-      return inspectAppImageMembers(artifactPath)
+      return inspectAppImageMembers(snapshotPath)
     case 'deb':
-      return inspectDebMembers(artifactPath)
+      return inspectDebMembers(snapshotPath)
+    case 'zip':
+      throw new Error('ZIP snapshots are inspected in memory')
+  }
+  throw new Error(`unsupported update artifact format ${JSON.stringify(format)}`)
+}
+
+function snapshotFilename(format: UpdateArtifactFormat): string {
+  switch (format) {
+    case 'zip': return 'artifact.zip'
+    case 'tar.gz': return 'artifact.tar.gz'
+    case 'nsis': return 'artifact.exe'
+    case 'dmg': return 'artifact.dmg'
+    case 'appimage': return 'artifact.AppImage'
+    case 'deb': return 'artifact.deb'
   }
   throw new Error(`unsupported update artifact format ${JSON.stringify(format)}`)
 }
@@ -229,7 +286,16 @@ async function inspectAppImageMembers(artifactPath: string): Promise<readonly st
   if (process.platform !== 'linux') throw new Error('AppImage inspection requires a Linux runner')
   const extraction = await mkdtemp(join(tmpdir(), 'harness-update-appimage-'))
   try {
-    await execa(artifactPath, ['--appimage-extract'], { cwd: extraction, reject: true })
+    await execa(artifactPath, ['--appimage-extract'], {
+      cwd: extraction,
+      env: {
+        HOME: extraction,
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        TMPDIR: extraction,
+      },
+      extendEnv: false,
+      reject: true,
+    })
     return await listNonDirectoryMembers(join(extraction, 'squashfs-root'))
   } finally {
     await rm(extraction, { recursive: true, force: true })
@@ -267,6 +333,18 @@ function uniqueSortedMembers(members: readonly string[]): readonly string[] {
 function sameMembers(actual: readonly string[], expected: readonly string[]): boolean {
   const right = [...expected].sort(compareText)
   return actual.length === right.length && actual.every((member, index) => member === right[index])
+}
+
+function hasExactExpectedArtifact(manifest: unknown, target: UpdateManifestVerificationTarget): boolean {
+  if (!isRecord(manifest) || manifest.channel !== target.channel) return false
+  const artifacts = manifest.artifacts
+  if (!Array.isArray(artifacts) || artifacts.length !== 1) return false
+  const artifact = (artifacts as unknown[]).at(0)
+  return isRecord(artifact)
+    && artifact.consumer === target.consumer
+    && artifact.platform === target.platform
+    && artifact.arch === target.arch
+    && artifact.format === target.format
 }
 
 function sha256(bytes: Uint8Array): string {

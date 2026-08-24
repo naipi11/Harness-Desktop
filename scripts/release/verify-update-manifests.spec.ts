@@ -2,7 +2,7 @@ import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { zipSync } from 'fflate'
+import { unzipSync, zipSync } from 'fflate'
 import * as tar from 'tar'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -11,10 +11,7 @@ import {
   type UpdateManifestPayload,
 } from '@harness-desktop/dsh-update-policy'
 import { writeUpdateManifests } from './build-update-manifest.ts'
-import {
-  verifyUpdateManifests,
-  type UpdateManifestVerificationInput,
-} from './verify-update-manifests.ts'
+import { verifyUpdateManifests, type UpdateManifestVerificationInput } from './verify-update-manifests.ts'
 
 const roots: string[] = []
 
@@ -169,6 +166,85 @@ describe('verifyUpdateManifests', () => {
     await expect(verifyUpdateManifests(subject.input)).resolves.toEqual([
       expect.stringContaining('archive-path-invalid'),
     ])
+  })
+
+  it('rejects a signed manifest containing any artifact beyond the exact expected target', async () => {
+    const subject = await fixture()
+    const manifest = await readManifest(subject.manifestPath)
+    await writeSignedManifest(subject, {
+      schemaVersion: manifest.schemaVersion,
+      applicationId: manifest.applicationId,
+      channel: manifest.channel,
+      version: manifest.version,
+      artifacts: [
+        manifest.artifacts[0]!,
+        {
+          consumer: 'desktop',
+          platform: 'linux',
+          arch: 'x64',
+          format: 'appimage',
+          url: 'http://untrusted.invalid/extra.AppImage',
+          sha256: 'not-a-digest',
+          members: ['../escape.txt'],
+        },
+      ],
+    })
+
+    await expect(verifyUpdateManifests(subject.input)).resolves.toEqual([
+      expect.stringContaining('must contain exactly one expected target artifact'),
+    ])
+  })
+
+  it('rejects a digest mismatch before artifact inspection or execution', async () => {
+    const subject = await fixture()
+    const manifest = await readManifest(subject.manifestPath)
+    const original = manifest.artifacts[0]!
+    await writeSignedManifest(subject, {
+      schemaVersion: manifest.schemaVersion,
+      applicationId: manifest.applicationId,
+      channel: manifest.channel,
+      version: manifest.version,
+      artifacts: [{
+        ...original,
+        consumer: 'desktop',
+        platform: 'linux',
+        arch: 'x64',
+        format: 'appimage',
+        sha256: '0'.repeat(64),
+      }],
+    })
+    const target = subject.input.manifests[0]!
+    let inspections = 0
+
+    await expect(verifyUpdateManifests({
+      ...subject.input,
+      manifests: [{
+        ...target,
+        consumer: 'desktop',
+        platform: 'linux',
+        arch: 'x64',
+        format: 'appimage',
+      }],
+    }, async () => {
+      inspections += 1
+      throw new Error('inspection or execution was reached')
+    })).resolves.toEqual([
+      expect.stringContaining('digest does not match'),
+    ])
+    expect(inspections).toBe(0)
+  })
+
+  it('inspects an immutable snapshot even when the caller path changes', async () => {
+    const subject = await fixture()
+    let inspections = 0
+
+    await expect(verifyUpdateManifests(subject.input, async (snapshot, format) => {
+      inspections += 1
+      await writeFile(subject.artifactPath, zipSync({ 'payload/replaced.txt': Buffer.from('replacement') }))
+      expect(format).toBe('zip')
+      return Object.keys(unzipSync(snapshot)).filter(path => !path.endsWith('/'))
+    })).resolves.toEqual([])
+    expect(inspections).toBe(1)
   })
 
   it('rejects a candidate that cannot update from the declared rollback version', async () => {
