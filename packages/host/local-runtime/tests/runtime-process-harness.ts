@@ -262,13 +262,17 @@ export async function listFiles(root: string): Promise<string[]> {
 }
 
 /** Mint one authenticated browser carrier through the real native-control exchange. */
-export async function mintBrowserCookie(port: number, accessToken: string): Promise<string> {
+export async function mintBrowserCookie(
+  port: number,
+  accessToken: string,
+  clientId: string = 'runtime-process-browser-client',
+): Promise<string> {
   const origin = `http://127.0.0.1:${String(port)}`
   const minted = await fetch(`${origin}/_harness/control/browser-handoff`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${accessToken}`,
-      'x-harness-runtime-client': 'runtime-process-browser-client',
+      'x-harness-runtime-client': clientId,
     },
   })
   if (!minted.ok) throw new Error(`Runtime handoff mint failed with HTTP ${String(minted.status)}`)

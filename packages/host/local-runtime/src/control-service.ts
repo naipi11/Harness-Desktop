@@ -40,6 +40,11 @@ import type {
   TerminalProtocolEvent,
 } from './runtime-client.ts'
 import type { HarnessHomeResolution } from './data-root.ts'
+import type {
+  DesktopUpdateChannel,
+  DesktopUpdateOutcome,
+  DesktopUpdatePreferences,
+} from './update-preferences.ts'
 
 const WEB_LEASE_ID = 'web' as Branded<'BackgroundLeaseId'>
 const BUSY_OPTIONS = ['observe', 'new-session', 'wait'] as const
@@ -89,6 +94,8 @@ export interface RuntimeControlServiceOptions {
   readonly agents?: Pick<AgentRegistry, 'get'>
   readonly commands?: Pick<CommandRuntime, 'execute'>
   readonly permissionPresets?: Pick<PermissionPresetService, 'current' | 'set'>
+  /** Runtime-owned selected channel and redacted update outcome persistence. */
+  readonly updatePreferences?: Pick<DesktopUpdatePreferences, 'getChannel' | 'setChannel' | 'record'>
   readonly resolution: HarnessHomeResolution
   readonly detectMigration?: typeof detectLegacyImport
   readonly recordMigration?: typeof recordLegacyImportDecision
@@ -104,7 +111,7 @@ export interface RuntimeControlService {
   handleDashboard(
     owner: RuntimeClientId,
     request: DashboardControlRequest,
-  ): Promise<LegacyMigrationState | ActiveWorkStatus | OwnUiWorkStopResult>
+  ): Promise<LegacyMigrationState | DesktopUpdateChannel | ActiveWorkStatus | OwnUiWorkStopResult>
   /**
    * Reserve one Dashboard-authenticated prompt before ApiProxy admission.
    * @param owner - one-way identity of the authenticated browser session.
@@ -182,6 +189,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
   const approvals = new Map<ApprovalId, PendingApproval>()
   const detectMigration = options.detectMigration ?? detectLegacyImport
   const recordMigration = options.recordMigration ?? recordLegacyImportDecision
+  const updatePreferences = options.updatePreferences
   let webLease: BackgroundLease | undefined
   let backgroundQueue = Promise.resolve()
   let migrationQueue = Promise.resolve()
@@ -239,6 +247,18 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       }
       return publicMigration(await recordMigration({ decision: 'accepted', resolution: options.resolution }))
     }))
+  const requireUpdatePreferences = (): Pick<DesktopUpdatePreferences, 'getChannel' | 'setChannel' | 'record'> => {
+    if (updatePreferences === undefined) throw new Error('host-local-runtime: composed desktop update preferences are unavailable')
+    return updatePreferences
+  }
+  const setDesktopUpdateChannel = (channel: DesktopUpdateChannel): Promise<DesktopUpdateChannel> =>
+    retainRuntime(async () => {
+      const preferences = requireUpdatePreferences()
+      await preferences.setChannel(channel)
+      return preferences.getChannel()
+    })
+  const recordDesktopUpdateOutcome = (outcome: DesktopUpdateOutcome): Promise<void> =>
+    retainRuntime(() => requireUpdatePreferences().record(outcome))
   const requireTerminal = (owner: RuntimeClientId, terminalId: RuntimeClientId): TerminalRecord => {
     const attachment = children.get(terminalId)
     const terminal = terminals.get(terminalId)
@@ -386,6 +406,15 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         case 'retry-legacy-migration':
           requireBaseClient(clients, clientId)
           return migration(request.operation)
+        case 'get-desktop-update-channel':
+          requireBaseClient(clients, clientId)
+          return requireUpdatePreferences().getChannel()
+        case 'set-desktop-update-channel':
+          requireBaseClient(clients, clientId)
+          return setDesktopUpdateChannel(request.channel)
+        case 'record-desktop-update-outcome':
+          requireBaseClient(clients, clientId)
+          return recordDesktopUpdateOutcome(request.outcome)
         case 'observe-active-work': requireBaseClient(clients, clientId); return service.observeActiveWork(clientId)
         case 'stop-own-ui-work': requireBaseClient(clients, clientId); return service.stopOwnUiWork(clientId)
       }
@@ -397,6 +426,10 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         case 'decline-legacy-migration':
         case 'retry-legacy-migration':
           return migration(request.operation)
+        case 'get-desktop-update-channel':
+          return Promise.resolve(requireUpdatePreferences().getChannel())
+        case 'set-desktop-update-channel':
+          return setDesktopUpdateChannel(request.channel)
         case 'observe-active-work':
           return service.observeActiveWork(owner)
         case 'stop-own-ui-work':

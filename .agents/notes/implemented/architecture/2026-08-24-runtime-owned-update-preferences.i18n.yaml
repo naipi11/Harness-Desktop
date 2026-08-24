@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-24-runtime-owned-update-preferences.md
+2026-08-24-runtime-owned-update-preferences.md: f45f54a73d3ae2ba67b24d622bea86d83a1a3827
+2026-08-24-runtime-owned-update-preferences.zh.md: 72ebff67adfde5eba04e2f730c28143259ae8e47

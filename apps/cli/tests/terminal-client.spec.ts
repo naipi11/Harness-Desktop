@@ -128,6 +128,22 @@ class FakeRuntimeClient implements RuntimeClient {
     return Promise.resolve(this.migration)
   }
 
+  getDesktopUpdateChannel(): ReturnType<RuntimeClient['getDesktopUpdateChannel']> {
+    return Promise.reject(new Error('Desktop update controls are outside terminal client scope'))
+  }
+
+  setDesktopUpdateChannel(
+    _channel: Parameters<RuntimeClient['setDesktopUpdateChannel']>[0],
+  ): ReturnType<RuntimeClient['setDesktopUpdateChannel']> {
+    return Promise.reject(new Error('Desktop update controls are outside terminal client scope'))
+  }
+
+  recordDesktopUpdateOutcome(
+    _outcome: Parameters<RuntimeClient['recordDesktopUpdateOutcome']>[0],
+  ): ReturnType<RuntimeClient['recordDesktopUpdateOutcome']> {
+    return Promise.reject(new Error('Desktop update controls are outside terminal client scope'))
+  }
+
   observeActiveWork(): Promise<ActiveWorkStatus> {
     if (this.activeResult !== undefined) return this.activeResult
     return Promise.resolve(this.active.shift() ?? { ownUiWork: [] })

@@ -91,6 +91,30 @@ describe.each([
     expect(result.exitCode).toBe(0)
     expect(result.stderr).not.toContain(endpoint.accessToken)
   }, 90_000)
+
+  it('persists a selected update channel through the public Runtime client', async () => {
+    runtime = await startRuntimeProcess(mode === 'src'
+      ? { mode, entry: 'source-backend-fixture', denyWorkspaceLib: true }
+      : { mode })
+    const endpoint = await waitForEndpoint(runtime)
+    const connector = createRuntimeConnector({
+      input: { env: { HARNESS_HOME: runtime.harnessHome }, homeDir: runtime.platformHome },
+    })
+    client = await connector.connect({ start: false })
+
+    expect(await client.getDesktopUpdateChannel()).toBe('stable')
+    expect(await client.setDesktopUpdateChannel('beta')).toBe('beta')
+    await expect(client.recordDesktopUpdateOutcome({
+      version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged',
+    })).resolves.toBeUndefined()
+    expect(await client.getDesktopUpdateChannel()).toBe('beta')
+
+    await client.close()
+    client = undefined
+    const result = await releaseRuntime(runtime)
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).not.toContain(endpoint.accessToken)
+  }, 90_000)
 })
 
 describe('clean-source real terminal operation', () => {
@@ -108,8 +132,8 @@ describe('clean-source real terminal operation', () => {
       else process.env.DSH_RUNTIME_TEST_REPLAY_OVERRIDE = previousOverride
     }
     const endpoint = await waitForEndpoint(runtime)
-    const ownerCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
-    const otherCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken)
+    const ownerCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken, 'runtime-process-browser-owner')
+    const otherCookie = await mintBrowserCookie(endpoint.port, endpoint.accessToken, 'runtime-process-browser-other')
     const workspace = await runtimeRpc<{ workspace: { workspaceId: string } }>(
       endpoint.port, ownerCookie, 'workspace.create', { path: runtime.cwd },
     )

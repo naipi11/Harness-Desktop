@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import { readPrivateEndpointRecord, type PrivateEndpointRecord, type RuntimeId } from './endpoint-record.ts'
 import { resolveHarnessHome, type HarnessHomeInput } from './data-root.ts'
+import {
+  isDesktopUpdateChannel,
+  type DesktopUpdateChannel,
+  type DesktopUpdateOutcome,
+} from './update-preferences.ts'
 
 const CONTROL_PATH = '/_harness/control'
 const INTERNAL_CONTROL_PATH = '/_harness/control/internal'
@@ -229,6 +234,9 @@ export type RuntimeControlRequest =
   | { readonly operation: 'accept-legacy-migration' }
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
+  | { readonly operation: 'get-desktop-update-channel' }
+  | { readonly operation: 'set-desktop-update-channel'; readonly channel: DesktopUpdateChannel }
+  | { readonly operation: 'record-desktop-update-outcome'; readonly outcome: DesktopUpdateOutcome }
   | { readonly operation: 'observe-active-work' }
   | { readonly operation: 'stop-own-ui-work' }
 
@@ -238,6 +246,8 @@ export type DashboardControlRequest =
   | { readonly operation: 'accept-legacy-migration' }
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
+  | { readonly operation: 'get-desktop-update-channel' }
+  | { readonly operation: 'set-desktop-update-channel'; readonly channel: DesktopUpdateChannel }
   | { readonly operation: 'observe-active-work' }
   | { readonly operation: 'stop-own-ui-work' }
 
@@ -281,6 +291,20 @@ export interface RuntimeClient {
   declineLegacyMigration(): Promise<LegacyMigrationState>
   /** @returns the durable result after retrying only an exact retryable collision/failure state. */
   retryLegacyMigration(): Promise<LegacyMigrationState>
+  /** @returns the Runtime-owned selected Desktop update channel. */
+  getDesktopUpdateChannel(): Promise<DesktopUpdateChannel>
+  /**
+   * Persist one selected Desktop update channel through the shared Runtime.
+   * @param channel - selected release channel.
+   * @returns the committed selected channel.
+   */
+  setDesktopUpdateChannel(channel: DesktopUpdateChannel): Promise<DesktopUpdateChannel>
+  /**
+   * Persist one native updater result without exposing a location, manifest, or raw error.
+   * @param outcome - fixed-format redacted updater result.
+   * @returns fulfillment after the Runtime settings write commits.
+   */
+  recordDesktopUpdateOutcome(outcome: DesktopUpdateOutcome): Promise<void>
   /** @returns active work owned by this UI client only. */
   observeActiveWork(): Promise<ActiveWorkStatus>
   /**
@@ -532,6 +556,21 @@ class RuntimeClientConnection implements RuntimeClient {
     return this.wire.control(this.clientId, { operation: 'retry-legacy-migration' })
   }
 
+  getDesktopUpdateChannel(): Promise<DesktopUpdateChannel> {
+    this.ensureOpen()
+    return this.wire.control(this.clientId, { operation: 'get-desktop-update-channel' })
+  }
+
+  setDesktopUpdateChannel(channel: DesktopUpdateChannel): Promise<DesktopUpdateChannel> {
+    this.ensureOpen()
+    return this.wire.control(this.clientId, { operation: 'set-desktop-update-channel', channel })
+  }
+
+  recordDesktopUpdateOutcome(outcome: DesktopUpdateOutcome): Promise<void> {
+    this.ensureOpen()
+    return this.wire.control(this.clientId, { operation: 'record-desktop-update-outcome', outcome })
+  }
+
   observeActiveWork(): Promise<ActiveWorkStatus> {
     this.ensureOpen()
     return this.wire.control(this.clientId, { operation: 'observe-active-work' })
@@ -720,6 +759,12 @@ function parseControlSuccess(request: RuntimeControlRequest, value: unknown): un
     case 'decline-legacy-migration':
     case 'retry-legacy-migration':
       return parseLegacyMigrationState(value)
+    case 'get-desktop-update-channel':
+    case 'set-desktop-update-channel':
+      return parseDesktopUpdateChannel(value)
+    case 'record-desktop-update-outcome':
+      if (value !== undefined) throw new RuntimeProtocolError()
+      return undefined
     case 'observe-active-work': return parseActiveWorkStatus(value)
     case 'stop-own-ui-work': return parseOwnUiWorkStopResult(value)
   }
@@ -796,6 +841,11 @@ function parseLegacyMigrationState(value: unknown): LegacyMigrationState {
       return { kind: value.kind, retryable: true, diagnostic: parseDiagnostic(value.diagnostic) }
     default: throw new RuntimeProtocolError()
   }
+}
+
+function parseDesktopUpdateChannel(value: unknown): DesktopUpdateChannel {
+  if (!isDesktopUpdateChannel(value)) throw new RuntimeProtocolError()
+  return value
 }
 
 function parseActiveWorkStatus(value: unknown): ActiveWorkStatus {

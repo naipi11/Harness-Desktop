@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import type { ApiProxy } from '@harness-desktop/dsh-host-apiproxy/api'
 import WebServer from '@harness-desktop/dsh-host-webserver'
+import { SettingsProvider } from '@harness-desktop/dsh-settings'
+import type { SettingsNamespace } from '@harness-desktop/dsh-settings'
 import type { Branded } from '@harness-desktop/dsh-brand'
 import {
   createRuntimeConnector,
@@ -29,6 +31,21 @@ let runtime: RuntimeHandle | undefined
 let client: RuntimeClient | undefined
 let dashboard: DashboardAttachment | undefined
 
+/** Small settings provider keeping the private-control Runtime fixture self-contained. */
+class MemorySettings extends SettingsProvider {
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve({})
+  }
+
+  protected persist(_namespace: SettingsNamespace, _section: Record<string, unknown>): Promise<void> {
+    return Promise.resolve()
+  }
+}
+
 afterEach(async () => {
   await dashboard?.close()
   dashboard = undefined
@@ -42,7 +59,7 @@ afterEach(async () => {
 
 async function startControlledRuntime(home: string, lifecycle?: {
   callbacks: Set<() => Promise<void>>
-}, legacyDshHome?: string): Promise<void> {
+}, legacyDshHome?: string, options: { readonly settings?: boolean } = {}): Promise<void> {
   const provider = createLocalRuntimePlugin({ env: { HARNESS_HOME: home }, homeDir: root! })
   runtime = await startRuntime({
     harnessHome: provider,
@@ -60,6 +77,7 @@ async function startControlledRuntime(home: string, lifecycle?: {
     }),
     async boot() {
       const ctx = new Context()
+      if (options.settings !== false) await ctx.plugin(MemorySettings).await()
       await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
       ctx.provide('apiProxy', {} as ApiProxy)
       return ctx
@@ -197,6 +215,90 @@ describe('public Runtime connector', () => {
     expect(body).toEqual({ ok: true, value: { kind: 'imported', copied: ['sessions'] } })
     expect(await client.getLegacyMigration()).toEqual(body.value)
   })
+
+  it('shares the selected update channel while keeping outcome recording native-only', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-dashboard-update-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+    dashboard = await client.attachDashboard()
+
+    expect(await client.getDesktopUpdateChannel()).toBe('stable')
+    expect(await client.setDesktopUpdateChannel('nightly')).toBe('nightly')
+    await expect(client.recordDesktopUpdateOutcome({
+      version: '1.2.3', channel: 'nightly', kind: 'staged', code: 'staged',
+    })).resolves.toBeUndefined()
+
+    const navigation = await dashboard.createBrowserHandoff()
+    const exchange = await fetch(`${navigation.origin}/_harness/handoff`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ handoff: navigation.handoff.id }),
+    })
+    const cookie = exchange.headers.get('set-cookie')?.split(';', 1)[0]
+    expect(cookie).toBeDefined()
+    const request = (body: unknown) => fetch(`${navigation.origin}/_harness/dashboard-control`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookie!, origin: navigation.origin },
+      body: JSON.stringify(body),
+    })
+
+    await expect(request({ operation: 'get-desktop-update-channel' }).then(response => response.json()))
+      .resolves.toEqual({ ok: true, value: 'nightly' })
+    await expect(request({ operation: 'set-desktop-update-channel', channel: 'beta' }).then(response => response.json()))
+      .resolves.toEqual({ ok: true, value: 'beta' })
+    expect((await request({
+      operation: 'record-desktop-update-outcome',
+      outcome: { version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged' },
+    })).status).toBe(400)
+    expect(await client.getDesktopUpdateChannel()).toBe('beta')
+  }, 20_000)
+
+  it('rejects malformed update controls before they reach an authenticated service owner', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-malformed-update-control-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home)
+    const endpoint = await readPrivateEndpointRecord(home as Branded<'HarnessHome'>)
+    const control = (body: unknown) => fetch(`http://127.0.0.1:${String(endpoint.port)}/_harness/control`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.accessToken}`,
+        'content-type': 'application/json',
+        'x-harness-runtime-client': 'malformed-update-control-client',
+      },
+      body: JSON.stringify(body),
+    })
+
+    const responses = await Promise.all([
+      control({ operation: 'set-desktop-update-channel', channel: 'preview' }),
+      control({ operation: 'set-desktop-update-channel', channel: 'stable', unexpected: true }),
+      control({
+        operation: 'record-desktop-update-outcome',
+        outcome: { version: '1.2.3', channel: 'stable', kind: 'failed', code: 'network-detail' },
+      }),
+      control({
+        operation: 'record-desktop-update-outcome',
+        outcome: {
+          version: '1.2.3', channel: 'stable', kind: 'failed', code: 'manifest-rejected',
+          url: 'https://updates.example.test/manifest.json',
+        },
+      }),
+    ])
+
+    expect(responses.map(response => response.status)).toEqual([400, 400, 400, 400])
+  }, 20_000)
+
+  it('fails update control through the redacted Runtime path when a reduced composition has no settings provider', async () => {
+    root = await mkdtemp(join(tmpdir(), 'harness-runtime-update-without-settings-'))
+    const home = join(root, 'home')
+    await startControlledRuntime(home, undefined, undefined, { settings: false })
+    const connector = createRuntimeConnector({ input: { env: { HARNESS_HOME: home }, homeDir: root } })
+    client = await connector.connect({ start: false })
+
+    await expect(client.getDesktopUpdateChannel()).rejects.toBeInstanceOf(RuntimeUnavailableError)
+  }, 20_000)
 
   it('normalizes unknown and unavailable failures without returning raw paths or secrets', async () => {
     const raw = new Error('token=private C:\\Users\\person\\Harness\\runtime-endpoint.json')

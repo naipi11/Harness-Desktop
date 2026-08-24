@@ -6,6 +6,7 @@ import type { Context } from '@harness-desktop/cordis'
 import type { WebRoute } from '@harness-desktop/dsh-host-webserver'
 import type { LocalDashboardAuth } from './auth.ts'
 import type { RuntimeControlService } from './control-service.ts'
+import { isDesktopUpdateChannel, isDesktopUpdateOutcome } from './update-preferences.ts'
 import type {
   DashboardControlRequest,
   RuntimeClientId,
@@ -229,26 +230,38 @@ function isRuntimeControlRequest(value: unknown): value is RuntimeControlRequest
   if (value.operation === 'acquire-background-lease' || value.operation === 'release-background-lease') {
     return keys.length === 2 && value.lease === 'web'
   }
+  if (value.operation === 'set-desktop-update-channel') {
+    return keys.length === 2 && isDesktopUpdateChannel(value.channel)
+  }
+  if (value.operation === 'record-desktop-update-outcome') {
+    return keys.length === 2 && isDesktopUpdateOutcome(value.outcome)
+  }
   return keys.length === 1 && [
     'status',
     'get-legacy-migration',
     'accept-legacy-migration',
     'decline-legacy-migration',
     'retry-legacy-migration',
+    'get-desktop-update-channel',
     'observe-active-work',
     'stop-own-ui-work',
   ].includes(value.operation)
 }
 
 function isDashboardControlRequest(value: unknown): value is DashboardControlRequest {
-  return plainRecord(value) && Object.keys(value).length === 1 && [
+  if (!plainRecord(value) || typeof value.operation !== 'string') return false
+  if (value.operation === 'set-desktop-update-channel') {
+    return Object.keys(value).length === 2 && isDesktopUpdateChannel(value.channel)
+  }
+  return Object.keys(value).length === 1 && [
     'get-legacy-migration',
     'accept-legacy-migration',
     'decline-legacy-migration',
     'retry-legacy-migration',
+    'get-desktop-update-channel',
     'observe-active-work',
     'stop-own-ui-work',
-  ].includes(String(value.operation))
+  ].includes(value.operation)
 }
 
 function isInternalControlRequest(value: unknown): value is InternalControlRequest {

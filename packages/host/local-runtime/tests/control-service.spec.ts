@@ -890,4 +890,32 @@ describe('Runtime control service', () => {
       .toEqual({ kind: 'imported', copied: ['projects'] })
     expect(await readFile(join(legacy, 'projects', 'one.json'), 'utf8')).toBe('{}\n')
   })
+
+  it('routes native update controls through the injected Runtime preference owner', async () => {
+    let channel = 'stable'
+    const outcomes: unknown[] = []
+    const updatePreferences = {
+      getChannel: () => channel,
+      async setChannel(next: string) { channel = next },
+      async record(outcome: unknown) { outcomes.push(outcome) },
+    }
+    await start(undefined, { updatePreferences } as never)
+    const owner = client('desktop-update-native-owner')
+    await control!.attachClient(owner)
+
+    expect(await control!.handleNative(owner, { operation: 'get-desktop-update-channel' } as never)).toBe('stable')
+    expect(await control!.handleNative(owner, {
+      operation: 'set-desktop-update-channel', channel: 'beta',
+    } as never)).toBe('beta')
+    await expect(control!.handleNative(owner, {
+      operation: 'record-desktop-update-outcome',
+      outcome: { version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged' },
+    } as never)).resolves.toBeUndefined()
+
+    expect(channel).toBe('beta')
+    expect(outcomes).toEqual([{ version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged' }])
+    await expect(control!.handleNative(client('desktop-update-foreign-owner'), {
+      operation: 'get-desktop-update-channel',
+    } as never)).rejects.toThrow('client attachment is unavailable')
+  })
 })

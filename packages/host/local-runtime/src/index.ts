@@ -21,6 +21,13 @@ export type { ProcessIdentity } from './process-identity.ts'
 
 export type { RedactedRuntimeStatus } from './endpoint-record.ts'
 
+export type {
+  DesktopUpdateChannel,
+  DesktopUpdateOutcome,
+  DesktopUpdateOutcomeCode,
+  DesktopUpdateOutcomeKind,
+} from './update-preferences.ts'
+
 export {
   createRuntimeConnector,
   normalizeRecoveryDiagnostic,

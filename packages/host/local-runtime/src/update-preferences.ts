@@ -85,6 +85,40 @@ function hasExactKeys(value: object, keys: readonly string[]): boolean {
   return actual.length === keys.length && keys.every(key => Object.hasOwn(value, key))
 }
 
+/**
+ * @param value - untrusted candidate value.
+ * @returns whether the value names one supported Desktop update channel.
+ */
+export function isDesktopUpdateChannel(value: unknown): value is DesktopUpdateChannel {
+  return typeof value === 'string' && DESKTOP_UPDATE_CHANNELS.includes(value as DesktopUpdateChannel)
+}
+
+/**
+ * @param value - untrusted candidate version.
+ * @returns whether the value is a bounded semantic version.
+ */
+function isSemanticVersion(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 128 && SEMANTIC_VERSION_PATTERN.test(value)
+}
+
+/**
+ * @param value - untrusted candidate outcome.
+ * @returns whether the value is the fixed-format redacted update outcome.
+ */
+export function isDesktopUpdateOutcome(value: unknown): value is DesktopUpdateOutcome {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const outcome = value as Record<string, unknown>
+  const keys = outcome.lastKnownGoodVersion === undefined
+    ? ['version', 'channel', 'kind', 'code']
+    : ['version', 'channel', 'kind', 'code', 'lastKnownGoodVersion']
+  return hasExactKeys(outcome, keys)
+    && isSemanticVersion(outcome.version)
+    && isDesktopUpdateChannel(outcome.channel)
+    && typeof outcome.kind === 'string' && DESKTOP_UPDATE_OUTCOME_KINDS.includes(outcome.kind as DesktopUpdateOutcomeKind)
+    && typeof outcome.code === 'string' && DESKTOP_UPDATE_OUTCOME_CODES.includes(outcome.code as DesktopUpdateOutcomeCode)
+    && (outcome.lastKnownGoodVersion === undefined || isSemanticVersion(outcome.lastKnownGoodVersion))
+}
+
 /** Refuse durable fields outside the fixed redacted record. */
 function validateDesktopUpdateSettings(value: DesktopUpdateSettings): void {
   const settings = value as unknown as Record<string, unknown>
@@ -92,11 +126,10 @@ function validateDesktopUpdateSettings(value: DesktopUpdateSettings): void {
   if (!hasExactKeys(settings, outcome === undefined ? ['channel'] : ['channel', 'lastOutcome'])) {
     throw new Error('host-local-runtime: desktop update settings contain an unsupported field')
   }
-  if (outcome === undefined) return
-  const keys = outcome.lastKnownGoodVersion === undefined
-    ? ['version', 'channel', 'kind', 'code']
-    : ['version', 'channel', 'kind', 'code', 'lastKnownGoodVersion']
-  if (!hasExactKeys(outcome, keys)) {
+  if (!isDesktopUpdateChannel(value.channel)) {
+    throw new Error('host-local-runtime: desktop update settings contain an unsupported channel')
+  }
+  if (outcome !== undefined && !isDesktopUpdateOutcome(outcome)) {
     throw new Error('host-local-runtime: desktop update outcome contains an unsupported field')
   }
 }

@@ -13,6 +13,7 @@ import {
   type RuntimeControlService,
 } from './control-service.ts'
 import { mountPrivateRuntimeControl } from './runtime-control.ts'
+import { DesktopUpdatePreferences } from './update-preferences.ts'
 import {
   redactRuntimeStatus,
   removePrivateEndpointRecord,
@@ -160,6 +161,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       const agents = ctx.get('agents')
       const commands = ctx.get('commands')
       const permissionPresets = ctx.get('permissionPresets')
+      const settings = ctx.get('settings')
       const controlService = createRuntimeControlService({
         runtime: handle,
         ...(sessions === undefined ? {} : { sessions }),
@@ -167,6 +169,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
         ...(agents === undefined ? {} : { agents }),
         ...(commands === undefined ? {} : { commands }),
         ...(permissionPresets === undefined ? {} : { permissionPresets }),
+        ...(settings === undefined ? {} : { updatePreferences: new DesktopUpdatePreferences(settings) }),
         resolution: {
           path: config.harnessHome.home,
           source: 'environment',

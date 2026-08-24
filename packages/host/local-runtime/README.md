@@ -37,6 +37,8 @@ Legacy decisions and results live under `HARNESS_HOME` and pass through one Runt
 
 The canonical composition mounts the API, Dashboard assets, session, settings, workspace, storage, and credential-reference providers behind the same ownership lock. Credential values remain with their credential provider; only references enter Runtime-owned state.
 
+The `desktop-update` settings namespace stores the selected `stable`, `beta`, or `nightly` channel and one fixed-format redacted outcome through that same settings provider. Native control may record only semantic versions, one of the fixed result kinds and codes, and an optional last-known-good version; Dashboard control may read or change only the channel. The Runtime does not fetch, verify, stage, apply, or roll back an artifact, and it has no production update trust root.
+
 ## Lifecycle and leases
 
 The Runtime counts actual client attachments, Agent work, and the named background lease. Idle shutdown begins only when all three counts are zero. Migration and terminal-control transactions retain the Runtime until settlement, and direct disposal rejects without starting shutdown while any retainer remains.
@@ -73,3 +75,4 @@ Runtime metadata does not change the model request prefix. Model-visible tasks a
 
 - **Background retention is not supervision** — the named Web lease does not restart the Runtime after a crash, sign-out, or upgrade.
 - **Skill admission still has a cross-package race** — the API admits an exact user-invocable skill from one complete catalog observation, but its definition can change before the pre-step consumer loads it. Closing that interval requires a shared admission token or equivalent skill/API transaction; the Runtime does not claim a universal fail-closed guarantee for that interval.
+- **Update preferences are not an updater** — the Runtime persists a channel and redacted result only; trusted manifest retrieval, artifact verification, installation, and rollback remain unavailable until a production trust configuration is supplied.
