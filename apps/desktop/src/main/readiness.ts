@@ -82,7 +82,7 @@ export class DesktopReadiness {
   private acknowledgement: AcknowledgementWrite | undefined
 
   /** @param output - process output receiving the constant JSONL record. */
-  constructor(private readonly output: DesktopReadyOutput = process.stdout) {}
+  constructor(private readonly output: DesktopReadyOutput | null | undefined = process.stdout) {}
 
   /**
    * Wait for a clean exact-origin document with the authenticated-ready marker.
@@ -167,14 +167,16 @@ interface AcknowledgementWrite {
 }
 
 /** Start one acknowledgement write while converting a broken output pipe into the startup result. */
-function createAcknowledgementWrite(output: DesktopReadyOutput): AcknowledgementWrite {
+function createAcknowledgementWrite(output: DesktopReadyOutput | null | undefined): AcknowledgementWrite {
+  if (output === undefined || output === null) return { promise: Promise.resolve(), retain: () => () => {} }
   if (!isEventedOutput(output)) {
     try {
       output.write(READY_RECORD)
       return { promise: Promise.resolve(), retain: () => () => {} }
     } catch (error) {
+      const reason = error instanceof Error ? error : new Error('Desktop acknowledgement output failed.')
       return {
-        promise: Promise.reject(error instanceof Error ? error : new Error('Desktop acknowledgement output failed.')),
+        promise: isBrokenAcknowledgementPipe(reason) ? Promise.resolve() : Promise.reject(reason),
         retain: () => () => {},
       }
     }
@@ -199,7 +201,7 @@ function createAcknowledgementWrite(output: DesktopReadyOutput): Acknowledgement
     const settle = (): void => {
       if (settled) return
       settled = true
-      if (error === undefined) resolve()
+      if (error === undefined || isBrokenAcknowledgementPipe(error)) resolve()
       else reject(error)
       removeAfterGrace()
     }
@@ -246,4 +248,9 @@ function createAcknowledgementWrite(output: DesktopReadyOutput): Acknowledgement
 function isEventedOutput(output: DesktopReadyOutput): output is EventedDesktopReadyOutput {
   return typeof (output as Partial<EventedDesktopReadyOutput>).on === 'function'
     && typeof (output as Partial<EventedDesktopReadyOutput>).removeListener === 'function'
+}
+
+/** @returns whether a detached Desktop has no acknowledgement consumer. */
+function isBrokenAcknowledgementPipe(error: Error): boolean {
+  return (error as NodeJS.ErrnoException).code === 'EPIPE'
 }

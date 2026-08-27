@@ -30,12 +30,14 @@ class FakeWebContents extends EventEmitter {
 }
 
 class DeferredErrorOutput extends EventEmitter {
-  writes: string[] = []
+  readonly writes: string[] = []
+
+  constructor(private readonly code = 'EPIPE') { super() }
 
   write(chunk: string): boolean {
     this.writes.push(chunk)
     queueMicrotask(() => {
-      this.emit('error', Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' }))
+      this.emit('error', outputError(this.code))
     })
     return false
   }
@@ -44,9 +46,11 @@ class DeferredErrorOutput extends EventEmitter {
 class SynchronousErrorOutput {
   readonly writes: string[] = []
 
+  constructor(private readonly code = 'EPIPE') {}
+
   write(chunk: string): boolean {
     this.writes.push(chunk)
-    throw Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })
+    throw outputError(this.code)
   }
 }
 
@@ -62,9 +66,11 @@ class RecordingOutput {
 class CallbackErrorOutput extends EventEmitter {
   readonly writes: string[] = []
 
+  constructor(private readonly code = 'EPIPE') { super() }
+
   write(chunk: string, callback?: (error?: Error | null) => void): boolean {
     this.writes.push(chunk)
-    queueMicrotask(() => { callback?.(Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })) })
+    queueMicrotask(() => { callback?.(outputError(this.code)) })
     return false
   }
 }
@@ -72,9 +78,11 @@ class CallbackErrorOutput extends EventEmitter {
 class CallbackThenErrorOutput extends EventEmitter {
   readonly writes: string[] = []
 
+  constructor(private readonly code = 'EPIPE') { super() }
+
   write(chunk: string, callback?: (error?: Error | null) => void): boolean {
     this.writes.push(chunk)
-    const error = Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })
+    const error = outputError(this.code)
     queueMicrotask(() => {
       callback?.(error)
       queueMicrotask(() => { this.emit('error', error) })
@@ -196,7 +204,7 @@ describe('Desktop Dashboard readiness', () => {
     expect(chunks).toEqual([])
   })
 
-  it('rejects a delayed acknowledgement pipe failure without an unhandled output error', async () => {
+  it('keeps Dashboard readiness after a delayed EPIPE acknowledgement failure', async () => {
     const output = new DeferredErrorOutput()
     const readiness = new DesktopReadiness(output)
     const window = new FakeWindow()
@@ -205,11 +213,13 @@ describe('Desktop Dashboard readiness', () => {
 
     window.webContents.emit('did-finish-load')
 
-    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    await expect(ready).resolves.toBeUndefined()
+    await settleOutputEvents()
+    expect(output.listenerCount('error')).toBe(0)
     expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
   })
 
-  it('rejects a synchronous acknowledgement pipe failure', async () => {
+  it('keeps Dashboard readiness after a synchronous EPIPE acknowledgement failure', async () => {
     const output = new SynchronousErrorOutput()
     const readiness = new DesktopReadiness(output)
     const window = readyWindow()
@@ -217,11 +227,11 @@ describe('Desktop Dashboard readiness', () => {
 
     window.webContents.emit('did-finish-load')
 
-    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    await expect(ready).resolves.toBeUndefined()
     expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
   })
 
-  it('rejects an acknowledgement write callback failure', async () => {
+  it('keeps Dashboard readiness after an EPIPE acknowledgement callback failure', async () => {
     const output = new CallbackErrorOutput()
     const readiness = new DesktopReadiness(output)
     const window = readyWindow()
@@ -229,12 +239,37 @@ describe('Desktop Dashboard readiness', () => {
 
     window.webContents.emit('did-finish-load')
 
-    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    await expect(ready).resolves.toBeUndefined()
     expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
   })
 
-  it('absorbs the output error emitted after an acknowledgement callback failure', async () => {
+  it('keeps Dashboard readiness after the output error emitted after an EPIPE callback failure', async () => {
     const output = new CallbackThenErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).resolves.toBeUndefined()
+    await settleOutputEvents()
+    expect(output.listenerCount('error')).toBe(0)
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('rejects a non-EPIPE synchronous acknowledgement failure', async () => {
+    const output = new SynchronousErrorOutput('EIO')
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+  })
+
+  it('rejects a non-EPIPE acknowledgement callback failure', async () => {
+    const output = new CallbackThenErrorOutput('EIO')
     const readiness = new DesktopReadiness(output)
     const window = readyWindow()
     const ready = readiness.wait(window, ORIGIN)
@@ -244,7 +279,16 @@ describe('Desktop Dashboard readiness', () => {
     await expect(ready).rejects.toThrow('acknowledgement could not be written')
     await settleOutputEvents()
     expect(output.listenerCount('error')).toBe(0)
-    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('keeps Dashboard readiness when no acknowledgement output is attached', async () => {
+    const readiness = new DesktopReadiness(null)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).resolves.toBeUndefined()
   })
 
   it('writes one acknowledgement when two windows become ready concurrently through a non-event output', async () => {
@@ -284,7 +328,7 @@ describe('Desktop Dashboard readiness', () => {
 
     expect(result).toEqual({
       exitCode: 0,
-      stderr: '{"result":"rejected","sequence":["callback:EPIPE","error:EPIPE"]}\n',
+      stderr: '{"result":"resolved","sequence":["callback:EPIPE","error:EPIPE"]}\n',
     })
   })
 
@@ -307,6 +351,10 @@ function readyWindow(): FakeWindow {
   const window = new FakeWindow()
   window.webContents.url = `${ORIGIN}/`
   return window
+}
+
+function outputError(code: string): Error & { readonly code: string } {
+  return Object.assign(new Error('broken acknowledgement output'), { code })
 }
 
 async function settleOutputEvents(): Promise<void> {
