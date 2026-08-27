@@ -25,6 +25,18 @@ class FakeWebContents extends EventEmitter {
   }
 }
 
+class DeferredErrorOutput extends EventEmitter {
+  writes: string[] = []
+
+  write(chunk: string): boolean {
+    this.writes.push(chunk)
+    queueMicrotask(() => {
+      this.emit('error', Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' }))
+    })
+    return false
+  }
+}
+
 class FakeWindow implements DashboardReadyWindow {
   readonly webContents = new FakeWebContents()
 }
@@ -119,6 +131,19 @@ describe('Desktop Dashboard readiness', () => {
 
     await expect(ready).rejects.toThrow()
     expect(chunks).toEqual([])
+  })
+
+  it('rejects a delayed acknowledgement pipe failure without an unhandled output error', async () => {
+    const output = new DeferredErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = new FakeWindow()
+    window.webContents.url = `${ORIGIN}/`
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
   })
 
   it('rejects a foreign navigation without reflecting it or acknowledging readiness', async () => {

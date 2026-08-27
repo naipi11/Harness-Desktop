@@ -23,8 +23,16 @@ export interface DashboardReadyWindow {
 
 /** Writable process output used for the one acknowledgement record. */
 export interface DesktopReadyOutput {
-  /** @param chunk - one complete JSONL record. @returns the writer-specific result. */
-  write(chunk: string): unknown
+  /** @param chunk - one complete JSONL record. @param callback - completion error observer. @returns the writer-specific result. */
+  write(chunk: string, callback?: (error?: Error | null) => void): unknown
+}
+
+/** Writable acknowledgement output that can report an asynchronous pipe failure. */
+interface EventedDesktopReadyOutput extends DesktopReadyOutput {
+  /** @param event - output failure event. @param listener - one failure observer. @returns the writer-specific result. */
+  once(event: 'error', listener: (error: Error) => void): unknown
+  /** @param event - output failure event. @param listener - previously registered observer. @returns the writer-specific result. */
+  removeListener(event: 'error', listener: (error: Error) => void): unknown
 }
 
 /** Exact acknowledgement emitted after authenticated Dashboard boot. */
@@ -114,7 +122,7 @@ export class DesktopReadiness {
         }
         checking = true
         void window.webContents.executeJavaScript(READY_PROBE).then(
-          (ready) => {
+          async (ready) => {
             checking = false
             if (settled) return
             if (ready !== true) {
@@ -123,7 +131,7 @@ export class DesktopReadiness {
             }
             if (!this.acknowledged) {
               try {
-                this.output.write(READY_RECORD)
+                await awaitAcknowledgementWrite(this.output)
                 this.acknowledged = true
               } catch {
                 finish(new Error('Desktop readiness acknowledgement could not be written.'))
@@ -145,4 +153,34 @@ export class DesktopReadiness {
       if (signal?.aborted === true) onAbort()
     })
   }
+}
+
+/** Write the one acknowledgement while converting a broken output pipe into the startup result. */
+function awaitAcknowledgementWrite(output: DesktopReadyOutput): Promise<void> {
+  if (!isEventedOutput(output)) {
+    output.write(READY_RECORD)
+    return Promise.resolve()
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (error?: Error | null): void => {
+      if (settled) return
+      settled = true
+      output.removeListener('error', onError)
+      if (error === undefined || error === null) resolve()
+      else reject(error)
+    }
+    const onError = (error: Error): void => { finish(error) }
+    output.once('error', onError)
+    try {
+      output.write(READY_RECORD, finish)
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error('Desktop acknowledgement output failed.'))
+    }
+  })
+}
+
+function isEventedOutput(output: DesktopReadyOutput): output is EventedDesktopReadyOutput {
+  return typeof (output as Partial<EventedDesktopReadyOutput>).once === 'function'
+    && typeof (output as Partial<EventedDesktopReadyOutput>).removeListener === 'function'
 }
