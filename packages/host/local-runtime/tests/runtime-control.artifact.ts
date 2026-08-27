@@ -51,6 +51,7 @@ describe('built private Runtime control assembly', () => {
       dependencies: Record<string, string>
     }
     expect(manifest.dependencies).toHaveProperty('@harness-desktop/dsh-host-apiproxy')
+    expect(manifest.dependencies).toHaveProperty('@harness-desktop/dsh-home-paths')
     expect(manifest.dependencies).toHaveProperty('@harness-desktop/dsh-llm')
 
     const consumer = await mkdtemp(join(tmpdir(), 'harness-runtime-types-'))

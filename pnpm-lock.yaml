@@ -5651,6 +5651,9 @@ importers:
       '@harness-desktop/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@harness-desktop/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
       '@harness-desktop/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../apiproxy
@@ -5694,9 +5697,6 @@ importers:
       '@harness-desktop/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
-      '@harness-desktop/dsh-home-paths':
-        specifier: workspace:^
-        version: link:../../util/home-paths
       '@harness-desktop/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

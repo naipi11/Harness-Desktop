@@ -50,6 +50,7 @@
     "@harness-desktop/dsh-commands": "workspace:^",
     "@harness-desktop/dsh-host-apiproxy": "workspace:^",
     "@harness-desktop/dsh-host-directory-picker-native": "workspace:^",
+    "@harness-desktop/dsh-home-paths": "workspace:^",
     "@harness-desktop/dsh-host-webserver": "workspace:^",
     "@harness-desktop/dsh-update-policy": "workspace:^",
     "@harness-desktop/dsh-llm": "workspace:^",
@@ -64,7 +65,6 @@
     "@harness-desktop/dsh-atomic-write": "workspace:^",
     "@harness-desktop/cordis": "workspace:^",
     "@harness-desktop/dsh-brand": "workspace:^",
-    "@harness-desktop/dsh-home-paths": "workspace:^",
     "@harness-desktop/dsh-host-webserver": "workspace:^",
     "@harness-desktop/dsh-invariants": "workspace:^"
   },
