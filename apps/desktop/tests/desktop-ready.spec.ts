@@ -1,6 +1,8 @@
 /** Process acknowledgement for authenticated Dashboard readiness. */
 
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   DesktopReadiness,
@@ -9,6 +11,8 @@ import {
 } from '../src/main/readiness.ts'
 
 const ORIGIN = 'http://127.0.0.1:43123'
+const readinessModuleUrl = pathToFileURL(fileURLToPath(new URL('../src/main/readiness.ts', import.meta.url))).href
+const tsxLoader = import.meta.resolve('tsx')
 
 class FakeWebContents extends EventEmitter {
   url = 'about:blank'
@@ -34,6 +38,65 @@ class DeferredErrorOutput extends EventEmitter {
       this.emit('error', Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' }))
     })
     return false
+  }
+}
+
+class SynchronousErrorOutput {
+  readonly writes: string[] = []
+
+  write(chunk: string): boolean {
+    this.writes.push(chunk)
+    throw Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })
+  }
+}
+
+class RecordingOutput {
+  readonly writes: string[] = []
+
+  write(chunk: string): boolean {
+    this.writes.push(chunk)
+    return true
+  }
+}
+
+class CallbackErrorOutput extends EventEmitter {
+  readonly writes: string[] = []
+
+  write(chunk: string, callback?: (error?: Error | null) => void): boolean {
+    this.writes.push(chunk)
+    queueMicrotask(() => { callback?.(Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })) })
+    return false
+  }
+}
+
+class CallbackThenErrorOutput extends EventEmitter {
+  readonly writes: string[] = []
+
+  write(chunk: string, callback?: (error?: Error | null) => void): boolean {
+    this.writes.push(chunk)
+    const error = Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })
+    queueMicrotask(() => {
+      callback?.(error)
+      queueMicrotask(() => { this.emit('error', error) })
+    })
+    return false
+  }
+}
+
+class ControlledErrorOutput extends EventEmitter {
+  readonly writes: string[] = []
+  private callback: ((error?: Error | null) => void) | undefined
+
+  write(chunk: string, callback?: (error?: Error | null) => void): boolean {
+    this.writes.push(chunk)
+    this.callback = callback
+    return false
+  }
+
+  fail(): void {
+    const error = Object.assign(new Error('broken acknowledgement pipe'), { code: 'EPIPE' })
+    this.callback?.(error)
+    queueMicrotask(() => { this.emit('error', error) })
   }
 }
 
@@ -146,6 +209,85 @@ describe('Desktop Dashboard readiness', () => {
     expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
   })
 
+  it('rejects a synchronous acknowledgement pipe failure', async () => {
+    const output = new SynchronousErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('rejects an acknowledgement write callback failure', async () => {
+    const output = new CallbackErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('absorbs the output error emitted after an acknowledgement callback failure', async () => {
+    const output = new CallbackThenErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const ready = readiness.wait(window, ORIGIN)
+
+    window.webContents.emit('did-finish-load')
+
+    await expect(ready).rejects.toThrow('acknowledgement could not be written')
+    await settleOutputEvents()
+    expect(output.listenerCount('error')).toBe(0)
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('writes one acknowledgement when two windows become ready concurrently through a non-event output', async () => {
+    const output = new RecordingOutput()
+    const readiness = new DesktopReadiness(output)
+    const first = readyWindow()
+    const second = readyWindow()
+    const firstReady = readiness.wait(first, ORIGIN)
+    const secondReady = readiness.wait(second, ORIGIN)
+
+    first.webContents.emit('did-finish-load')
+    second.webContents.emit('did-finish-load')
+
+    await expect(Promise.all([firstReady, secondReady])).resolves.toEqual([undefined, undefined])
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+  })
+
+  it('removes the acknowledgement listener after an aborted waiter drains callback and error', async () => {
+    const output = new ControlledErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const window = readyWindow()
+    const abort = new AbortController()
+    const ready = readiness.wait(window, ORIGIN, abort.signal)
+
+    window.webContents.emit('did-finish-load')
+    await Promise.resolve()
+    expect(output.listenerCount('error')).toBe(1)
+    abort.abort(new Error('startup entered recovery'))
+    output.fail()
+    await expect(ready).rejects.toThrow()
+    await settleOutputEvents()
+    expect(output.listenerCount('error')).toBe(0)
+  })
+
+  it('survives a real disconnected stdout pipe after callback before output error', async () => {
+    const result = await runDisconnectedAcknowledgementProcess()
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stderr: '{"result":"rejected","sequence":["callback:EPIPE","error:EPIPE"]}\n',
+    })
+  })
+
   it('rejects a foreign navigation without reflecting it or acknowledging readiness', async () => {
     const chunks: string[] = []
     const readiness = new DesktopReadiness({ write: chunk => chunks.push(chunk) })
@@ -160,3 +302,46 @@ describe('Desktop Dashboard readiness', () => {
     expect(chunks).toEqual([])
   })
 })
+
+function readyWindow(): FakeWindow {
+  const window = new FakeWindow()
+  window.webContents.url = `${ORIGIN}/`
+  return window
+}
+
+async function settleOutputEvents(): Promise<void> {
+  await new Promise<void>((resolve) => { setImmediate(() => { setImmediate(resolve) }) })
+}
+
+async function runDisconnectedAcknowledgementProcess(): Promise<{ readonly exitCode: number | null; readonly stderr: string }> {
+  const source = [
+    "import { EventEmitter } from 'node:events'",
+    `import { DesktopReadiness } from ${JSON.stringify(readinessModuleUrl)}`,
+    'const sequence = []',
+    'const emit = process.stdout.emit.bind(process.stdout)',
+    'process.stdout.emit = (event, ...args) => { if (event === "error") sequence.push(`error:${args[0]?.code ?? "unknown"}`); return emit(event, ...args) }',
+    'const write = process.stdout.write.bind(process.stdout)',
+    'process.stdout.write = (chunk, callback) => write(chunk, error => { sequence.push(`callback:${error?.code ?? "none"}`); callback?.(error) })',
+    'class WebContents extends EventEmitter { getURL() { return "http://127.0.0.1:43123/" } async executeJavaScript() { return true } }',
+    'const window = { webContents: new WebContents() }',
+    'const readiness = new DesktopReadiness()',
+    'const ready = readiness.wait(window, "http://127.0.0.1:43123")',
+    'window.webContents.emit("did-finish-load")',
+    'let result',
+    'try { await ready; result = "resolved" } catch { result = "rejected" }',
+    'await new Promise(resolve => setImmediate(() => setImmediate(resolve)))',
+    'process.stderr.write(JSON.stringify({ result, sequence }) + "\\n")',
+  ].join('; ')
+  const child = spawn(process.execPath, ['--import', tsxLoader, '--input-type=module', '--eval', source], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+  child.stdout?.destroy()
+  let stderr = ''
+  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code) => { resolve(code) })
+  })
+  return { exitCode, stderr }
+}

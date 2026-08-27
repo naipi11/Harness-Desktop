@@ -30,7 +30,7 @@ export interface DesktopReadyOutput {
 /** Writable acknowledgement output that can report an asynchronous pipe failure. */
 interface EventedDesktopReadyOutput extends DesktopReadyOutput {
   /** @param event - output failure event. @param listener - one failure observer. @returns the writer-specific result. */
-  once(event: 'error', listener: (error: Error) => void): unknown
+  on(event: 'error', listener: (error: Error) => void): unknown
   /** @param event - output failure event. @param listener - previously registered observer. @returns the writer-specific result. */
   removeListener(event: 'error', listener: (error: Error) => void): unknown
 }
@@ -79,7 +79,7 @@ const READY_PROBE = `new Promise(resolve => {
 
 /** Validates every Dashboard navigation and emits the constant process acknowledgement at most once. */
 export class DesktopReadiness {
-  private acknowledged = false
+  private acknowledgement: AcknowledgementWrite | undefined
 
   /** @param output - process output receiving the constant JSONL record. */
   constructor(private readonly output: DesktopReadyOutput = process.stdout) {}
@@ -96,17 +96,21 @@ export class DesktopReadiness {
     return new Promise((resolve, reject) => {
       let settled = false
       let checking = false
+      let releaseAcknowledgement: (() => void) | undefined
       const finish = (error?: Error): void => {
         if (settled) return
         settled = true
         window.webContents.removeListener('did-finish-load', onFinishLoad)
         window.webContents.removeListener('did-fail-load', onFailLoad)
         signal?.removeEventListener('abort', onAbort)
+        releaseAcknowledgement?.()
+        releaseAcknowledgement = undefined
         if (error === undefined) resolve()
         else reject(error)
       }
       const onAbort = (): void => {
-        finish(signal?.reason instanceof Error ? signal.reason : new Error('Desktop Dashboard startup was cancelled.'))
+        const error = signal?.reason instanceof Error ? signal.reason : new Error('Desktop Dashboard startup was cancelled.')
+        finish(error)
       }
       const onFailLoad = (...args: unknown[]): void => {
         if (args[4] === false) return
@@ -129,14 +133,13 @@ export class DesktopReadiness {
               finish(new Error('Desktop Dashboard did not report authenticated readiness.'))
               return
             }
-            if (!this.acknowledged) {
-              try {
-                await awaitAcknowledgementWrite(this.output)
-                this.acknowledged = true
-              } catch {
-                finish(new Error('Desktop readiness acknowledgement could not be written.'))
-                return
-              }
+            try {
+              this.acknowledgement ??= createAcknowledgementWrite(this.output)
+              releaseAcknowledgement = this.acknowledgement.retain()
+              await this.acknowledgement.promise
+            } catch {
+              finish(new Error('Desktop readiness acknowledgement could not be written.'))
+              return
             }
             finish()
           },
@@ -155,32 +158,92 @@ export class DesktopReadiness {
   }
 }
 
-/** Write the one acknowledgement while converting a broken output pipe into the startup result. */
-function awaitAcknowledgementWrite(output: DesktopReadyOutput): Promise<void> {
+/** One shared acknowledgement write that can absorb the output error emitted after its callback. */
+interface AcknowledgementWrite {
+  /** Settlement after the acknowledgement is durably accepted or rejected. */
+  readonly promise: Promise<void>
+  /** @returns a release operation for one pending Dashboard waiter. */
+  retain(): () => void
+}
+
+/** Start one acknowledgement write while converting a broken output pipe into the startup result. */
+function createAcknowledgementWrite(output: DesktopReadyOutput): AcknowledgementWrite {
   if (!isEventedOutput(output)) {
-    output.write(READY_RECORD)
-    return Promise.resolve()
+    try {
+      output.write(READY_RECORD)
+      return { promise: Promise.resolve(), retain: () => () => {} }
+    } catch (error) {
+      return {
+        promise: Promise.reject(error instanceof Error ? error : new Error('Desktop acknowledgement output failed.')),
+        retain: () => () => {},
+      }
+    }
   }
-  return new Promise((resolve, reject) => {
+  let retain!: () => () => void
+  const promise = new Promise<void>((resolve, reject) => {
     let settled = false
-    const finish = (error?: Error | null): void => {
+    let error: Error | undefined
+    let settlement: NodeJS.Immediate | undefined
+    let cleanup: NodeJS.Immediate | undefined
+    let waiters = 0
+    const remove = (): void => {
+      if (cleanup !== undefined) clearImmediate(cleanup)
+      output.removeListener('error', onError)
+    }
+    const removeAfterGrace = (): void => {
+      if (cleanup !== undefined) return
+      cleanup = setImmediate(() => {
+        cleanup = setImmediate(remove)
+      })
+    }
+    const settle = (): void => {
       if (settled) return
       settled = true
-      output.removeListener('error', onError)
-      if (error === undefined || error === null) resolve()
+      if (error === undefined) resolve()
       else reject(error)
+      removeAfterGrace()
     }
-    const onError = (error: Error): void => { finish(error) }
-    output.once('error', onError)
+    const schedule = (): void => {
+      if (settlement !== undefined) return
+      settlement = setImmediate(() => {
+        settlement = undefined
+        settle()
+      })
+    }
+    const onError = (reason: Error): void => {
+      error ??= reason
+      schedule()
+    }
+    const finish = (reason?: Error | null): void => {
+      if (reason !== undefined && reason !== null) error ??= reason
+      schedule()
+    }
+    const cancel = (): void => {
+      if (settled || waiters !== 0) return
+      error ??= new Error('Desktop acknowledgement output was cancelled.')
+      settle()
+    }
+    retain = () => {
+      waiters += 1
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        waiters -= 1
+        cancel()
+      }
+    }
+    output.on('error', onError)
     try {
       output.write(READY_RECORD, finish)
     } catch (error) {
       finish(error instanceof Error ? error : new Error('Desktop acknowledgement output failed.'))
     }
   })
+  return { promise, retain }
 }
 
 function isEventedOutput(output: DesktopReadyOutput): output is EventedDesktopReadyOutput {
-  return typeof (output as Partial<EventedDesktopReadyOutput>).once === 'function'
+  return typeof (output as Partial<EventedDesktopReadyOutput>).on === 'function'
     && typeof (output as Partial<EventedDesktopReadyOutput>).removeListener === 'function'
 }
