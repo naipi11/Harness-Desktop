@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-tool-ask-user",
   "description": "Model-facing ask_user_question tool over the ctx.userQuestions seam",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },

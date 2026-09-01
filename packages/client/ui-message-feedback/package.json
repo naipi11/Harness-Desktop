@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-client-ui-message-feedback",
   "description": "Per-message feedback controls contributed to the assistant-message action strip, backed by the messageFeedback Host Remote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
