@@ -179,6 +179,8 @@ function conformingFiles(): DesktopReleaseFiles {
   return {
     builderConfig: conformingBuilderConfig(),
     desktopManifest: JSON.stringify({
+      homepage: 'https://github.com/naipi11/Harness-Desktop',
+      author: { name: 'naipi11', email: 'naipi11@users.noreply.github.com' },
       scripts: {
         prepackage: 'pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure && pnpm --dir ../.. run prepare:desktop-native',
         package: 'electron-builder --config electron-builder.config.mjs --publish never',
@@ -392,6 +394,20 @@ describe('desktop release config gate', () => {
 
   it('accepts the conforming builder, manifest, and workflows', () => {
     expect(collectDesktopReleaseViolations(conformingFiles())).toEqual([])
+  })
+
+  it('requires the public package metadata needed by the Debian artifact', () => {
+    const files = conformingFiles()
+    const desktopManifest = JSON.parse(files.desktopManifest) as Record<string, unknown>
+    delete desktopManifest.homepage
+    delete desktopManifest.author
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      desktopManifest: JSON.stringify(desktopManifest),
+    })).toEqual(expect.arrayContaining([
+      'desktopManifest: homepage must equal "https://github.com/naipi11/Harness-Desktop"',
+      'desktopManifest: author must equal naipi11 <naipi11@users.noreply.github.com>',
+    ]))
   })
 
   it('requires the Linux artifact row to rebuild node-pty against manylinux before packaging', () => {

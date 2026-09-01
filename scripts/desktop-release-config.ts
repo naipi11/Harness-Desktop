@@ -69,6 +69,9 @@ const releaseEvidenceEnvironment = {
   DSH_RELEASE_CHECK_INSTALLED_DESKTOP: '${{ steps.installed-desktop.outcome }}',
   DSH_RELEASE_CHECK_NATIVE_UPDATE_ROLLBACK: '${{ steps.native-update-rollback.outcome }}',
 } as const
+const desktopPackageHomepage = `https://github.com/${productMetadata.repository}`
+const [desktopPackageAuthorName = ''] = productMetadata.repository.split('/')
+const desktopPackageAuthorEmail = `${desktopPackageAuthorName}@users.noreply.github.com`
 
 /** Electron Builder options relevant to the closed desktop artifact matrix. */
 export interface DesktopExtraResource {
@@ -216,10 +219,11 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
     violations.push(`builderConfig.linux.category: expected ${JSON.stringify(linuxCategory)}`)
   }
 
-  const scripts = parseDesktopScripts(files.desktopManifest)
-  if (scripts === undefined) {
+  const desktopManifest = parseDesktopManifest(files.desktopManifest)
+  if (desktopManifest === undefined) {
     violations.push('desktopManifest: invalid JSON')
   } else {
+    const scripts = desktopManifest.scripts
     for (const script of ['prepackage', 'prepackage:dir'] as const) {
       if (!hasExactAndCommand(scripts[script], desktopNativePrepareCommand)) {
         violations.push(
@@ -238,6 +242,12 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
     }
     if (!(scripts['package:dir'] ?? '').includes(builderConfigFlag)) {
       violations.push('desktopManifest: script "package:dir" must load the electron-builder config explicitly')
+    }
+    if (desktopManifest.homepage !== desktopPackageHomepage) {
+      violations.push(`desktopManifest: homepage must equal ${JSON.stringify(desktopPackageHomepage)}`)
+    }
+    if (!isDesktopPackageAuthor(desktopManifest.author)) {
+      violations.push(`desktopManifest: author must equal ${desktopPackageAuthorName} <${desktopPackageAuthorEmail}>`)
     }
   }
 
@@ -767,13 +777,33 @@ function desktopBuilderIconPath(repositoryPath: string): string {
   return repositoryPath.replace(/^apps\/desktop\//, '')
 }
 
-function parseDesktopScripts(manifestText: string): Record<string, string> | undefined {
+function parseDesktopManifest(manifestText: string): DesktopPackageManifest | undefined {
   try {
-    const parsed = JSON.parse(manifestText) as { scripts?: Record<string, string> }
-    return parsed.scripts ?? {}
+    const parsed = JSON.parse(manifestText) as {
+      readonly scripts?: Record<string, string>
+      readonly homepage?: unknown
+      readonly author?: unknown
+    }
+    return {
+      scripts: parsed.scripts ?? {},
+      homepage: parsed.homepage,
+      author: parsed.author,
+    }
   } catch {
     return undefined
   }
+}
+
+interface DesktopPackageManifest {
+  readonly scripts: Record<string, string>
+  readonly homepage: unknown
+  readonly author: unknown
+}
+
+function isDesktopPackageAuthor(value: unknown): boolean {
+  return isRecord(value)
+    && value.name === desktopPackageAuthorName
+    && value.email === desktopPackageAuthorEmail
 }
 
 function workflowStepUsesShell(workflowText: string, name: string, shell: string): boolean {

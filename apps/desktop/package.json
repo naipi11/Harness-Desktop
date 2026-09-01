@@ -1,6 +1,11 @@
 {
   "name": "@harness-desktop/dsh-desktop",
   "version": "1.0.1",
+  "homepage": "https://github.com/naipi11/Harness-Desktop",
+  "author": {
+    "name": "naipi11",
+    "email": "naipi11@users.noreply.github.com"
+  },
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
