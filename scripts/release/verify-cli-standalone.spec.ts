@@ -15,8 +15,10 @@ import {
 import { productMetadata } from '../../packages/boot/app-boot/src/product-metadata.ts'
 import {
   digestStandaloneTree,
+  nativeModuleLoadPaths,
   verifyCliStandalone,
   verifyInHostileAmbientLoaderEnvironment,
+  verifyLinuxNativeClosure,
   verifyStandaloneReleasePolicy,
 } from './verify-cli-standalone.ts'
 
@@ -68,6 +70,44 @@ describe('standalone CLI hostile ambient loader verification', () => {
     )).toEqual(originalEnvironment)
     if (hostileRoot === undefined) throw new Error('hostile loader root was not recorded')
     await expect(access(hostileRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+describe('standalone CLI native module verification', () => {
+  it('probes the Koffi package loader once while retaining both Linux libc variants in the archive closure', () => {
+    const root = 'payload/current/cli/package/node_modules'
+
+    expect(nativeModuleLoadPaths([
+      `${root}/@img/sharp-linux-x64/lib/sharp-linux-x64.node`,
+      `${root}/@koromix/koffi-linux-x64/linux_x64/koffi.node`,
+      `${root}/@koromix/koffi-linux-x64/musl_x64/koffi.node`,
+      `${root}/node-addon-require-builtin-linux-x64-gnu/prebuilt/linux-x64-gnu-napi-v9.node`,
+    ])).toEqual([
+      `${root}/@img/sharp-linux-x64/lib/sharp-linux-x64.node`,
+      `${root}/koffi`,
+      `${root}/node-addon-require-builtin-linux-x64-gnu/prebuilt/linux-x64-gnu-napi-v9.node`,
+    ])
+  })
+
+  it('requires Linux node-pty and both Koffi libc variants from an extracted archive', () => {
+    const root = 'payload/current/cli/package/node_modules'
+    expect(verifyLinuxNativeClosure('linux', 'x64', [
+      `${root}/koffi/index.js`,
+      `${root}/@koromix/koffi-linux-x64/linux_x64/koffi.node`,
+    ])).toEqual([
+      'standalone CLI: Linux node-pty closure omits a linux-x64 pty.node binding',
+      'standalone CLI: Linux Koffi native closure omits musl_x64/koffi.node',
+    ])
+  })
+
+  it('accepts the complete Linux node-pty and Koffi native closure', () => {
+    const root = 'payload/current/cli/package/node_modules'
+    expect(verifyLinuxNativeClosure('linux', 'x64', [
+      `${root}/node-pty/prebuilds/linux-x64/pty.node`,
+      `${root}/koffi/index.js`,
+      `${root}/@koromix/koffi-linux-x64/linux_x64/koffi.node`,
+      `${root}/@koromix/koffi-linux-x64/musl_x64/koffi.node`,
+    ])).toEqual([])
   })
 })
 

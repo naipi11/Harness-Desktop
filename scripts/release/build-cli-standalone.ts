@@ -401,6 +401,24 @@ async function verifyNativeModules(
       throw new Error(`standalone CLI: native module ${path} targets ${target}, expected ${expected}`)
     }
   }
+  if (platform === 'linux') {
+    const nodePty = 'payload/current/cli/package/node_modules/node-pty'
+    const bindings = [
+      `${nodePty}/prebuilds/linux-${arch}/pty.node`,
+      `${nodePty}/build/Release/pty.node`,
+    ]
+    if (!bindings.some(path => nativeModules.includes(path))) {
+      throw new Error(`standalone CLI: Linux node-pty closure omits a linux-${arch} pty.node binding`)
+    }
+    const koffi = `payload/current/cli/package/node_modules/@koromix/koffi-linux-${arch}`
+    const loader = 'payload/current/cli/package/node_modules/koffi/index.js'
+    if (nativeModules.some(path => path.startsWith(`${koffi}/`)) || await fileExists(join(stage, ...loader.split('/')))) {
+      for (const libc of ['linux', 'musl']) {
+        const path = `${koffi}/${libc}_${arch}/koffi.node`
+        if (!nativeModules.includes(path)) throw new Error(`standalone CLI: Linux Koffi native closure omits ${libc}_${arch}/koffi.node`)
+      }
+    }
+  }
   return nativeModules
 }
 

@@ -102,6 +102,38 @@ function dependencies(
   }
 }
 
+function linuxX64NativeModule(machine = 62): Buffer {
+  const native = Buffer.alloc(64)
+  native.set([0x7f, 0x45, 0x4c, 0x46])
+  native[4] = 2
+  native[5] = 1
+  native.writeUInt16LE(machine, 18)
+  return native
+}
+
+async function prepareLinuxCli(
+  subject: Awaited<ReturnType<typeof fixture>>,
+  nodePtyBinding: readonly string[] | false = ['prebuilds', 'linux-x64', 'pty.node'],
+): Promise<void> {
+  await mkdir(join(subject.cliRoot, 'node_modules', '@vscode', 'ripgrep-linux-x64', 'bin'), { recursive: true })
+  await writeFile(join(subject.cliRoot, 'node_modules', '@vscode', 'ripgrep-linux-x64', 'bin', 'rg'), 'fixture rg')
+  if (nodePtyBinding !== false) {
+    const destination = join(subject.cliRoot, 'node_modules', 'node-pty', ...nodePtyBinding)
+    await mkdir(join(destination, '..'), { recursive: true })
+    await writeFile(destination, linuxX64NativeModule())
+  }
+}
+
+function linuxDependencies(subject: Awaited<ReturnType<typeof fixture>>): CliStandaloneBuildDependencies {
+  return dependencies(subject, {
+    checksumAllowlist: { '0.0.0-test': { linux: { x64: { filename: subject.runtimeFilename, sha256: subject.runtimeSha256 } } } },
+    extractNodeDistribution: async (_archive, destination) => {
+      await mkdir(join(destination, 'bin'), { recursive: true })
+      await writeFile(join(destination, 'bin', 'node'), 'fixture node')
+    },
+  })
+}
+
 async function tarModes(path: string): Promise<ReadonlyMap<string, number>> {
   const modes = new Map<string, number>()
   await tar.t({
@@ -284,6 +316,123 @@ describe('buildCliStandaloneWithDependencies', () => {
     )
   })
 
+  it('rejects a Linux standalone payload without a node-pty target binding', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-node-pty-absent-')
+    await prepareLinuxCli(subject, false)
+    await mkdir(join(subject.cliRoot, 'node_modules', 'node-pty'), { recursive: true })
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'linux',
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, linuxDependencies(subject))).rejects.toThrow(
+      'standalone CLI: Linux node-pty closure omits a linux-x64 pty.node binding',
+    )
+  })
+
+  it('rejects a Linux node-pty prebuild that targets another architecture', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-node-pty-foreign-')
+    await prepareLinuxCli(subject, false)
+    const pty = join(subject.cliRoot, 'node_modules', 'node-pty', 'prebuilds', 'linux-x64')
+    await mkdir(pty, { recursive: true })
+    await writeFile(join(pty, 'pty.node'), linuxX64NativeModule(183))
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'linux',
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, linuxDependencies(subject))).rejects.toThrow(
+      'standalone CLI: Linux node-pty closure omits a linux-x64 pty.node binding',
+    )
+  })
+
+  it.each([
+    ['prebuild', ['prebuilds', 'linux-x64', 'pty.node']],
+    ['build output', ['build', 'Release', 'pty.node']],
+  ] as const)('accepts a Linux node-pty $0 binding', async (_label, binding) => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-node-pty-present-')
+    await prepareLinuxCli(subject, false)
+    const destination = join(subject.cliRoot, 'node_modules', 'node-pty', ...binding)
+    await mkdir(join(destination, '..'), { recursive: true })
+    await writeFile(destination, linuxX64NativeModule())
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'linux',
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, linuxDependencies(subject))).resolves.toEqual([
+      'harness-cli-1.0.0-linux-x64.tar.gz',
+      'harness-cli-1.0.0-linux-x64.sha256',
+    ])
+  })
+
+  it('rejects a Linux Koffi closure without its musl alternative before writing an archive', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-koffi-closure-')
+    const native = Buffer.alloc(64)
+    native.set([0x7f, 0x45, 0x4c, 0x46])
+    native[4] = 2
+    native[5] = 1
+    native.writeUInt16LE(62, 18)
+    await mkdir(join(subject.cliRoot, 'node_modules', '@koromix', 'koffi-linux-x64', 'linux_x64'), { recursive: true })
+    await prepareLinuxCli(subject)
+    await writeFile(join(subject.cliRoot, 'node_modules', '@koromix', 'koffi-linux-x64', 'linux_x64', 'koffi.node'), native)
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'linux',
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, dependencies(subject, {
+      checksumAllowlist: { '0.0.0-test': { linux: { x64: { filename: subject.runtimeFilename, sha256: subject.runtimeSha256 } } } },
+      extractNodeDistribution: async (_archive, destination) => {
+        await mkdir(join(destination, 'bin'), { recursive: true })
+        await writeFile(join(destination, 'bin', 'node'), 'fixture node')
+      },
+    }))).rejects.toThrow(
+      'standalone CLI: Linux Koffi native closure omits musl_x64/koffi.node',
+    )
+  })
+
+  it('rejects a Linux Koffi package without either libc native alternative before writing an archive', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-koffi-absent-')
+    await mkdir(join(subject.cliRoot, 'node_modules', 'koffi'), { recursive: true })
+    await prepareLinuxCli(subject)
+    await writeFile(join(subject.cliRoot, 'node_modules', 'koffi', 'index.js'), 'export {}\n')
+
+    await expect(buildCliStandaloneWithDependencies({
+      platform: 'linux',
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }, dependencies(subject, {
+      checksumAllowlist: { '0.0.0-test': { linux: { x64: { filename: subject.runtimeFilename, sha256: subject.runtimeSha256 } } } },
+      extractNodeDistribution: async (_archive, destination) => {
+        await mkdir(join(destination, 'bin'), { recursive: true })
+        await writeFile(join(destination, 'bin', 'node'), 'fixture node')
+      },
+    }))).rejects.toThrow(
+      'standalone CLI: Linux Koffi native closure omits linux_x64/koffi.node',
+    )
+  })
+
   it('rejects an extracted supplied-tarball package whose declared bin target is missing', async () => {
     const subject = await fixture()
     const output = await tempRoot('harness-cli-standalone-missing-bin-')
@@ -367,6 +516,7 @@ describe('buildCliStandaloneWithDependencies', () => {
   ])('records and preserves package executables for $platform', async ({ platform, arch, packageExecutable }) => {
     const subject = await fixture()
     const output = await tempRoot(`harness-cli-standalone-${platform}-executables-`)
+    if (platform === 'linux') await prepareLinuxCli(subject)
     const packageExecutablePath = join(subject.cliRoot, ...packageExecutable.split('/'))
     const rgExecutable = `node_modules/@vscode/ripgrep-${platform}-${arch}/bin/rg`
     const rgExecutablePath = join(subject.cliRoot, ...rgExecutable.split('/'))

@@ -226,6 +226,7 @@ async function verifyExtracted(
       `standalone CLI: ${format} native-module closure does not match extracted files: manifest=${JSON.stringify(expectedNativeModules)} extracted=${JSON.stringify(actualNativeModules)}`,
     )
   }
+  violations.push(...verifyLinuxNativeClosure(input.platform, input.arch, Object.keys(actualDigests)))
   for (const path of [
     'payload/current/cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/lib/bin.js',
     'payload/current/cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/runtime.cordis.yml',
@@ -256,7 +257,7 @@ async function verifyExtracted(
     if (executablePath.exitCode !== 0 || resolve(executablePath.stdout) !== resolve(nodeExecutable)) {
       violations.push(`standalone CLI: ${format} process.execPath is outside the bundled runtime`)
     }
-    for (const path of manifest.nativeModules) {
+    for (const path of nativeModuleLoadPaths(manifest.nativeModules)) {
       const result = await execa(nodeExecutable, [
         '--input-type=module',
         '--eval',
@@ -316,6 +317,55 @@ async function verifyExtracted(
     }
   }
   return violations
+}
+
+/**
+ * Select native-module load probes without treating mutually exclusive Koffi libc binaries as independent modules.
+ * @param paths - complete checksummed native-module closure from the standalone manifest.
+ * @returns direct native paths plus one Koffi package-loader path when its Linux variants are present.
+ */
+export function nativeModuleLoadPaths(paths: readonly string[]): readonly string[] {
+  const koffiVariants = paths.some(isKoffiLinuxVariant)
+  return [
+    ...paths.filter(path => !isKoffiLinuxVariant(path)),
+    ...(koffiVariants ? ['payload/current/cli/package/node_modules/koffi'] : []),
+  ].toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
+ * Check Linux-only native dependencies that must remain portable after extraction.
+ * @param platform - archive target platform.
+ * @param arch - archive target architecture.
+ * @param paths - all extracted archive-relative paths.
+ * @returns native-closure diagnostics; empty when the Linux requirements are met or do not apply.
+ */
+export function verifyLinuxNativeClosure(
+  platform: NodeJS.Platform,
+  arch: string,
+  paths: readonly string[],
+): readonly string[] {
+  if (platform !== 'linux') return []
+  const root = 'payload/current/cli/package/node_modules'
+  const nodePty = `${root}/node-pty`
+  const koffi = `${root}/@koromix/koffi-linux-${arch}`
+  const violations: string[] = []
+  if (![
+    `${nodePty}/prebuilds/linux-${arch}/pty.node`,
+    `${nodePty}/build/Release/pty.node`,
+  ].some(path => paths.includes(path))) {
+    violations.push(`standalone CLI: Linux node-pty closure omits a linux-${arch} pty.node binding`)
+  }
+  if (paths.includes(`${root}/koffi/index.js`) || paths.some(path => path.startsWith(`${koffi}/`))) {
+    for (const libc of ['linux', 'musl']) {
+      const path = `${koffi}/${libc}_${arch}/koffi.node`
+      if (!paths.includes(path)) violations.push(`standalone CLI: Linux Koffi native closure omits ${libc}_${arch}/koffi.node`)
+    }
+  }
+  return violations
+}
+
+function isKoffiLinuxVariant(path: string): boolean {
+  return /^payload\/current\/cli\/package\/node_modules\/@koromix\/koffi-linux-[^/]+\/(?:linux|musl)_[^/]+\/koffi\.node$/u.test(path)
 }
 
 /**
