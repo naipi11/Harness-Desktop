@@ -844,10 +844,68 @@ export async function inspectDebArtifactSnapshot(
 }
 
 async function nativeDpkgDebCommand(args: readonly string[], stdoutFile?: string): Promise<void> {
+  if (stdoutFile !== undefined) {
+    await writeCommandStdoutToFile('dpkg-deb', args, stdoutFile)
+    return
+  }
   await execa('dpkg-deb', [...args], {
     reject: true,
-    ...(stdoutFile === undefined ? {} : { stdout: { file: stdoutFile } }),
   })
+}
+
+/**
+ * Stream one native command's stdout directly to a caller-owned file without buffering a package payload in memory.
+ * @param command - fixed native command selected by the caller.
+ * @param args - literal command arguments.
+ * @param destination - private output file that receives stdout.
+ */
+export async function writeCommandStdoutToFile(
+  command: string,
+  args: readonly string[],
+  destination: string,
+): Promise<void> {
+  const handle = await open(destination, 'w')
+  try {
+    await new Promise<void>((resolveCommand, rejectCommand) => {
+      const child = spawn(command, [...args], {
+        stdio: ['ignore', handle.fd, 'pipe'],
+        windowsHide: true,
+      })
+      const stderr: Buffer[] = []
+      let stderrBytes = 0
+      const stderrLimit = 16 * 1_024
+      child.stderr?.on('data', (chunk: Buffer) => {
+        if (stderrBytes >= stderrLimit) return
+        const retained = chunk.subarray(0, stderrLimit - stderrBytes)
+        stderr.push(retained)
+        stderrBytes += retained.length
+      })
+      let settled = false
+      const finish = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        callback()
+      }
+      child.once('error', (error) => {
+        finish(() => {
+          rejectCommand(error)
+        })
+      })
+      child.once('close', (code, signal) => {
+        if (code === 0) {
+          finish(resolveCommand)
+          return
+        }
+        const detail = Buffer.concat(stderr).toString('utf8').trim()
+        const outcome = signal === null ? `exit code ${String(code)}` : `signal ${signal}`
+        finish(() => {
+          rejectCommand(new Error(`${command} failed with ${outcome}${detail === '' ? '' : `: ${detail}`}`))
+        })
+      })
+    })
+  } finally {
+    await handle.close()
+  }
 }
 
 async function extract7ZipBytes(command: string, artifact: string, resource: string): Promise<Buffer | undefined> {

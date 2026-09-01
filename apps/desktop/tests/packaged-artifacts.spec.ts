@@ -12,6 +12,7 @@ import {
   readBoundedArtifactBytes,
   verifyDesktopArtifactsWithTools,
   verifyWindowsSupervisor,
+  writeCommandStdoutToFile,
   type ArtifactSnapshotOperations,
   type DesktopArtifactTools,
 } from '../../../scripts/release/verify-desktop-artifacts.ts'
@@ -478,6 +479,17 @@ describe('verifyDesktopArtifactsWithTools', () => {
       }
     })).rejects.toThrow('Linux Deb has unsupported payload member type SymbolicLink')
     expect(commands).toEqual(['--fsys-tarfile'])
+  })
+
+  it('streams a native parser payload directly into a caller-owned file', async () => {
+    const root = await releaseRoot()
+    const destination = join(root, 'payload.tar')
+    await writeCommandStdoutToFile(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      'process.stdout.write("native payload")',
+    ], destination)
+    await expect(readFile(destination)).resolves.toEqual(Buffer.from('native payload'))
   })
 
   it('accepts an ordinary Debian payload directory member', () => {
