@@ -736,7 +736,7 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
     const rollbackArtifactPath = await this.artifactPath(pending.rollbackSha256, pending.rollbackFormat)
     const workers = await this.workerDirectory(false)
     if (rollbackArtifactPath === undefined || workers === undefined) return false
-    const heartbeat = nativeUpdateHeartbeatPath(rollbackArtifactPath, pending.transactionId)
+    const heartbeat = nativeUpdateHeartbeatPath(rollbackArtifactPath, pending.transactionId, nativePlatform(process.platform))
     if (dirname(heartbeat) !== workers) throw new Error('native Desktop watchdog heartbeat escapes private storage')
     const currentStart = currentNativeProcessReference().startedBeforeMs
     const windowsLaunchNonce = this.options.platform === 'win32'

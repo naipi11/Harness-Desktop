@@ -130,6 +130,10 @@ function dependenciesFixture(
       isExactProcessImageRunning: async () => exactImageRunning,
       remove: async (path) => { files.delete(path) },
       delay: async () =>{  await new Promise<void>((resolve) => { setTimeout(resolve, 0) }) },
+      createWindowsWorkerEnvironment: () => createWindowsWorkerEnvironment({
+        ...process.env,
+        SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
+      }),
       runWindowsBridge: async (executable, args, options) => {
         calls.push({ executable, args, options })
         const planEntry = [...files.entries()].find(([path]) => path.includes('native-rollback-plan-'))
@@ -510,6 +514,9 @@ describe('launchNativeRollbackWorker', () => {
       DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS: '1',
     })
     subject.dependencies.isExactProcessImageRunning = async () => true
+    let now = 0
+    subject.dependencies.now = () => now
+    subject.dependencies.delay = async (milliseconds) => { now += milliseconds }
     subject.dependencies.writePrivate = async (path, bytes) => {
       subject.files.set(path, bytes)
       if (path.includes('native-update-cancel-')) {
@@ -722,15 +729,15 @@ describe('launchNativeRollbackWorker', () => {
     const macPlan: NativeRollbackPlan = {
       ...plan,
       platform: 'darwin',
-      applicationPath: 'C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop',
-      rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.zip',
+      applicationPath: '/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop',
+      rollbackArtifactPath: '/private/native-updates/rollback/candidate.zip',
       rollbackFormat: 'zip',
     }
 
     await launchNativeRollbackWorker({
       platform: 'darwin',
-      executablePath: 'C:\\Harness Desktop\\harness-desktop.exe',
-      workerPath: 'C:\\Harness Desktop\\resources\\app.asar\\out\\main\\native-rollback-worker.js',
+      executablePath: '/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop',
+      workerPath: '/Applications/Harness Desktop.app/Contents/Resources/app.asar/out/main/native-rollback-worker.js',
       windowsSupervisorTemplatePath: 'C:\\Harness Desktop\\resources\\windows-native-update-supervisor.exe',
       windowsWorkerTemplatePath: 'C:\\Harness Desktop\\resources\\windows-native-rollback-worker.ps1',
       plan: macPlan,
@@ -740,10 +747,10 @@ describe('launchNativeRollbackWorker', () => {
     })
 
     expect(subject.calls).toContainEqual(expect.objectContaining({
-      command: 'C:\\Harness Desktop\\harness-desktop.exe',
+      command: '/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop',
       args: [
-        'C:\\Harness Desktop\\resources\\app.asar\\out\\main\\native-rollback-worker.js',
-        expect.stringContaining('"readyPath":"C:\\\\private\\\\native-updates\\\\workers\\\\native-rollback-ready-33333333-3333-4333-8333-333333333333.json"'),
+        '/Applications/Harness Desktop.app/Contents/Resources/app.asar/out/main/native-rollback-worker.js',
+        expect.stringContaining('"readyPath":"/private/native-updates/workers/native-rollback-ready-33333333-3333-4333-8333-333333333333.json"'),
       ],
       options: expect.objectContaining({ env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }) as unknown }) as unknown,
     }))

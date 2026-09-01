@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { readFile, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { win32 } from 'node:path'
 
 const workerReadyPollMs = 25
 
@@ -149,7 +149,7 @@ function createWorkerRequest(plan: WindowsStandaloneUpdatePlan, workerId: string
 function validatePlan(plan: WindowsStandaloneUpdatePlan): void {
   const durable = durablePlanPaths(plan)
   if (!isProcessReference(plan.parentProcess) || !isBoundedTimeout(plan.healthCheckTimeoutMs)
-    || !isAbsolute(plan.root)
+    || !win32.isAbsolute(plan.root)
     || (durable === undefined && (!isSibling(plan.root, plan.candidate, '.candidate-')
       || !isSibling(plan.root, plan.retained, '.retained-') || !isSibling(plan.root, plan.failed, '.failed-')
       || plan.lockPath !== `${plan.root}.update.lock`))
@@ -159,14 +159,14 @@ function validatePlan(plan: WindowsStandaloneUpdatePlan): void {
 }
 
 function durablePlanPaths(plan: WindowsStandaloneUpdatePlan): { readonly archiveRoot: string } | undefined {
-  const payload = dirname(plan.root)
-  if (basename(plan.root) !== 'current' || basename(payload) !== 'payload') return undefined
-  const archiveRoot = dirname(payload)
-  const candidatePattern = new RegExp(`^${escapeRegularExpression(join(archiveRoot, '.harness-candidate-'))}${uuidPattern}$`, 'iu')
+  const payload = win32.dirname(plan.root)
+  if (win32.basename(plan.root) !== 'current' || win32.basename(payload) !== 'payload') return undefined
+  const archiveRoot = win32.dirname(payload)
+  const candidatePattern = new RegExp(`^${escapeRegularExpression(win32.join(archiveRoot, '.harness-candidate-'))}${uuidPattern}$`, 'iu')
   return candidatePattern.test(plan.candidate)
-    && plan.retained === join(payload, 'retained')
-    && plan.failed === join(payload, 'failed')
-    && plan.lockPath === join(archiveRoot, '.harness-update.lock')
+    && plan.retained === win32.join(payload, 'retained')
+    && plan.failed === win32.join(payload, 'failed')
+    && plan.lockPath === win32.join(archiveRoot, '.harness-update.lock')
     ? { archiveRoot }
     : undefined
 }
@@ -182,12 +182,12 @@ export function currentWindowsStandaloneProcessReference(): WindowsStandalonePro
 
 function isProcessReference(value: unknown): value is WindowsStandaloneProcessReference {
   return isRecord(value) && hasExactKeys(value, ['processId', 'executablePath', 'startedBeforeMs'])
-    && isPositiveInteger(value.processId) && typeof value.executablePath === 'string' && isAbsolute(value.executablePath)
+    && isPositiveInteger(value.processId) && typeof value.executablePath === 'string' && win32.isAbsolute(value.executablePath)
     && typeof value.startedBeforeMs === 'number' && Number.isSafeInteger(value.startedBeforeMs) && value.startedBeforeMs > 0
 }
 
 function isSibling(root: string, path: string, suffix: string): boolean {
-  return isAbsolute(path) && new RegExp(`^${escapeRegularExpression(`${root}${suffix}`)}${uuidPattern}$`, 'iu').test(path)
+  return win32.isAbsolute(path) && new RegExp(`^${escapeRegularExpression(`${root}${suffix}`)}${uuidPattern}$`, 'iu').test(path)
 }
 
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
@@ -269,7 +269,7 @@ const windowsStandaloneUpdateDependencies: WindowsStandaloneUpdateDependencies =
   spawn: (command, args, options) => spawn(command, args, options),
   powershellPath: () => {
     const systemRoot = process.env.SystemRoot
-    return systemRoot === undefined ? undefined : join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    return systemRoot === undefined ? undefined : win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
   },
 }
 

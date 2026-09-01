@@ -47,6 +47,11 @@ const trust = {
   publicKeys: { [keyId]: keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString() },
 }
 
+function hostNativePlatform(): NativeRollbackPlan['platform'] {
+  if (process.platform === 'win32' || process.platform === 'darwin' || process.platform === 'linux') return process.platform
+  throw new Error('native Desktop test host platform is unsupported')
+}
+
 function artifact(version: string, bytes: Uint8Array): VerifiedUpdateArtifact {
   return {
     version,
@@ -141,7 +146,7 @@ async function adapter(
       if (restartError !== undefined) throw restartError
       if (simulateWatchdogHeartbeat && 'journalPath' in plan) {
         await writeFile(
-          nativeUpdateHeartbeatPath(plan.rollbackArtifactPath, plan.transactionId),
+          nativeUpdateHeartbeatPath(plan.rollbackArtifactPath, plan.transactionId, hostNativePlatform()),
           `${plan.transactionId}:${candidateLaunchNonce}:${String(Date.now())}\n`,
         )
       }
@@ -460,6 +465,7 @@ describe('NativeDesktopInstallAdapter', () => {
       markerPath = nativeUpdateAppliedPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         transactionId,
+        hostNativePlatform(),
       )
 
       await expect(subject.acknowledgeDashboardHealth('1.1.0')).resolves.toEqual({
@@ -516,6 +522,7 @@ describe('NativeDesktopInstallAdapter', () => {
       markerPath = nativeUpdateAppliedPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         transactionId,
+        hostNativePlatform(),
       )
 
       await expect(subject.acknowledgeDashboardHealth('1.1.0')).resolves.toMatchObject({ kind: 'awaiting-worker-commit' })
@@ -561,6 +568,7 @@ describe('NativeDesktopInstallAdapter', () => {
       await writeFile(nativeUpdateAppliedPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         journal.transactionId,
+        hostNativePlatform(),
       ), `${journal.transactionId}\n`, { flag: 'wx' })
       const applied = await first.acknowledgeDashboardHealth('1.1.0')
       expect(applied).toMatchObject({ kind: 'applied' })
@@ -742,6 +750,7 @@ describe('NativeDesktopInstallAdapter', () => {
       await unlink(nativeUpdateHeartbeatPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         pending.transactionId,
+        hostNativePlatform(),
       ))
 
       const rollbackPlans: Array<NativeRollbackPlan | NativeUpdateWatchPlan> = []
@@ -813,12 +822,12 @@ describe('NativeDesktopInstallAdapter', () => {
       await first.acknowledgeDashboardHealth('1.1.0')
       const pending = JSON.parse(await readFile(journalPath, 'utf8')) as { readonly transactionId: string }
       const rollbackArtifactPath = join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe')
-      await unlink(nativeUpdateHeartbeatPath(rollbackArtifactPath, pending.transactionId))
+      await unlink(nativeUpdateHeartbeatPath(rollbackArtifactPath, pending.transactionId, hostNativePlatform()))
 
       const rollbackPlans: Array<NativeRollbackPlan | NativeUpdateWatchPlan> = []
       const restarted = await adapter(storageDirectory, '1.1.0', current, currentBytes, rollbackPlans, false, [], 100)
       await expect(restarted.beginDashboardHealthCheck('1.1.0')).resolves.toMatchObject({ kind: 'rollback-required' })
-      await writeFile(nativeUpdateAppliedPath(rollbackArtifactPath, pending.transactionId), `${pending.transactionId}\n`)
+      await writeFile(nativeUpdateAppliedPath(rollbackArtifactPath, pending.transactionId, hostNativePlatform()), `${pending.transactionId}\n`)
 
       const resolution = await scheduleRequiredNativeRollback(restarted)
       expect(resolution).toEqual({
@@ -954,7 +963,7 @@ describe('NativeDesktopInstallAdapter', () => {
       const watch = watches[0]
       if (watch === undefined || !('journalPath' in watch)) throw new Error('expected a native update watch plan')
       await writeFile(
-        nativeUpdateHeartbeatPath(watch.rollbackArtifactPath, watch.transactionId),
+        nativeUpdateHeartbeatPath(watch.rollbackArtifactPath, watch.transactionId, hostNativePlatform()),
         `${watch.transactionId}:${candidateLaunchNonce}:${String(Date.now() + 60_000)}\n`,
       )
 
@@ -997,7 +1006,7 @@ describe('NativeDesktopInstallAdapter', () => {
       const heartbeatWritten = new Promise<void>((resolve, reject) => {
         setTimeout(() => {
           writeFile(
-            nativeUpdateHeartbeatPath(watch.rollbackArtifactPath, watch.transactionId),
+            nativeUpdateHeartbeatPath(watch.rollbackArtifactPath, watch.transactionId, hostNativePlatform()),
             `${watch.transactionId}:${candidateLaunchNonce}:${String(Date.now())}\n`,
           ).then(resolve, reject)
         }, 1_500)
@@ -1180,7 +1189,7 @@ describe('NativeDesktopInstallAdapter', () => {
         'utf8',
       )) as { readonly transactionId: string }
       await writeFile(
-        nativeUpdateRolledBackPath(retainedRollbackPath, rollbackTransaction.transactionId),
+        nativeUpdateRolledBackPath(retainedRollbackPath, rollbackTransaction.transactionId, hostNativePlatform()),
         `${rollbackTransaction.transactionId}\n`,
         { flag: 'wx' },
       )
@@ -1297,10 +1306,12 @@ describe('NativeDesktopInstallAdapter', () => {
       const marker = nativeUpdateAppliedPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         journal.transactionId,
+        hostNativePlatform(),
       )
       const heartbeat = nativeUpdateHeartbeatPath(
         join(storageDirectory, 'native-updates', current.sha256, 'candidate.exe'),
         journal.transactionId,
+        hostNativePlatform(),
       )
       await mkdir(join(storageDirectory, 'native-updates', 'workers'), { recursive: true })
       await writeFile(marker, `${journal.transactionId}\n`)

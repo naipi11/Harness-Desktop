@@ -13,7 +13,7 @@
     "prepackage:dir": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure && pnpm --dir ../.. run prepare:desktop-native",
     "package:dir": "electron-builder --dir --config electron-builder.config.mjs --publish never",
     "test": "vitest run --root ../.. apps/desktop/tests",
-    "test:update": "vitest run --root ../.. apps/desktop/tests/update-service.spec.ts apps/desktop/tests/update-manifest.spec.ts apps/desktop/tests/native-install.spec.ts apps/desktop/tests/native-transition-gate.spec.ts apps/desktop/tests/native-rollback.spec.ts apps/desktop/tests/native-rollback-launcher.spec.ts apps/desktop/tests/release-update-source.spec.ts apps/desktop/tests/self-installation.spec.ts apps/desktop/tests/windows-native-rollback-worker.spec.ts apps/desktop/tests/windows-native-update-supervisor.spec.ts",
+    "test:update": "vitest run --root ../.. apps/desktop/tests/update-service.spec.ts apps/desktop/tests/update-manifest.spec.ts apps/desktop/tests/native-install.spec.ts apps/desktop/tests/native-transition-gate.spec.ts apps/desktop/tests/native-rollback.spec.ts apps/desktop/tests/native-rollback-launcher.spec.ts apps/desktop/tests/installer-policy-state.spec.ts apps/desktop/tests/release-update-source.spec.ts apps/desktop/tests/self-installation.spec.ts apps/desktop/tests/windows-native-rollback-worker.spec.ts apps/desktop/tests/windows-native-update-supervisor.spec.ts",
     "test:e2e": "playwright test --grep-invert unpacked",
     "test:e2e:cross-client": "playwright test --config playwright.config.ts tests/cross-client-runtime.e2e.ts",
     "test:e2e:unpacked": "pnpm run build && pnpm run package:dir && playwright test --config playwright.config.ts tests/desktop-dashboard.e2e.ts --grep unpacked",

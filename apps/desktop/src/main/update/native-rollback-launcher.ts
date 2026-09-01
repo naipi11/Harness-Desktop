@@ -3,12 +3,11 @@
 import { randomUUID } from 'node:crypto'
 import { execFile, spawn } from 'node:child_process'
 import { lstat, mkdir, open, readFile, readdir, realpath, unlink } from 'node:fs/promises'
-import { dirname, join, resolve, win32 } from 'node:path'
+import { dirname, posix, win32 } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { promisify } from 'node:util'
 import { createNativeRollbackWorkerRequest, type NativeRollbackWorkerRequest } from './native-rollback-request.ts'
 import {
-  nativeRollbackWorkerFailurePath,
   type NativeRollbackPlan,
   type NativeRollbackWorkerFailurePhase,
   type NativeUpdateWatchPlan,
@@ -170,9 +169,10 @@ type WorkerLaunch = ChildWorkerLaunch | WindowsWorkerLaunch
 export async function launchNativeRollbackWorker(options: NativeRollbackWorkerLaunchOptions): Promise<NativeRollbackWorkerReceipt> {
   const dependencies = options.dependencies ?? nativeDependencies
   const workerId = options.workerId ?? randomUUID()
-  const request = createNativeRollbackWorkerRequest(options.plan, workerId)
-  const failurePath = nativeRollbackWorkerFailurePath(options.plan.rollbackArtifactPath, workerId)
-  const workerDirectory = dirname(request.readyPath)
+  const paths = nativeRollbackWorkerPaths(options.plan, workerId, options.plan.platform)
+  const request = { ...createNativeRollbackWorkerRequest(options.plan, workerId), readyPath: paths.readyPath }
+  const failurePath = paths.failurePath
+  const workerDirectory = paths.workerDirectory
   await dependencies.mkdir(workerDirectory)
   const launch = options.platform === 'win32'
     ? await launchWindowsWorker(options, request, dependencies, workerDirectory)
@@ -231,9 +231,9 @@ async function launchWindowsWorker(
 ): Promise<WindowsWorkerLaunch> {
   const privateWorkerDirectory = await validatePrivateWorkerDirectory(workerDirectory, dependencies)
   await retireStaleSupervisors(privateWorkerDirectory, dependencies)
-  const supervisorPath = join(privateWorkerDirectory, `native-update-supervisor-${request.workerId}.exe`)
-  const scriptPath = join(privateWorkerDirectory, `native-rollback-worker-${request.workerId}.ps1`)
-  const planPath = join(privateWorkerDirectory, `native-rollback-plan-${request.workerId}.json`)
+  const supervisorPath = win32.join(privateWorkerDirectory, `native-update-supervisor-${request.workerId}.exe`)
+  const scriptPath = win32.join(privateWorkerDirectory, `native-rollback-worker-${request.workerId}.ps1`)
+  const planPath = win32.join(privateWorkerDirectory, `native-rollback-plan-${request.workerId}.json`)
   const workerEnvironment = dependencies.createWindowsWorkerEnvironment?.() ?? createWindowsWorkerEnvironment()
   const recordStage = createNativeUpdateStageRecorder(
     privateWorkerDirectory, request.workerId, workerEnvironment, dependencies,
@@ -307,16 +307,16 @@ async function cleanupWindowsPrivateInputs(
   proof: WindowsCancellationProof,
   dependencies: NativeRollbackWorkerDependencies,
 ): Promise<void> {
-  const cancelPath = join(workerDirectory, `native-update-cancel-${request.workerId}.req`)
-  const drainedPath = join(workerDirectory, `native-update-drained-${request.workerId}.ack`)
+  const cancelPath = win32.join(workerDirectory, `native-update-cancel-${request.workerId}.req`)
+  const drainedPath = win32.join(workerDirectory, `native-update-drained-${request.workerId}.ack`)
   for (const path of [
     supervisorPath,
     scriptPath,
     planPath,
     request.readyPath,
-    nativeRollbackWorkerFailurePath(request.plan.rollbackArtifactPath, request.workerId),
-    join(workerDirectory, `native-rollback-installer-${request.workerId}.exe`),
-    join(workerDirectory, `native-candidate-installer-${request.workerId}.exe`),
+    win32.join(workerDirectory, `native-rollback-failure-${request.workerId}.json`),
+    win32.join(workerDirectory, `native-rollback-installer-${request.workerId}.exe`),
+    win32.join(workerDirectory, `native-candidate-installer-${request.workerId}.exe`),
     cancelPath,
   ]) {
     await assertWindowsCancellationProof(proof, dependencies)
@@ -332,21 +332,35 @@ async function validatePrivateWorkerDirectory(
 ): Promise<string> {
   const metadata = await dependencies.lstatPrivate(workerDirectory)
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error('native Desktop rollback worker directory is not a real directory')
-  const canonicalRoot = await dependencies.canonicalize(dirname(workerDirectory))
+  const canonicalRoot = await dependencies.canonicalize(win32.dirname(workerDirectory))
   const canonicalWorkers = await dependencies.canonicalize(workerDirectory)
-  if (canonicalWorkers.toLowerCase() !== join(canonicalRoot, 'workers').toLowerCase()) {
+  if (canonicalWorkers.toLowerCase() !== win32.join(canonicalRoot, 'workers').toLowerCase()) {
     throw new Error('native Desktop rollback worker directory escaped its private update root')
   }
-  if (resolve(workerDirectory).toLowerCase() !== resolve(canonicalWorkers).toLowerCase()) {
+  if (win32.resolve(workerDirectory).toLowerCase() !== win32.resolve(canonicalWorkers).toLowerCase()) {
     throw new Error('native Desktop rollback worker directory is not canonical')
   }
   return canonicalWorkers
 }
 
 function validatePrivateSiblingPaths(workerDirectory: string, paths: readonly string[]): void {
-  const expectedParent = resolve(workerDirectory).toLowerCase()
-  if (paths.some(path => resolve(dirname(path)).toLowerCase() !== expectedParent)) {
+  const expectedParent = win32.resolve(workerDirectory).toLowerCase()
+  if (paths.some(path => win32.resolve(win32.dirname(path)).toLowerCase() !== expectedParent)) {
     throw new Error('native Desktop rollback worker input escaped its private worker directory')
+  }
+}
+
+function nativeRollbackWorkerPaths(
+  plan: NativeRollbackPlan | NativeUpdateWatchPlan,
+  workerId: string,
+  platform: NativeRollbackPlan['platform'],
+): { readonly workerDirectory: string; readonly readyPath: string; readonly failurePath: string } {
+  const path = platform === 'win32' ? win32 : posix
+  const workerDirectory = path.join(path.dirname(path.dirname(plan.rollbackArtifactPath)), 'workers')
+  return {
+    workerDirectory,
+    readyPath: path.join(workerDirectory, `native-rollback-ready-${workerId}.json`),
+    failurePath: path.join(workerDirectory, `native-rollback-failure-${workerId}.json`),
   }
 }
 
@@ -356,7 +370,7 @@ async function retireStaleSupervisors(
 ): Promise<void> {
   for (const name of await dependencies.listPrivate(workerDirectory)) {
     if (!supervisorNamePattern.test(name)) continue
-    const path = join(workerDirectory, name)
+    const path = win32.join(workerDirectory, name)
     const metadata = await dependencies.lstatPrivate(path)
     if (metadata.isSymbolicLink()) {
       await dependencies.remove(path)
@@ -488,9 +502,9 @@ async function requestWindowsCancellation(
   dependencies: NativeRollbackWorkerDependencies,
   recordStage?: NativeUpdateStageRecorder,
 ): Promise<WindowsCancellationProof> {
-  const workerDirectory = dirname(request.readyPath)
-  const cancelPath = join(workerDirectory, `native-update-cancel-${request.workerId}.req`)
-  const drainedPath = join(workerDirectory, `native-update-drained-${request.workerId}.ack`)
+  const workerDirectory = win32.dirname(request.readyPath)
+  const cancelPath = win32.join(workerDirectory, `native-update-cancel-${request.workerId}.req`)
+  const drainedPath = win32.join(workerDirectory, `native-update-drained-${request.workerId}.ack`)
   const record = `${request.workerId}:${randomUUID()}\n`
   await dependencies.writePrivate(cancelPath, record)
   const deadline = monotonicNow(dependencies) + options.workerReadyTimeoutMs
@@ -691,7 +705,7 @@ async function runWindowsSupervisorBridge(
   let stdout: string
   try {
     const result = await bridge(
-      join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(windowsSupervisorBridgeProgram, 'utf16le').toString('base64')],
       {
         env: createWindowsBridgeEnvironment(supervisorEnvironment, encodedRequest),
@@ -730,7 +744,7 @@ function createNativeUpdateStageRecorder(
     recorded.add(stage)
     const write = Promise.resolve()
       .then(() => dependencies.writePrivate(
-        join(workerDirectory, `native-update-stage-${stage}-${workerId}.json`),
+        win32.join(workerDirectory, `native-update-stage-${stage}-${workerId}.json`),
         `${stage}\n`,
       ))
       .catch(() => {
@@ -835,7 +849,7 @@ export function createWindowsExactImageInspector(
     if (systemRoot === undefined) throw new Error('native Desktop exact-image inspection requires the Windows system root')
     try {
       const result = await runWindowsCommand(
-        join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
         ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(windowsExactImageProbeProgram, 'utf16le').toString('base64')],
         {
           env: { ...createWindowsWorkerEnvironment(), DSH_NATIVE_SUPERVISOR_IMAGE: path },

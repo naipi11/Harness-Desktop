@@ -28,7 +28,7 @@ if (request === undefined) {
     if ('journalPath' in request.plan) {
       const outcome = await superviseNativeUpdate(request.plan, undefined, prepared)
       if (outcome === 'applied') {
-        await writeFile(nativeUpdateAppliedPath(request.plan.rollbackArtifactPath, request.plan.transactionId), `${request.plan.transactionId}\n`, {
+        await writeFile(nativeUpdateAppliedPath(request.plan.rollbackArtifactPath, request.plan.transactionId, request.plan.platform), `${request.plan.transactionId}\n`, {
           flag: 'wx',
           mode: 0o600,
         })
@@ -38,7 +38,7 @@ if (request === undefined) {
       await executeNativeRollback(request.plan, undefined, prepared, rollbackTransactionId === undefined
         ? undefined
         : async () => {
-          await writeFile(nativeUpdateRolledBackPath(request.plan.rollbackArtifactPath, rollbackTransactionId), `${rollbackTransactionId}\n`, {
+          await writeFile(nativeUpdateRolledBackPath(request.plan.rollbackArtifactPath, rollbackTransactionId, request.plan.platform), `${rollbackTransactionId}\n`, {
             flag: 'wx',
             mode: 0o600,
           })

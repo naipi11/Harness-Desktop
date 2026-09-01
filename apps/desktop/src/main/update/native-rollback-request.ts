@@ -1,6 +1,5 @@
 /** Private request envelope and readiness marker rules for detached native rollback workers. */
 
-import { isAbsolute } from 'node:path'
 import {
   nativeRollbackReadyPath,
   parseNativeRollbackPlan,
@@ -35,7 +34,7 @@ export function createNativeRollbackWorkerRequest(
   return {
     schemaVersion: 1,
     workerId,
-    readyPath: nativeRollbackReadyPath(plan.rollbackArtifactPath, workerId),
+    readyPath: nativeRollbackReadyPath(plan.rollbackArtifactPath, workerId, plan.platform),
     plan,
   }
 }
@@ -47,12 +46,15 @@ export function createNativeRollbackWorkerRequest(
  */
 export function parseNativeRollbackWorkerRequest(value: unknown): NativeRollbackWorkerRequest | undefined {
   if (!isRecord(value) || !hasExactKeys(value, ['schemaVersion', 'workerId', 'readyPath', 'plan'])
-    || value.schemaVersion !== 1 || !isUuid(value.workerId) || typeof value.readyPath !== 'string' || !isAbsolute(value.readyPath)) {
+    || value.schemaVersion !== 1 || !isUuid(value.workerId) || typeof value.readyPath !== 'string') {
     return undefined
   }
   const watch = parseNativeUpdateWatchPlan(value.plan)
   const plan = watch ?? parseNativeRollbackPlan(value.plan)
-  if (plan === undefined || value.readyPath !== nativeRollbackReadyPath(plan.rollbackArtifactPath, value.workerId)) return undefined
+  if (
+    plan === undefined
+    || value.readyPath !== nativeRollbackReadyPath(plan.rollbackArtifactPath, value.workerId, plan.platform)
+  ) return undefined
   return { schemaVersion: 1, workerId: value.workerId, readyPath: value.readyPath, plan }
 }
 

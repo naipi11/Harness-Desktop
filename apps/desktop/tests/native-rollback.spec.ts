@@ -4,6 +4,12 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   executeNativeRollback,
+  nativeRollbackReadyPath,
+  nativeRollbackWorkerFailurePath,
+  nativeUpdateAppliedPath,
+  nativeUpdateHeartbeatPath,
+  nativeUpdateRolledBackPath,
+  parseNativeRollbackPlan,
   parseNativeUpdateWatchState,
   parseNativeUpdateWatchPlan,
   prepareNativeRollbackArtifacts,
@@ -14,6 +20,10 @@ import {
   type NativeUpdateWatchPlan,
   type NativeUpdateWatchState,
 } from '../src/main/update/native-rollback.ts'
+import {
+  createNativeRollbackWorkerRequest,
+  parseNativeRollbackWorkerRequest,
+} from '../src/main/update/native-rollback-request.ts'
 
 const rollbackBytes = Buffer.from('verified-stable-installer')
 const rollbackSha256 = createHash('sha256').update(rollbackBytes).digest('hex')
@@ -83,7 +93,7 @@ function processReference(
 ): NativeProcessReference {
   return {
     processId,
-    executablePath: options.executablePath ?? 'C:\\Harness Desktop\\harness-desktop.exe',
+    executablePath: options.executablePath ?? process.execPath,
     startedBeforeMs: 1_700_000_000_000,
     ...(options.linuxStartTicks === undefined ? {} : { linuxStartTicks: options.linuxStartTicks }),
   }
@@ -94,7 +104,7 @@ function rollbackPlan(platform: NativeRollbackPlan['platform']): NativeRollbackP
     return {
       schemaVersion: 1,
       platform,
-      parentProcess: processReference(11),
+      parentProcess: processReference(11, { executablePath: 'C:\\Harness Desktop\\harness-desktop.exe' }),
       applicationPath: 'C:\\Harness Desktop\\harness-desktop.exe',
       rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.exe',
       rollbackSha256,
@@ -106,9 +116,9 @@ function rollbackPlan(platform: NativeRollbackPlan['platform']): NativeRollbackP
     return {
       schemaVersion: 1,
       platform,
-      parentProcess: processReference(11),
-      applicationPath: 'C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop',
-      rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.zip',
+      parentProcess: processReference(11, { executablePath: '/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop' }),
+      applicationPath: '/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop',
+      rollbackArtifactPath: '/private/native-updates/rollback/candidate.zip',
       rollbackSha256,
       rollbackFormat: 'zip',
       healthCheckTimeoutMs: 30_000,
@@ -117,10 +127,10 @@ function rollbackPlan(platform: NativeRollbackPlan['platform']): NativeRollbackP
   return {
     schemaVersion: 1,
     platform,
-    parentProcess: processReference(11, { linuxStartTicks: '11' }),
-    applicationPath: 'C:\\Applications\\harness-desktop',
-    appImagePath: 'C:\\Applications\\Harness Desktop.AppImage',
-    rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.AppImage',
+    parentProcess: processReference(11, { executablePath: '/opt/harness-desktop', linuxStartTicks: '11' }),
+    applicationPath: '/opt/harness-desktop',
+    appImagePath: '/opt/Harness Desktop.AppImage',
+    rollbackArtifactPath: '/var/lib/harness-desktop/native-updates/rollback/candidate.AppImage',
     rollbackSha256,
     rollbackFormat: 'appimage',
     healthCheckTimeoutMs: 30_000,
@@ -142,10 +152,10 @@ function watchPlan(): NativeUpdateWatchPlan {
 function linuxWatchPlan(): NativeUpdateWatchPlan {
   return {
     ...rollbackPlan('linux'),
-    candidateArtifactPath: 'C:\\private\\native-updates\\candidate\\candidate-artifact.AppImage',
+    candidateArtifactPath: '/var/lib/harness-desktop/native-updates/candidate/candidate-artifact.AppImage',
     candidateSha256,
     candidateFormat: 'appimage',
-    journalPath: 'C:\\private\\native-updates\\pending-native-update.json',
+    journalPath: '/var/lib/harness-desktop/native-updates/pending-native-update.json',
     candidateVersion: '1.1.0',
     transactionId,
   }
@@ -154,10 +164,10 @@ function linuxWatchPlan(): NativeUpdateWatchPlan {
 function macWatchPlan(): NativeUpdateWatchPlan {
   return {
     ...rollbackPlan('darwin'),
-    candidateArtifactPath: 'C:\\private\\native-updates\\candidate\\candidate-artifact.zip',
+    candidateArtifactPath: '/private/native-updates/candidate/candidate-artifact.zip',
     candidateSha256,
     candidateFormat: 'zip',
-    journalPath: 'C:\\private\\native-updates\\pending-native-update.json',
+    journalPath: '/private/native-updates/pending-native-update.json',
     candidateVersion: '1.1.0',
     transactionId,
   }
@@ -198,6 +208,33 @@ describe('parseNativeUpdateWatchState', () => {
 })
 
 describe('executeNativeRollback', () => {
+  it('rejects Windows path syntax in macOS and Linux rollback plans', () => {
+    expect(parseNativeRollbackPlan(rollbackPlan('darwin'))).toEqual(rollbackPlan('darwin'))
+    expect(parseNativeRollbackPlan(rollbackPlan('linux'))).toEqual(rollbackPlan('linux'))
+
+    expect(parseNativeRollbackPlan({
+      ...rollbackPlan('darwin'),
+      applicationPath: 'C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop',
+      rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.zip',
+    })).toBeUndefined()
+    expect(parseNativeRollbackPlan({
+      ...rollbackPlan('linux'),
+      applicationPath: 'C:\\Applications\\harness-desktop',
+      appImagePath: 'C:\\Applications\\Harness Desktop.AppImage',
+      rollbackArtifactPath: 'C:\\private\\native-updates\\rollback\\candidate.AppImage',
+    })).toBeUndefined()
+    expect(parseNativeUpdateWatchPlan({
+      ...macWatchPlan(),
+      candidateArtifactPath: 'C:\\private\\native-updates\\candidate\\candidate-artifact.zip',
+      journalPath: 'C:\\private\\native-updates\\pending-native-update.json',
+    })).toBeUndefined()
+    expect(parseNativeUpdateWatchPlan({
+      ...linuxWatchPlan(),
+      candidateArtifactPath: 'C:\\private\\native-updates\\candidate\\candidate-artifact.AppImage',
+      journalPath: 'C:\\private\\native-updates\\pending-native-update.json',
+    })).toBeUndefined()
+  })
+
   it('revalidates the cached Windows installer before silent restore and relaunch', async () => {
     const subject = fixture()
 
@@ -214,11 +251,11 @@ describe('executeNativeRollback', () => {
 
     await executeNativeRollback(rollbackPlan('darwin'), subject.operations)
 
-    expect(subject.events[0]).toBe('run:/usr/bin/ditto:-x,-k,C:\\private\\native-updates\\rollback\\candidate.zip,C:\\Applications\\.harness-desktop-rollback-stage')
+    expect(subject.events[0]).toBe('run:/usr/bin/ditto:-x,-k,/private/native-updates/rollback/candidate.zip,/Applications/.harness-desktop-rollback-stage')
     expect(subject.events.some(event => event.startsWith('run:/usr/bin/osascript:-l,JavaScript,-e,'))).toBe(true)
-    expect(subject.events.some(event => event.startsWith('rename:C:\\Applications\\Harness Desktop.app:'))).toBe(false)
-    expect(subject.events).toContain('remove:C:\\Applications\\.harness-desktop-rollback-stage')
-    expect(subject.events).toContain('launch:C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop')
+    expect(subject.events.some(event => event.startsWith('rename:/Applications/Harness Desktop.app:'))).toBe(false)
+    expect(subject.events).toContain('remove:/Applications/.harness-desktop-rollback-stage')
+    expect(subject.events).toContain('launch:/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop')
   })
 
   it('copies and mode-repairs the verified Linux AppImage before atomic replacement', async () => {
@@ -226,9 +263,9 @@ describe('executeNativeRollback', () => {
 
     await executeNativeRollback(rollbackPlan('linux'), subject.operations)
 
-    expect(subject.events.some(event => event.startsWith('copy:C:\\private\\native-updates\\rollback\\candidate.AppImage:C:\\Applications\\Harness Desktop.AppImage.rollback-'))).toBe(true)
-    expect(subject.events.some(event => event.startsWith('chmod:C:\\Applications\\Harness Desktop.AppImage.rollback-'))).toBe(true)
-    expect(subject.events).toContain('launch:C:\\Applications\\Harness Desktop.AppImage')
+    expect(subject.events.some(event => event.startsWith('copy:/var/lib/harness-desktop/native-updates/rollback/candidate.AppImage:/opt/Harness Desktop.AppImage.rollback-'))).toBe(true)
+    expect(subject.events.some(event => event.startsWith('chmod:/opt/Harness Desktop.AppImage.rollback-'))).toBe(true)
+    expect(subject.events).toContain('launch:/opt/Harness Desktop.AppImage')
   })
 
   it('runs a private snapshot rather than reopening the verified rollback cache path', async () => {
@@ -285,13 +322,13 @@ describe('executeNativeRollback', () => {
 
     await executeNativeRollback(rollbackPlan('darwin'), subject.operations)
 
-    expect(subject.events.some(event => event.startsWith('rename:C:\\Applications\\.harness-desktop-rollback-stage\\Harness Desktop.app:C:\\Applications\\Harness Desktop.app'))).toBe(true)
-    expect(subject.events).toContain('launch:C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop')
+    expect(subject.events.some(event => event.startsWith('rename:/Applications/.harness-desktop-rollback-stage/Harness Desktop.app:/Applications/Harness Desktop.app'))).toBe(true)
+    expect(subject.events).toContain('launch:/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop')
   })
 
   it('leaves the fixed macOS application path untouched when atomic replacement fails', async () => {
     const subject = fixture()
-    const live = 'C:\\Applications\\Harness Desktop.app'
+    const live = '/Applications/Harness Desktop.app'
     subject.operations.run = async (command, args) => {
       subject.events.push(`run:${command}:${args.join(',')}`)
       if (command === '/usr/bin/osascript') throw new Error('atomic replacement failed')
@@ -342,6 +379,50 @@ describe('prepareNativeRollbackArtifacts', () => {
 })
 
 describe('superviseNativeUpdate', () => {
+  it('round-trips a Windows worker request with its target-platform readiness path', () => {
+    const request = createNativeRollbackWorkerRequest(watchPlan(), transactionId)
+
+    expect(request.readyPath).toBe(
+      'C:\\private\\native-updates\\workers\\native-rollback-ready-11111111-1111-4111-8111-111111111111.json',
+    )
+    expect(parseNativeRollbackWorkerRequest(request)).toEqual(request)
+  })
+
+  it('derives every Windows worker marker with Windows path syntax', () => {
+    const artifact = 'C:\\private\\native-updates\\rollback\\candidate.exe'
+
+    expect(nativeRollbackReadyPath(artifact, transactionId, 'win32')).toBe(
+      'C:\\private\\native-updates\\workers\\native-rollback-ready-11111111-1111-4111-8111-111111111111.json',
+    )
+    expect(nativeRollbackWorkerFailurePath(artifact, transactionId, 'win32')).toBe(
+      'C:\\private\\native-updates\\workers\\native-rollback-failure-11111111-1111-4111-8111-111111111111.json',
+    )
+    expect(nativeUpdateAppliedPath(artifact, transactionId, 'win32')).toBe(
+      'C:\\private\\native-updates\\workers\\native-update-applied-11111111-1111-4111-8111-111111111111.json',
+    )
+    expect(nativeUpdateHeartbeatPath(artifact, transactionId, 'win32')).toBe(
+      'C:\\private\\native-updates\\workers\\native-update-heartbeat-11111111-1111-4111-8111-111111111111.json',
+    )
+    expect(nativeUpdateRolledBackPath(artifact, transactionId, 'win32')).toBe(
+      'C:\\private\\native-updates\\workers\\native-update-rolled-back-11111111-1111-4111-8111-111111111111.json',
+    )
+  })
+
+  it('writes Windows watchdog markers with Windows path syntax', async () => {
+    const subject = fixture()
+    const markerPaths: string[] = []
+    subject.operations.writeWatchHeartbeat = async (path) => { markerPaths.push(path) }
+    subject.operations.writeRollbackCompletion = async (path) => { markerPaths.push(path) }
+    subject.states.push(state('awaiting-dashboard-health'), state('awaiting-dashboard-health'))
+
+    await expect(superviseNativeUpdate(watchPlan(), subject.operations)).resolves.toBe('rolled-back')
+
+    expect(markerPaths).toEqual([
+      'C:\\private\\native-updates\\workers\\native-update-heartbeat-11111111-1111-4111-8111-111111111111.json',
+      'C:\\private\\native-updates\\workers\\native-update-rolled-back-11111111-1111-4111-8111-111111111111.json',
+    ])
+  })
+
   it('publishes a candidate-start heartbeat before it waits for Dashboard health', async () => {
     const subject = fixture()
     const heartbeats: Array<{ readonly path: string; readonly content: string }> = []
@@ -402,8 +483,8 @@ describe('superviseNativeUpdate', () => {
 
     await expect(superviseNativeUpdate(macWatchPlan(), subject.operations)).resolves.toBe('unchanged')
 
-    expect(subject.events).toContain('launch:C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop')
-    expect(subject.events.some(event => event.includes('rollback\\candidate.zip'))).toBe(false)
+    expect(subject.events).toContain('launch:/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop')
+    expect(subject.events.some(event => event.includes('rollback/candidate.zip'))).toBe(false)
   })
 
   it('uses an atomic replacement again when the published candidate misses health', async () => {
@@ -418,19 +499,19 @@ describe('superviseNativeUpdate', () => {
 
     await expect(superviseNativeUpdate(macWatchPlan(), subject.operations)).resolves.toBe('rolled-back')
 
-    expect(subject.events.filter(event => event === 'launch:C:\\Applications\\Harness Desktop.app\\Contents\\MacOS\\harness-desktop')).toHaveLength(2)
+    expect(subject.events.filter(event => event === 'launch:/Applications/Harness Desktop.app/Contents/MacOS/harness-desktop')).toHaveLength(2)
     expect(atomicReplacements).toBe(2)
-    expect(subject.events.some(event => event.includes('rollback\\candidate.zip'))).toBe(true)
+    expect(subject.events.some(event => event.includes('rollback/candidate.zip'))).toBe(true)
   })
 
   it('accepts an AppImage candidate whose mounted Main executable differs from its outer launcher', async () => {
     const subject = fixture()
     const launcher = processReference(22, {
-      executablePath: 'C:\\Applications\\Harness Desktop.AppImage',
+      executablePath: '/opt/Harness Desktop.AppImage',
       linuxStartTicks: '22',
     })
     const mountedMain = processReference(22, {
-      executablePath: 'C:\\tmp\\.mount_Harness\\harness-desktop',
+      executablePath: '/tmp/.mount_Harness/harness-desktop',
       linuxStartTicks: '22',
     })
     subject.operations.launch = (command) => {
@@ -450,14 +531,14 @@ describe('superviseNativeUpdate', () => {
 
     await expect(superviseNativeUpdate(linuxWatchPlan(), subject.operations)).resolves.toBe('applied')
 
-    expect(subject.events).toContain('launch:C:\\Applications\\Harness Desktop.AppImage')
+    expect(subject.events).toContain('launch:/opt/Harness Desktop.AppImage')
     expect(subject.events.some(event => event.startsWith('terminate:'))).toBe(false)
   })
 
   it('rolls back an AppImage candidate whose reported kernel start token differs from the launched process', async () => {
     const subject = fixture()
     const launcher = processReference(22, {
-      executablePath: 'C:\\Applications\\Harness Desktop.AppImage',
+      executablePath: '/opt/Harness Desktop.AppImage',
       linuxStartTicks: '22',
     })
     subject.operations.launch = (command) => {
@@ -473,7 +554,7 @@ describe('superviseNativeUpdate', () => {
       state('awaiting-dashboard-health'),
       state('dashboard-health-checking', {
         candidateProcess: processReference(22, {
-          executablePath: 'C:\\tmp\\.mount_Harness\\harness-desktop',
+          executablePath: '/tmp/.mount_Harness/harness-desktop',
           linuxStartTicks: '23',
         }),
       }),
@@ -482,7 +563,7 @@ describe('superviseNativeUpdate', () => {
     await expect(superviseNativeUpdate(linuxWatchPlan(), subject.operations)).resolves.toBe('rolled-back')
 
     expect(subject.events).toContain('terminate:22')
-    expect(subject.events.filter(event => event === 'launch:C:\\Applications\\Harness Desktop.AppImage')).toHaveLength(2)
+    expect(subject.events.filter(event => event === 'launch:/opt/Harness Desktop.AppImage')).toHaveLength(2)
   })
 
   it('refuses an AppImage transition before Main exits when the destination cannot hold a private same-volume probe', async () => {

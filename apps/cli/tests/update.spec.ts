@@ -121,6 +121,33 @@ describe('CLI update', () => {
     }
   }, 60_000)
 
+  it.each(['win32', 'linux', 'darwin'] as const)('builds a standalone fixture with the update format required by %s', async (target) => {
+    const fixture = await standaloneFixture('healthy', target, true)
+    try {
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        trust: fixture.trust,
+        loadCandidate: async () => ({ manifest: fixture.manifest, bytes: fixture.bytes }),
+        platform: target,
+        ...(target === 'win32' ? {} : { operations: { stat: async () => ({ mode: 0o100755 }) } }),
+        healthCheck: async () => true,
+      })).resolves.toEqual({ kind: 'applied', version: '1.1.0' })
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('uses a small safely quoted POSIX Node launcher for a non-minimal Unix fixture', async () => {
+    const fixture = await standaloneFixture('healthy', 'linux')
+    try {
+      expect(fixture.runtimeBytes).toEqual(Buffer.from(`#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\"'\"'")}' \"$@\"\n`))
+    } finally {
+      await fixture.close()
+    }
+  })
+
   it('reports retained cleanup failure after a healthy candidate instead of reporting fully applied', async () => {
     const fixture = await standaloneFixture('healthy')
     try {
@@ -602,7 +629,11 @@ async function standaloneFixture(
   const origin = new URL(`https://${identifier}.invalid`).origin
   const targetPlatform = target === 'win32' || target === 'darwin' || target === 'linux' ? target : platform()
   const members = ['version', `runtime/${target === 'win32' ? 'node.exe' : 'bin/node'}`, 'cli/package/lib/bin.js', 'manifest.json']
-  const runtimeBytes = minimalArchive ? Buffer.from('node') : await readFile(process.execPath)
+  const runtimeBytes = minimalArchive
+    ? Buffer.from('node')
+    : targetPlatform === 'win32'
+      ? await readFile(process.execPath)
+      : Buffer.from(`#!/bin/sh\nexec ${quotePosixShellArgument(process.execPath)} "$@"\n`)
   const healthSource = (health === 'healthy'
     ? "process.stdout.write('Usage: harness\\n')\n"
     : health === 'ignores-sigterm'
@@ -620,8 +651,8 @@ async function standaloneFixture(
     'cli/package/lib/bin.js': Buffer.from(healthSource),
   }
   files['manifest.json'] = Buffer.from(JSON.stringify({ version: 2, executablePaths: [members[1]!] }))
-  const bytes = zipSync(files)
-  const digest = await import('node:crypto').then(({ createHash }) => createHash('sha256').update(bytes).digest('hex'))
+  const zipBytes = zipSync(files)
+  const digest = await import('node:crypto').then(({ createHash }) => createHash('sha256').update(zipBytes).digest('hex'))
   const payload: UpdateManifestPayload = {
     schemaVersion: 1,
     applicationId: productMetadata.appId,
@@ -632,7 +663,7 @@ async function standaloneFixture(
       url: new URL(`${randomUUID()}.zip`, `${origin}/`).href, sha256: digest, members,
     }],
   }
-  const manifest: SignedUpdateManifest = {
+  const zipManifest: SignedUpdateManifest = {
     ...payload,
     signature: {
       algorithm: 'ed25519', keyId,
@@ -644,11 +675,14 @@ async function standaloneFixture(
     writeFile(entryPath, ''),
     writeFile(join(root, 'version'), '1.0.0'),
   ])
-  return {
-    entryPath, expectedLiveVersion: '1.0.0', manifest, bytes, runtimeBytes, root, envObservationPath, privateKey: keyPair.privateKey,
+  const fixture: StandaloneFixture = {
+    entryPath, expectedLiveVersion: '1.0.0', manifest: zipManifest, bytes: zipBytes, runtimeBytes, root, envObservationPath, privateKey: keyPair.privateKey,
     trust: { allowedOrigins: [origin], publicKeys: { [keyId]: keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString() } },
     close: async () => { await rm(parent, { recursive: true, force: true }) },
   }
+  if (targetPlatform === 'win32') return fixture
+  const archive = await tarCandidate(fixture, '1.1.0', 0o755, false, healthSource)
+  return { ...fixture, ...archive }
 }
 
 async function durableStandaloneFixture(): Promise<StandaloneFixture> {
@@ -848,6 +882,8 @@ async function tarCandidate(
 async function digest(bytes: Uint8Array): Promise<string> {
   return import('node:crypto').then(({ createHash }) => createHash('sha256').update(bytes).digest('hex'))
 }
+
+function quotePosixShellArgument(value: string): string { return `'${value.replaceAll("'", "'\"'\"'")}'` }
 
 
 function platform(): 'win32' | 'darwin' | 'linux' { return process.platform === 'win32' || process.platform === 'darwin' || process.platform === 'linux' ? process.platform : 'linux' }

@@ -5,7 +5,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { constants, readFileSync, type Stats } from 'node:fs'
 import { chmod, copyFile, lstat, mkdtemp, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, extname, isAbsolute, join } from 'node:path'
+import { dirname, extname, isAbsolute, join, posix, win32 } from 'node:path'
 
 const parentExitPollMs = 100
 
@@ -310,7 +310,7 @@ async function executeWatchedRollback(
 ): Promise<void> {
   await executeNativeRollback(plan, operations, prepared, async () => {
     await operations.writeRollbackCompletion(
-      nativeUpdateRolledBackPath(plan.rollbackArtifactPath, plan.transactionId),
+      nativeUpdateRolledBackPath(plan.rollbackArtifactPath, plan.transactionId, plan.platform),
       `${plan.transactionId}\n`,
     )
   })
@@ -412,7 +412,7 @@ export function parseNativeRollbackPlan(value: unknown): NativeRollbackPlan | un
   if (!isRecord(value) || !hasExactKeys(value, [
     'schemaVersion', 'platform', 'parentProcess', 'applicationPath', 'rollbackArtifactPath', 'rollbackSha256', 'rollbackFormat', 'healthCheckTimeoutMs',
   ], ['appImagePath', 'candidateArtifactPath', 'candidateSha256', 'candidateFormat', 'journalPath', 'candidateVersion', 'transactionId'])) return undefined
-  if (value.schemaVersion !== 1 || !isNativePlatform(value.platform) || !isNativeProcessReference(value.parentProcess)
+  if (value.schemaVersion !== 1 || !isNativePlatform(value.platform) || !isNativeProcessReference(value.parentProcess, value.platform)
     || typeof value.applicationPath !== 'string' || typeof value.rollbackArtifactPath !== 'string'
     || typeof value.rollbackSha256 !== 'string' || !isRollbackFormat(value.rollbackFormat) || !isBoundedTimeout(value.healthCheckTimeoutMs)
     || (value.appImagePath !== undefined && typeof value.appImagePath !== 'string')) return undefined
@@ -444,10 +444,10 @@ export function parseNativeRollbackPlan(value: unknown): NativeRollbackPlan | un
 export function parseNativeUpdateWatchPlan(value: unknown): NativeUpdateWatchPlan | undefined {
   const rollback = parseNativeRollbackPlan(value)
   if (rollback === undefined || !isRecord(value)
-    || typeof value.candidateArtifactPath !== 'string' || !isAbsolute(value.candidateArtifactPath)
+    || typeof value.candidateArtifactPath !== 'string' || !isPlanPathAbsolute(rollback, value.candidateArtifactPath)
     || typeof value.candidateSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(value.candidateSha256)
     || !isRollbackFormat(value.candidateFormat)
-    || typeof value.journalPath !== 'string' || !isAbsolute(value.journalPath)
+    || typeof value.journalPath !== 'string' || !isPlanPathAbsolute(rollback, value.journalPath)
     || typeof value.candidateVersion !== 'string' || !isSemanticVersion(value.candidateVersion)
     || typeof value.transactionId !== 'string' || !isUuid(value.transactionId)) return undefined
   const plan: NativeUpdateWatchPlan = {
@@ -513,13 +513,14 @@ async function verifyNativeInstallationDestination(
 ): Promise<void> {
   if (plan.platform === 'win32') return
   const destinationParent = plan.platform === 'darwin'
-    ? dirname(macApplicationBundle(plan.applicationPath))
+    ? posix.dirname(macApplicationBundle(plan.applicationPath))
     : linuxInstallationParent(plan)
-  let probeDirectory = await operations.mkdtemp(join(destinationParent, '.harness-desktop-update-probe-'))
+  const targetPath = nativePath(plan.platform)
+  let probeDirectory = await operations.mkdtemp(targetPath.join(destinationParent, '.harness-desktop-update-probe-'))
   try {
     if (plan.platform === 'linux') {
       const source = isWatchPlan(plan) ? plan.candidateArtifactPath : plan.rollbackArtifactPath
-      const probe = join(probeDirectory, 'candidate.AppImage')
+      const probe = targetPath.join(probeDirectory, 'candidate.AppImage')
       await operations.copyFile(source, probe)
       await operations.chmod(probe, 0o755)
     }
@@ -536,7 +537,7 @@ function linuxInstallationParent(plan: NativeRollbackPlan | NativeUpdateWatchPla
   if (plan.platform !== 'linux' || plan.appImagePath === undefined) {
     throw new Error('native rollback Linux installation path is absent')
   }
-  return dirname(plan.appImagePath)
+  return posix.dirname(plan.appImagePath)
 }
 
 /** Install an authenticated candidate outside Main, then return its exact new-process identity. */
@@ -601,14 +602,14 @@ async function replaceMacZip(
   operations: NativeRollbackOperations,
 ): Promise<boolean> {
   const appBundle = macApplicationBundle(applicationPath)
-  const parent = dirname(appBundle)
-  const staging = await operations.mkdtemp(join(parent, '.harness-desktop-rollback-'))
+  const parent = posix.dirname(appBundle)
+  const staging = await operations.mkdtemp(posix.join(parent, '.harness-desktop-rollback-'))
   try {
     await operations.run('/usr/bin/ditto', ['-x', '-k', archivePath, staging])
     const entries = await operations.readdir(staging)
     const bundles = entries.filter(entry => entry.isDirectory() && entry.name.endsWith('.app'))
     if (bundles.length !== 1 || bundles[0] === undefined) throw new Error('native rollback zip does not contain exactly one application bundle')
-    return await replaceMacApplication(join(staging, bundles[0].name), appBundle, allowMissingDestination, operations)
+    return await replaceMacApplication(posix.join(staging, bundles[0].name), appBundle, allowMissingDestination, operations)
   } finally {
     await operations.remove(staging)
   }
@@ -653,7 +654,7 @@ async function replaceMacApplication(
   allowMissingDestination: boolean,
   operations: NativeRollbackOperations,
 ): Promise<boolean> {
-  const retained = join(dirname(destination), '.harness-desktop-retained.app')
+  const retained = posix.join(posix.dirname(destination), '.harness-desktop-retained.app')
   await operations.remove(retained).catch(() => {
     // A previous atomic replacement may leave only its deterministic backup; the fixed destination remains launchable.
   })
@@ -703,9 +704,14 @@ function stableApplicationPath(plan: NativeUpdateWatchPlan): string {
 }
 
 function validatePlan(plan: NativeRollbackPlan): void {
-  if (!isNativeProcessReference(plan.parentProcess) || !isAbsolute(plan.applicationPath) || !isAbsolute(plan.rollbackArtifactPath)
-    || !/^[0-9a-f]{64}$/u.test(plan.rollbackSha256) || !isBoundedTimeout(plan.healthCheckTimeoutMs)
-    || (plan.transactionId !== undefined && !isUuid(plan.transactionId))) {
+  if (
+    !isNativeProcessReference(plan.parentProcess, plan.platform)
+    || !isPlanPathAbsolute(plan, plan.applicationPath)
+    || !isPlanPathAbsolute(plan, plan.rollbackArtifactPath)
+    || !/^[0-9a-f]{64}$/u.test(plan.rollbackSha256)
+    || !isBoundedTimeout(plan.healthCheckTimeoutMs)
+    || (plan.transactionId !== undefined && !isUuid(plan.transactionId))
+  ) {
     throw new Error('native rollback plan is invalid')
   }
   if (plan.platform === 'win32') {
@@ -721,7 +727,7 @@ function validatePlan(plan: NativeRollbackPlan): void {
     void macApplicationBundle(plan.applicationPath)
     return
   }
-  if (plan.rollbackFormat !== 'appimage' || plan.appImagePath === undefined || !isAbsolute(plan.appImagePath)
+  if (plan.rollbackFormat !== 'appimage' || plan.appImagePath === undefined || !isPlanPathAbsolute(plan, plan.appImagePath)
     || plan.parentProcess.linuxStartTicks === undefined
     || !plan.rollbackArtifactPath.endsWith('.AppImage')) {
     throw new Error('native rollback Linux plan is invalid')
@@ -730,9 +736,9 @@ function validatePlan(plan: NativeRollbackPlan): void {
 
 function validateWatchPlan(plan: NativeUpdateWatchPlan): void {
   validatePlan(plan)
-  if (!isAbsolute(plan.candidateArtifactPath) || !/^[0-9a-f]{64}$/u.test(plan.candidateSha256)
+  if (!isPlanPathAbsolute(plan, plan.candidateArtifactPath) || !/^[0-9a-f]{64}$/u.test(plan.candidateSha256)
     || plan.candidateFormat !== plan.rollbackFormat || !nativeArtifactPathMatches(plan.candidateArtifactPath, plan.candidateFormat)
-    || !isAbsolute(plan.journalPath) || !isSemanticVersion(plan.candidateVersion) || !isUuid(plan.transactionId)) {
+    || !isPlanPathAbsolute(plan, plan.journalPath) || !isSemanticVersion(plan.candidateVersion) || !isUuid(plan.transactionId)) {
     throw new Error('native update watchdog plan is invalid')
   }
 }
@@ -744,9 +750,9 @@ function nativeArtifactPathMatches(path: string, format: NativeUpdateWatchPlan['
 }
 
 function macApplicationBundle(applicationPath: string): string {
-  const macosDirectory = dirname(applicationPath)
-  const contentsDirectory = dirname(macosDirectory)
-  const bundle = dirname(contentsDirectory)
+  const macosDirectory = posix.dirname(applicationPath)
+  const contentsDirectory = posix.dirname(macosDirectory)
+  const bundle = posix.dirname(contentsDirectory)
   if (basename(macosDirectory) !== 'MacOS' || basename(contentsDirectory) !== 'Contents' || !bundle.endsWith('.app')) {
     throw new Error('native rollback macOS application path is invalid')
   }
@@ -754,6 +760,14 @@ function macApplicationBundle(applicationPath: string): string {
 }
 
 function basename(path: string): string { return path.replace(/[\\/]+$/u, '').split(/[\\/]/u).at(-1) ?? '' }
+
+function nativePath(platform: NativeRollbackPlan['platform']): typeof posix {
+  return platform === 'win32' ? win32 : posix
+}
+
+function isPlanPathAbsolute(plan: Pick<NativeRollbackPlan, 'platform'>, path: string): boolean {
+  return nativePath(plan.platform).isAbsolute(path)
+}
 
 function isNativePlatform(value: unknown): value is NativeRollbackPlan['platform'] {
   return value === 'win32' || value === 'darwin' || value === 'linux'
@@ -786,10 +800,15 @@ function isWatchPlan(plan: NativeRollbackPlan | NativeUpdateWatchPlan): plan is 
  * Resolve the only readiness marker a native watchdog may accept for an external recovery worker.
  * @param rollbackArtifactPath - verified artifact beneath the private native-update cache.
  * @param workerId - one unguessable recovery-worker identifier.
+ * @param platform - target platform that owns the cache path.
  * @returns absolute marker path outside the application installation.
  */
-export function nativeRollbackReadyPath(rollbackArtifactPath: string, workerId: string): string {
-  return join(dirname(dirname(rollbackArtifactPath)), 'workers', `native-rollback-ready-${workerId}.json`)
+export function nativeRollbackReadyPath(
+  rollbackArtifactPath: string,
+  workerId: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  return nativeUpdateWorkerPath(rollbackArtifactPath, `native-rollback-ready-${workerId}.json`, platform)
 }
 
 /** Redacted stages that a Windows recovery worker may report before it arms a native transition. */
@@ -805,33 +824,74 @@ export type NativeRollbackWorkerFailurePhase =
  * Resolve the cache-local failure receipt written only when a Windows worker cannot arm before Main exits.
  * @param rollbackArtifactPath - verified artifact beneath the private native-update cache.
  * @param workerId - one unguessable recovery-worker identifier.
+ * @param platform - target platform that owns the cache path.
  * @returns absolute redacted failure-receipt path outside the application installation.
  */
-export function nativeRollbackWorkerFailurePath(rollbackArtifactPath: string, workerId: string): string {
-  return join(dirname(dirname(rollbackArtifactPath)), 'workers', `native-rollback-failure-${workerId}.json`)
+export function nativeRollbackWorkerFailurePath(
+  rollbackArtifactPath: string,
+  workerId: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  return nativeUpdateWorkerPath(rollbackArtifactPath, `native-rollback-failure-${workerId}.json`, platform)
 }
 
-/** @returns the transaction-specific marker written only after a watchdog observes the applied journal state. */
-export function nativeUpdateAppliedPath(rollbackArtifactPath: string, transactionId: string): string {
-  return join(dirname(dirname(rollbackArtifactPath)), 'workers', `native-update-applied-${transactionId}.json`)
+/**
+ * @param rollbackArtifactPath - verified cache artifact path.
+ * @param transactionId - completed update transaction.
+ * @param platform - target platform that owns the cache path.
+ * @returns the transaction-specific marker written only after a watchdog observes the applied journal state.
+ */
+export function nativeUpdateAppliedPath(
+  rollbackArtifactPath: string,
+  transactionId: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  return nativeUpdateWorkerPath(rollbackArtifactPath, `native-update-applied-${transactionId}.json`, platform)
 }
 
-/** @returns the transaction-specific marker written after the watchdog restores the retained release and before stable launch. */
-export function nativeUpdateRolledBackPath(rollbackArtifactPath: string, transactionId: string): string {
-  return join(dirname(dirname(rollbackArtifactPath)), 'workers', `native-update-rolled-back-${transactionId}.json`)
+/**
+ * @param rollbackArtifactPath - verified cache artifact path.
+ * @param transactionId - recovered update transaction.
+ * @param platform - target platform that owns the cache path.
+ * @returns the transaction-specific marker written after the watchdog restores the retained release and before stable launch.
+ */
+export function nativeUpdateRolledBackPath(
+  rollbackArtifactPath: string,
+  transactionId: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  return nativeUpdateWorkerPath(rollbackArtifactPath, `native-update-rolled-back-${transactionId}.json`, platform)
 }
 
-/** @returns a transaction-specific freshness record written only after the external worker launches the candidate. */
-export function nativeUpdateHeartbeatPath(rollbackArtifactPath: string, transactionId: string): string {
-  return join(dirname(dirname(rollbackArtifactPath)), 'workers', `native-update-heartbeat-${transactionId}.json`)
+/**
+ * @param rollbackArtifactPath - verified cache artifact path.
+ * @param transactionId - active update transaction.
+ * @param platform - target platform that owns the cache path.
+ * @returns a transaction-specific freshness record written only after the external worker launches the candidate.
+ */
+export function nativeUpdateHeartbeatPath(
+  rollbackArtifactPath: string,
+  transactionId: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  return nativeUpdateWorkerPath(rollbackArtifactPath, `native-update-heartbeat-${transactionId}.json`, platform)
 }
 
 /** Write the one post-launch liveness proof that a candidate Main must observe before it opens the Dashboard. */
 async function writeNativeWatchHeartbeat(plan: NativeUpdateWatchPlan, operations: NativeRollbackOperations): Promise<void> {
   await operations.writeWatchHeartbeat(
-    nativeUpdateHeartbeatPath(plan.rollbackArtifactPath, plan.transactionId),
+    nativeUpdateHeartbeatPath(plan.rollbackArtifactPath, plan.transactionId, plan.platform),
     `${plan.transactionId}:${String(Date.now())}\n`,
   )
+}
+
+function nativeUpdateWorkerPath(
+  rollbackArtifactPath: string,
+  filename: string,
+  platform: NativeRollbackPlan['platform'],
+): string {
+  const path = nativePath(platform)
+  return path.join(path.dirname(path.dirname(rollbackArtifactPath)), 'workers', filename)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1009,9 +1069,13 @@ const currentProcessReference: NativeProcessReference = Object.freeze({
 export function currentNativeProcessReference(): NativeProcessReference { return currentProcessReference }
 
 /** @param value - decoded process reference. @returns whether the reference has the exact trusted worker grammar. */
-export function isNativeProcessReference(value: unknown): value is NativeProcessReference {
+export function isNativeProcessReference(
+  value: unknown,
+  platform?: NativeRollbackPlan['platform'],
+): value is NativeProcessReference {
   return isRecord(value) && hasExactKeys(value, ['processId', 'executablePath', 'startedBeforeMs'], ['linuxStartTicks', 'processGroupId'])
-    && isPositiveInteger(value.processId) && typeof value.executablePath === 'string' && isAbsolute(value.executablePath)
+    && isPositiveInteger(value.processId) && typeof value.executablePath === 'string'
+    && (platform === undefined ? isAbsolute(value.executablePath) : nativePath(platform).isAbsolute(value.executablePath))
     && typeof value.startedBeforeMs === 'number' && Number.isSafeInteger(value.startedBeforeMs) && value.startedBeforeMs > 0
     && (value.linuxStartTicks === undefined || isLinuxStartTicks(value.linuxStartTicks))
     && (value.processGroupId === undefined || (isPositiveInteger(value.processGroupId) && value.processGroupId === value.processId))
