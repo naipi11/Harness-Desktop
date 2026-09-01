@@ -232,6 +232,14 @@ jobs:
           pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
           echo "DSH_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
           echo "DSH_DESKTOP_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
+      - name: Enable Linux AppImage FUSE runtime and static inspection
+        if: \${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools
+          test -c /dev/fuse
+          test -x /bin/fusermount3 || test -x /usr/bin/fusermount3
+          test -x "\$(command -v unsquashfs)"
       - name: Rebuild Linux node-pty against manylinux 2.28
         if: \${{ runner.os == 'Linux' }}
         shell: bash
@@ -436,11 +444,21 @@ describe('desktop release config gate', () => {
     expect(collectDesktopReleaseViolations({
       ...files,
       desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace(
-        "if: ${{ runner.os == 'Linux' }}",
-        "if: ${{ runner.os == 'macOS' }}",
+        "- name: Rebuild Linux node-pty against manylinux 2.28\n        if: ${{ runner.os == 'Linux' }}",
+        "- name: Rebuild Linux node-pty against manylinux 2.28\n        if: ${{ runner.os == 'macOS' }}",
       ),
     })).toContain(
       'desktopArtifactsWorkflow: Linux node-pty must be rebuilt against manylinux 2.28 before the repository build',
+    )
+  })
+
+  it('requires the Linux artifact row to provision static AppImage inspection', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace('fuse3 libfuse2t64 squashfs-tools', 'fuse3 libfuse2t64'),
+    })).toContain(
+      'desktopArtifactsWorkflow: Linux AppImage static inspection must provide FUSE and unsquashfs',
     )
   })
 

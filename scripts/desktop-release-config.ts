@@ -395,6 +395,10 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
     || repositoryBuildIndex === -1 || manylinuxNodePtyIndex >= repositoryBuildIndex) {
     violations.push('desktopArtifactsWorkflow: Linux node-pty must be rebuilt against manylinux 2.28 before the repository build')
   }
+  const linuxAppImageInspection = steps.find(step => step.name === 'Enable Linux AppImage FUSE runtime and static inspection')
+  if (!workflowHasLinuxAppImageInspectionTools(linuxAppImageInspection)) {
+    violations.push('desktopArtifactsWorkflow: Linux AppImage static inspection must provide FUSE and unsquashfs')
+  }
   const buildCli = steps.find(step => step.name === 'Build standalone CLI archives' && step.id === 'build-cli')
   const verifyCli = steps.find(step => step.name === 'Verify standalone CLI archives' && step.id === 'verify-cli')
   if (!provesBothMacCliArchitectures(buildCli, 'release:build-cli-standalone')) {
@@ -463,6 +467,17 @@ function workflowHasLinuxManylinuxNodePtyRebuild(step: Record<string, unknown> |
     'make -C build -j2 BUILDTYPE=Release',
     'node-pty-glibc-versions.txt',
     'dpkg --compare-versions "$maximum" le 2.28',
+  ].every(marker => run.includes(marker))
+}
+
+function workflowHasLinuxAppImageInspectionTools(step: Record<string, unknown> | undefined): boolean {
+  if (step?.if !== "${{ runner.os == 'Linux' }}" || step.shell !== 'bash') return false
+  const run = normalizedRun(step.run)
+  return [
+    'sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools',
+    'test -c /dev/fuse',
+    'test -x /bin/fusermount3 || test -x /usr/bin/fusermount3',
+    'test -x "$(command -v unsquashfs)"',
   ].every(marker => run.includes(marker))
 }
 

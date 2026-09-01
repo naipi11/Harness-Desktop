@@ -792,7 +792,7 @@ async function inspectAppImageResources(
     const extraction = join(directory, 'extracted')
     try {
       await writeFile(filesystemPath, appImageFilesystemSnapshot(snapshot), { flag: 'wx', mode: 0o600 })
-      await execa('7z', ['x', '-y', `-o${extraction}`, filesystemPath,
+      await execa('unsquashfs', ['-no-progress', '-no-xattrs', '-dest', extraction, filesystemPath,
         ...embeddedResourcePaths(appImageResourceDirectory, nativeRollbackWorkerChunks)], {
         reject: true,
       })

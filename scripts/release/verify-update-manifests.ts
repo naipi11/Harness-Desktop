@@ -379,7 +379,7 @@ async function inspectAppImageMembers(
   platform: NodeJS.Platform,
 ): Promise<readonly string[]> {
   if (platform !== 'linux') throw new Error('AppImage inspection requires a Linux runner')
-  const listing = await runCommand('7z', ['l', '-slt', filesystemPath], {
+  const listing = await runCommand('unsquashfs', ['-lls', filesystemPath], {
     env: {
       HOME: dirname(filesystemPath),
       PATH: process.env.PATH ?? '/usr/bin:/bin',
@@ -387,7 +387,7 @@ async function inspectAppImageMembers(
     },
     extendEnv: false,
   })
-  const members = parse7ZipMembers(listing)
+  const members = parseUnsquashfsMembers(listing)
   if (members.length === 0) throw new Error('AppImage filesystem has no inspectable file members')
   return members
 }
@@ -440,6 +440,35 @@ function parse7ZipMembers(listing: string): string[] {
     }
     if (attributes.includes('D') || folder === '+') continue
     members.push(path.replaceAll('\\', '/'))
+  }
+  return members
+}
+
+/** Parse regular and special file paths from one `unsquashfs -lls` listing without extracting candidate bytes. */
+function parseUnsquashfsMembers(listing: string): string[] {
+  const root = 'squashfs-root'
+  const prefix = `${root}/`
+  const members: string[] = []
+  for (const line of listing.split(/\r?\n/u)) {
+    if (line === '') continue
+    const type = line[0]
+    if (type === undefined || !'-lbcpsd'.includes(type)) {
+      throw new Error(`unsquashfs listing contains an unsupported entry type at ${JSON.stringify(line)}`)
+    }
+    const pathIndex = line.indexOf(root)
+    if (pathIndex === -1) throw new Error(`unsquashfs listing contains an entry without a path at ${JSON.stringify(line)}`)
+    let path = line.slice(pathIndex)
+    if (type === 'l') {
+      const targetSeparator = path.indexOf(' -> ')
+      if (targetSeparator === -1) throw new Error(`unsquashfs listing contains a symlink without a target at ${JSON.stringify(path)}`)
+      path = path.slice(0, targetSeparator)
+    }
+    if (path === root) {
+      if (type !== 'd') throw new Error('unsquashfs listing root is not a directory')
+      continue
+    }
+    if (!path.startsWith(prefix)) throw new Error(`unsquashfs listing contains an invalid root path at ${JSON.stringify(path)}`)
+    if (type !== 'd') members.push(path.slice(prefix.length))
   }
   return members
 }

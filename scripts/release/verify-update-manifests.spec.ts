@@ -135,7 +135,7 @@ describe('verifyUpdateManifests', () => {
     )).resolves.toEqual(['resources/update-policy.json'])
   })
 
-  it('lists a type-2 AppImage filesystem without executing candidate bytes', async () => {
+  it('lists a type-2 AppImage filesystem with a static unsquashfs parser without executing candidate bytes', async () => {
     const elf = Buffer.alloc(128)
     elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])
     elf.set([0x41, 0x49, 0x02], 8)
@@ -150,24 +150,19 @@ describe('verifyUpdateManifests', () => {
       'appimage',
       async (command, args) => {
         commands.push({ command, args })
+        expect(command).toBe('unsquashfs')
         expect(await readFile(args.at(-1)!)).toEqual(filesystem)
         return [
-          'Listing archive: artifact.squashfs',
-          '',
-          '----------',
-          'Path = AppRun',
-          'Folder = -',
-          '',
-          'Path = usr/bin/harness-desktop',
-          'Folder = -',
-          '',
+          'drwxr-xr-x root/root 0 2026-09-02 00:00 squashfs-root',
+          '-rwxr-xr-x root/root 1 2026-09-02 00:00 squashfs-root/AppRun',
+          '-rwxr-xr-x root/root 1 2026-09-02 00:00 squashfs-root/usr/bin/harness-desktop',
         ].join('\n')
       },
       'linux',
     )).resolves.toEqual(['AppRun', 'usr/bin/harness-desktop'])
     expect(commands).toEqual([{
-      command: '7z',
-      args: ['l', '-slt', expect.stringMatching(/artifact\.squashfs$/u)],
+      command: 'unsquashfs',
+      args: ['-lls', expect.stringMatching(/artifact\.squashfs$/u)],
     }])
   })
 
@@ -192,7 +187,7 @@ describe('verifyUpdateManifests', () => {
     expect(commands).toBe(0)
   })
 
-  it('rejects a 7z AppImage listing without file-type metadata', async () => {
+  it('rejects an unsquashfs AppImage listing without its fixed root', async () => {
     const elf = Buffer.alloc(128)
     elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])
     elf.set([0x41, 0x49, 0x02], 8)
@@ -203,9 +198,9 @@ describe('verifyUpdateManifests', () => {
     await expect(inspectUpdateArtifactSnapshot(
       Buffer.concat([elf, Buffer.from('hsqs filesystem snapshot')]),
       'appimage',
-      async () => '----------\nPath = AppRun\n',
+      async () => '-rwxr-xr-x root/root 1 2026-09-02 00:00 unexpected-root/AppRun\n',
       'linux',
-    )).rejects.toThrow('entry without file-type metadata')
+    )).rejects.toThrow('entry without a path')
   })
 
   it('rejects malformed AppImage bytes before invoking an external parser', async () => {
