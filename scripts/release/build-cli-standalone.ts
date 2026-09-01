@@ -61,6 +61,12 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
       '--config.node-linker=hoisted',
       '--config.confirm-modules-purge=false',
     ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
+    if (process.platform === 'linux') {
+      await retainLinuxNodePtyBinding(
+        join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty'),
+        join(deployedPackage, 'node_modules', 'node-pty'),
+      )
+    }
     const manifestPath = join(deployedPackage, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
     const sourceManifest = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
@@ -511,6 +517,55 @@ export async function repairMissingDeclaredBins(
   }
   await auditDeclaredBins(packageRoot)
   return repaired.toSorted((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
+ * Copy the source-built Linux node-pty binding into the deployed package and retain it in the package allowlist.
+ * @param sourcePackageRoot - node-pty package whose install lifecycle compiled the host binding.
+ * @param deployedPackageRoot - node-pty package embedded in the deploy result.
+ * @returns when the deployed package contains the source binding and names it in its files allowlist.
+ */
+export async function retainLinuxNodePtyBinding(
+  sourcePackageRoot: string,
+  deployedPackageRoot: string,
+): Promise<void> {
+  const sourceManifest = await readNodePtyManifest(sourcePackageRoot, 'source')
+  const deployedManifest = await readNodePtyManifest(deployedPackageRoot, 'deployed')
+  if (sourceManifest.version !== deployedManifest.version) {
+    throw new Error(`packed CLI: Linux node-pty source version ${sourceManifest.version} does not match deployed version ${deployedManifest.version}`)
+  }
+  const binding = 'build/Release/pty.node'
+  const source = join(sourcePackageRoot, ...binding.split('/'))
+  if (!(await fileExists(source))) {
+    throw new Error(`packed CLI: Linux source node-pty binding is missing at ${source}`)
+  }
+  const destination = join(deployedPackageRoot, ...binding.split('/'))
+  await mkdir(dirname(destination), { recursive: true })
+  await cp(source, destination)
+  if (deployedManifest.files === undefined) return
+  if (!Array.isArray(deployedManifest.files) || deployedManifest.files.some(path => typeof path !== 'string')) {
+    throw new Error('packed CLI: deployed node-pty package has invalid files allowlist')
+  }
+  const files = deployedManifest.files as string[]
+  if (!files.includes(binding)) files.push(binding)
+  await writeFile(join(deployedPackageRoot, 'package.json'), `${JSON.stringify({ ...deployedManifest, files }, undefined, 2)}\n`)
+}
+
+async function readNodePtyManifest(
+  packageRoot: string,
+  location: 'source' | 'deployed',
+): Promise<NodePtyPackageManifest & { readonly version: string }> {
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as NodePtyPackageManifest
+  if (manifest.name !== 'node-pty' || typeof manifest.version !== 'string') {
+    throw new Error(`packed CLI: ${location} Linux node-pty package is invalid`)
+  }
+  return manifest as NodePtyPackageManifest & { readonly version: string }
+}
+
+interface NodePtyPackageManifest extends Record<string, unknown> {
+  readonly name?: unknown
+  readonly version?: unknown
+  readonly files?: unknown
 }
 
 /**
