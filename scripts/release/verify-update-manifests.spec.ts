@@ -13,6 +13,7 @@ import {
 import { writeUpdateManifests } from './build-update-manifest.ts'
 import {
   inspectUpdateArtifactSnapshot,
+  inspectStandaloneCliMemberCatalog,
   verifyUpdateManifests,
   type UpdateManifestVerificationInput,
 } from './verify-update-manifests.ts'
@@ -107,6 +108,33 @@ async function writeSignedManifest(
 }
 
 describe('verifyUpdateManifests', () => {
+  it.each([
+    ['a path-traversal member', '../catalog-escape.txt'],
+    ['a Windows-separated member', 'runtime\\node.exe'],
+  ])('rejects a standalone ZIP catalog with %s', async (_name, unsafeMember) => {
+    const catalog = { version: 2, files: { [unsafeMember]: 'a'.repeat(64) } }
+    const snapshot = zipSync({
+      [unsafeMember]: Buffer.from('unsafe catalog fixture'),
+      'manifest.json': Buffer.from(JSON.stringify(catalog)),
+    })
+
+    await expect(inspectStandaloneCliMemberCatalog(Buffer.from(snapshot), 'zip')).rejects.toThrow('unsafe')
+  })
+
+  it('accepts the terminal NSIS overlay warning after every inspected 7z member', async () => {
+    await expect(inspectUpdateArtifactSnapshot(
+      Buffer.from('credential-free NSIS snapshot'),
+      'nsis',
+      async () => [
+        '----------',
+        'Path = resources/update-policy.json',
+        'Attributes = A',
+        '',
+        'Warnings: 1',
+      ].join('\n'),
+    )).resolves.toEqual(['resources/update-policy.json'])
+  })
+
   it('lists a type-2 AppImage filesystem without executing candidate bytes', async () => {
     const elf = Buffer.alloc(128)
     elf.set([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01])

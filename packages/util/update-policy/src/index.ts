@@ -2,6 +2,29 @@
 
 import { createPublicKey, verify } from 'node:crypto'
 
+export {
+  parseReleaseUpdateConfiguration,
+  releaseManifestEndpoint,
+  releaseManifestEndpointKey,
+  releaseRollbackManifestEndpoint,
+  releaseRollbackManifestEndpointKey,
+  standaloneCliUpdateTarget,
+  ReleaseUpdateConfigurationError,
+  type ReleaseUpdateConfiguration,
+  type ReleaseUpdateConfigurationErrorCode,
+  type ReleaseRollbackTarget,
+  type ReleaseUpdateTarget,
+  type StandaloneCliUpdateTarget,
+} from './release-config.ts'
+
+export {
+  fetchAllowedUpdateBytes,
+  fetchAllowedUpdateJson,
+  UpdateSourceError,
+  type UpdateFetch,
+  type UpdateSourceErrorCode,
+} from './https-source.ts'
+
 const CHANNELS = ['stable', 'beta', 'nightly'] as const
 const PLATFORMS = ['win32', 'darwin', 'linux'] as const
 const ARCHITECTURES = ['x64', 'arm64', 'universal'] as const
@@ -96,6 +119,10 @@ export interface UpdateManifestPolicy extends UpdateTrust {
   readonly platform: NodeJS.Platform
   /** Current CPU target. */
   readonly arch: string
+  /** Exact installer or archive family this client can install automatically. */
+  readonly format: UpdateArtifactFormat
+  /** Candidate relation accepted for this authenticated manifest lookup. Defaults to a newer release. */
+  readonly versionMode?: 'newer' | 'current'
 }
 
 /** Secret-free selected artifact returned to a later staging owner. */
@@ -118,6 +145,15 @@ export interface RedactedUpdateArtifact {
   readonly members: readonly string[]
 }
 
+/**
+ * One artifact selected by a verified signed manifest, retained only by the
+ * downloader that owns the following installation transaction.
+ */
+export interface VerifiedUpdateArtifact extends RedactedUpdateArtifact {
+  /** HTTPS location authenticated by the verified signed manifest. */
+  readonly url: string
+}
+
 /** Stable reason an update manifest was rejected without reflecting input. */
 export type UpdateManifestRejectionCode =
   | 'unconfigured-trust-root'
@@ -134,7 +170,7 @@ export type UpdateManifestRejectionCode =
 
 /** Outcome of one signed manifest verification. */
 export type UpdateManifestVerification =
-  | { readonly kind: 'accepted'; readonly artifact: RedactedUpdateArtifact }
+  | { readonly kind: 'accepted'; readonly artifact: VerifiedUpdateArtifact }
   | { readonly kind: 'rejected'; readonly code: UpdateManifestRejectionCode }
 
 /** Empty shipped trust configuration: no production update source is accepted by default. */
@@ -181,8 +217,8 @@ export function verifySignedUpdateManifest(input: unknown, policy: UpdateManifes
   if (!verifySignature(manifest, policy.publicKeys)) return rejected('signature-invalid')
   if (manifest.applicationId !== policy.appId) return rejected('application-mismatch')
   if (manifest.channel !== policy.channel) return rejected('channel-mismatch')
-  if (!isStrictlyNewer(manifest.version, policy.currentVersion)) return rejected('version-not-newer')
-  const target = selectTarget(manifest.artifacts, policy.consumer, policy.platform, policy.arch)
+  if (!matchesVersionMode(manifest.version, policy.currentVersion, policy.versionMode)) return rejected('version-not-newer')
+  const target = selectTarget(manifest.artifacts, policy.consumer, policy.platform, policy.arch, policy.format)
   if (target.kind === 'ambiguous') return rejected('artifact-ambiguous')
   if (target.kind === 'none') return rejected('target-mismatch')
   if (!isAllowedArtifactUrl(target.artifact.url, policy.allowedOrigins)) return rejected('artifact-origin-invalid')
@@ -190,7 +226,7 @@ export function verifySignedUpdateManifest(input: unknown, policy: UpdateManifes
   if (!hasSafeArchiveMembers(target.artifact.members)) return rejected('archive-path-invalid')
   return { kind: 'accepted', artifact: {
     version: manifest.version, channel: manifest.channel, consumer: target.artifact.consumer, platform: target.artifact.platform,
-    arch: target.artifact.arch, format: target.artifact.format, sha256: target.artifact.sha256,
+    arch: target.artifact.arch, format: target.artifact.format, url: target.artifact.url, sha256: target.artifact.sha256,
     members: [...target.artifact.members].sort(compareText),
   } }
 }
@@ -262,9 +298,11 @@ function selectTarget(
   consumer: UpdateArtifactConsumer,
   platform: NodeJS.Platform,
   arch: string,
+  format: UpdateArtifactFormat,
 ): TargetSelection {
-  if (!isPlatform(platform) || !isRuntimeArchitecture(arch)) return { kind: 'none' }
-  const matching = artifacts.filter(artifact => artifact.consumer === consumer && artifact.platform === platform && (artifact.arch === arch || artifact.arch === 'universal'))
+  if (!isPlatform(platform) || !isRuntimeArchitecture(arch) || !isFormat(format)) return { kind: 'none' }
+  const matching = artifacts.filter(artifact => artifact.consumer === consumer && artifact.platform === platform
+    && artifact.format === format && (artifact.arch === arch || artifact.arch === 'universal'))
   if (matching.length === 0) return { kind: 'none' }
   if (matching.length > 1) return { kind: 'ambiguous' }
   const target = matching[0]
@@ -301,7 +339,7 @@ function formatMatchesConsumer(
 ): boolean {
   if (consumer === 'cli') return format === 'zip' || format === 'tar.gz'
   if (platform === 'win32') return format === 'nsis'
-  if (platform === 'darwin') return format === 'dmg' && arch === 'universal'
+  if (platform === 'darwin') return (format === 'dmg' || format === 'zip') && arch === 'universal'
   return arch !== 'universal' && (format === 'appimage' || format === 'deb')
 }
 function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
@@ -332,6 +370,10 @@ function isStrictlyNewer(candidate: string, current: string): boolean {
   const parsedCandidate = parseSemanticVersion(candidate)
   const parsedCurrent = parseSemanticVersion(current)
   return parsedCandidate !== undefined && parsedCurrent !== undefined && compareSemanticVersion(parsedCandidate, parsedCurrent) > 0
+}
+function matchesVersionMode(candidate: string, current: string, mode: UpdateManifestPolicy['versionMode']): boolean {
+  if (mode === 'current') return candidate === current && parseSemanticVersion(candidate) !== undefined
+  return isStrictlyNewer(candidate, current)
 }
 function parseSemanticVersion(value: string): SemanticVersion | undefined {
   const match = SEMANTIC_VERSION.exec(value)

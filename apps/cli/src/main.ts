@@ -120,6 +120,9 @@ function settleUpdateResult(
     case 'applied-with-cleanup-failure':
       io.stderr.write('CLI update applied, but cleanup failed.\n')
       return 1
+    case 'restart-scheduled':
+      io.stdout.write('CLI update scheduled; it completes after this command exits.\n')
+      return 0
     case 'rolled-back':
       io.stderr.write('CLI update rolled back.\n')
       return 1

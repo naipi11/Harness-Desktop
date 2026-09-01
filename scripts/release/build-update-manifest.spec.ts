@@ -183,6 +183,7 @@ describe('writeUpdateManifests', () => {
         consumer: 'cli',
         platform: 'win32',
         arch: 'x64',
+        format: 'zip',
         allowedOrigins: [subject.origin],
         publicKeys: { [subject.keyId]: subject.publicKey },
       })).toMatchObject({ kind: 'accepted' })

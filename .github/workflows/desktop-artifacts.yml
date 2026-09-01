@@ -17,6 +17,8 @@ concurrency:
 env:
   PRIMARY_NODE_VERSION: '24.19.0'
   DSH_TELEMETRY_DISABLED: '1'
+  DSH_DESKTOP_SIGNING_MODE: disabled
+  DSH_UPDATE_SNAPSHOT_ROOT: dist/ci-update-snapshots
 
 jobs:
   package:
@@ -32,10 +34,11 @@ jobs:
             cli-format: zip
             cli-artifact: dist/cli-standalone/harness-cli-*.zip
           - os: macos-15
-            label: macos-universal-dmg
-            desktop-formats: dmg-universal
+            label: macos-universal-dmg-zip
+            desktop-formats: dmg-zip-universal
             cli-format: tar.gz
             cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
+            cli-architectures: arm64,x64
           - os: ubuntu-24.04
             label: linux-appimage-deb
             desktop-formats: appimage-deb
@@ -73,6 +76,20 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
+      - name: Verify unused successor version
+        run: pnpm run release:verify-successor-version
+
+      - name: Enable Linux AppImage FUSE runtime
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository --yes universe
+          sudo apt-get update
+          sudo apt-get install --yes fuse3 libfuse2t64
+          test -c /dev/fuse
+          test -x /bin/fusermount3 || test -x /usr/bin/fusermount3
+
       - name: Acquire pinned local Node distribution
         shell: bash
         run: |
@@ -96,8 +113,30 @@ jobs:
           echo "DSH_NODE_RUNTIME_FILENAME=${filename}" >> "${GITHUB_ENV}"
           echo "DSH_NODE_RUNTIME_VERSION=${version}" >> "${GITHUB_ENV}"
 
+      - name: Acquire both pinned macOS CLI runtimes
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in arm64 x64; do
+            filename="node-v${PRIMARY_NODE_VERSION}-darwin-${arch}.tar.gz"
+            curl --fail --silent --show-error --location \
+              "https://nodejs.org/dist/v${PRIMARY_NODE_VERSION}/${filename}" \
+              --output "${DSH_NODE_RUNTIME_ROOT}/${filename}"
+          done
+
       - name: Verify pinned Node distribution checksum
+        id: node-runtime
         run: pnpm exec tsx scripts/release/verify-node-runtime-archive.ts
+
+      - name: Generate ephemeral public update policy
+        shell: bash
+        env:
+          DSH_UPDATE_POLICY_OUTPUT: ${{ runner.temp }}/harness-update-policy.json
+        run: |
+          pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
+          echo "DSH_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
+          echo "DSH_DESKTOP_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
 
       - name: Generate product icons
         run: pnpm run generate:icons
@@ -109,43 +148,105 @@ jobs:
         run: pnpm run build
 
       - name: Package installer
+        id: package
         run: pnpm --filter @harness-desktop/dsh-desktop run package --publish never
 
       - name: Inspect native Desktop artifacts
+        id: desktop-artifacts
         run: pnpm run release:verify-desktop-artifacts
 
       - name: Test Desktop updater and rollback
+        id: desktop-updater
         run: pnpm run desktop:test-updater
 
       - name: Verify packed CLI from an empty offline prefix
+        id: packed-cli
         env:
           DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
         run: pnpm run release:verify-packed-cli
 
       - name: Build standalone CLI archives
-        run: pnpm run release:build-cli-standalone
+        id: build-cli
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            for arch in arm64 x64; do
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm run release:build-cli-standalone
+            done
+          else
+            pnpm run release:build-cli-standalone
+          fi
 
       - name: Verify standalone CLI archives
-        run: pnpm run release:verify-cli-standalone
+        id: verify-cli
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            for arch in arm64 x64; do
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm run release:verify-cli-standalone
+            done
+          else
+            pnpm run release:verify-cli-standalone
+          fi
 
       - name: Verify update manifests with ephemeral fixtures
+        id: update-manifests
         run: pnpm run release:verify-update-manifests
 
+      - name: Sign and verify manifests for this row's produced artifacts
+        id: produced-update-manifests
+        run: pnpm run release:verify-produced-update-manifests
+
       - name: Test CLI updater and rollback
+        id: cli-updater
         run: pnpm run release:test-cli-update
 
       - name: Smoke installed Desktop artifacts
+        id: installed-desktop
         run: pnpm run release:smoke-installed-desktop
 
-      - uses: actions/upload-artifact@v4
+      - name: Exercise actual installed native update and rollback
+        id: native-update-rollback
+        env:
+          DSH_RUN_NATIVE_UPDATE_E2E: '1'
+        run: pnpm --dir apps/desktop run test:e2e:native-update
+
+      - name: Write redacted native release evidence
+        id: release-evidence
+        if: ${{ always() }}
+        env:
+          DSH_RELEASE_MATRIX_LABEL: ${{ matrix.label }}
+          DSH_RELEASE_CLI_FORMAT: ${{ matrix.cli-format }}
+          DSH_RELEASE_CHECK_NODE_RUNTIME: ${{ steps.node-runtime.outcome }}
+          DSH_RELEASE_CHECK_DESKTOP_ARTIFACTS: ${{ steps.package.outcome == 'success' && steps.desktop-artifacts.outcome || steps.package.outcome }}
+          DSH_RELEASE_CHECK_DESKTOP_UPDATER: ${{ steps.desktop-updater.outcome }}
+          DSH_RELEASE_CHECK_PACKED_CLI: ${{ steps.packed-cli.outcome }}
+          DSH_RELEASE_CHECK_CLI_ARCHIVES: ${{ steps.build-cli.outcome == 'success' && steps.verify-cli.outcome || steps.build-cli.outcome }}
+          DSH_RELEASE_CHECK_UPDATE_MANIFESTS: ${{ steps.update-manifests.outcome }}
+          DSH_RELEASE_CHECK_PRODUCED_UPDATE_MANIFESTS: ${{ steps.produced-update-manifests.outcome }}
+          DSH_RELEASE_CHECK_CLI_UPDATER: ${{ steps.cli-updater.outcome }}
+          DSH_RELEASE_CHECK_INSTALLED_DESKTOP: ${{ steps.installed-desktop.outcome }}
+          DSH_RELEASE_CHECK_NATIVE_UPDATE_ROLLBACK: ${{ steps.native-update-rollback.outcome }}
+        run: pnpm exec tsx scripts/release/collect-release-evidence.ts
+
+      - name: Upload native release artifacts
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
         with:
           name: harness-desktop-${{ matrix.label }}
           path: |
-            apps/desktop/release/Harness Desktop Setup *.exe
-            apps/desktop/release/Harness Desktop-*-universal.dmg
-            apps/desktop/release/Harness Desktop-*.AppImage
-            apps/desktop/release/harness-desktop_*_*.deb
-            ${{ matrix.cli-artifact }}
-            dist/cli-standalone/harness-cli-*.sha256
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload redacted native release evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-release-evidence-${{ matrix.label }}
+          path: |
+            dist/release-logs/release-evidence.json
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/manifests/ready/*.json
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/bindings.json
           if-no-files-found: error
           retention-days: 7

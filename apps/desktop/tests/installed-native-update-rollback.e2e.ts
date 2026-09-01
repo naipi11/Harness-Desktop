@@ -38,6 +38,7 @@ import { candidateLaunchObserved } from './support/native-candidate-evidence.ts'
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const nativeUpdateRootPrefix = 'harness-desktop-native-update-e2e-'
 const candidateVersion = '1.0.1'
+// The stable artifact is rebuilt with the current source as a test identity; it is not the published v1.0.0 tag.
 const stableVersion = '1.0.0'
 const healthTimeoutMs = 30_000
 const windowsObservedHealthTimeoutMs = 120_000
@@ -53,6 +54,25 @@ const windowsTarget: NativeUpdateTarget = {
 }
 
 test.describe('native update handoff observation', () => {
+  test('keeps launcher stage diagnostics disabled unless independently opted in', () => {
+    const previous = process.env.DSH_NATIVE_UPDATE_STAGE_PROBE
+    try {
+      Reflect.deleteProperty(process.env, 'DSH_NATIVE_UPDATE_STAGE_PROBE')
+      expect(buildEnvironment({ DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS: '1' }).DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS).toBeUndefined()
+      process.env.DSH_NATIVE_UPDATE_STAGE_PROBE = '1'
+      expect(buildEnvironment({}).DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS).toBe('1')
+      expect(nativeUpdateStageSummary([
+        'native-update-stage-readiness-marker-33333333-3333-4333-8333-333333333333.json',
+        'native-update-stage-prepare-33333333-3333-4333-8333-333333333333.json',
+        'native-update-stage-readiness-image-33333333-3333-4333-8333-333333333333.json',
+        'native-update-stage-prepare-not-an-identity.json',
+      ])).toBe('prepare>readiness-image>readiness-marker')
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'DSH_NATIVE_UPDATE_STAGE_PROBE')
+      else process.env.DSH_NATIVE_UPDATE_STAGE_PROBE = previous
+    }
+  })
+
   test('reports a Runtime installation failure that arrives before delayed handoff', async () => {
     const failure = Promise.reject(new Error('native update e2e: Runtime recorded an installation failure before handoff'))
     await expect(raceNativeHandoffAndFailure(async () => {
@@ -71,6 +91,48 @@ test.describe('native update handoff observation', () => {
     expect(classifyNativeCandidateStage({
       installed: 'stable', heartbeat: true, applied: false, failure: 'watching-candidate',
     })).toBe('recovery-after-candidate-launch')
+  })
+
+  test('accepts only one fixed schedule failure stage receipt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'harness-native-update-stage-'))
+    try {
+      await mkdir(join(root, 'workers'))
+      await writeFile(
+        join(root, 'workers', 'native-update-failure-stage-schedule-worker-33333333-3333-4333-8333-333333333333.json'),
+        'schedule-worker\n',
+        { flag: 'wx', mode: 0o600 },
+      )
+      await expect(readNativeUpdateFailureStageSummary(root)).resolves.toBe('schedule-worker')
+      await writeFile(
+        join(root, 'workers', 'native-update-failure-stage-schedule-plan-44444444-4444-4444-8444-444444444444.json'),
+        'schedule-plan\n',
+        { flag: 'wx', mode: 0o600 },
+      )
+      await expect(readNativeUpdateFailureStageSummary(root)).resolves.toBe('ambiguous')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test('accepts only one fixed candidate worker stage receipt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'harness-native-update-stage-'))
+    try {
+      await mkdir(join(root, 'workers'))
+      await writeFile(
+        join(root, 'workers', 'native-update-worker-stage-candidate-launch-33333333-3333-4333-8333-333333333333.json'),
+        'candidate-launch\n',
+        { flag: 'wx', mode: 0o600 },
+      )
+      await expect(readNativeWorkerDiagnosticStageSummary(root)).resolves.toBe('candidate-launch')
+      await writeFile(
+        join(root, 'workers', 'native-update-worker-stage-candidate-identity-44444444-4444-4444-8444-444444444444.json'),
+        'candidate-identity\n',
+        { flag: 'wx', mode: 0o600 },
+      )
+      await expect(readNativeWorkerDiagnosticStageSummary(root)).resolves.toBe('ambiguous')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 
@@ -96,6 +158,8 @@ test.describe('installed Windows native update rollback', () => {
         appId,
         version: candidateVersion,
       })
+      await expect(access(join(root, 'candidate', 'win-unpacked', 'resources', 'update-policy.json')))
+        .rejects.toMatchObject({ code: 'ENOENT' })
       const rollbackInstaller = await buildWindowsInstaller({
         outputDirectory: join(root, 'rollback'),
         appId,
@@ -108,8 +172,9 @@ test.describe('installed Windows native update rollback', () => {
       })
 
       installation = await prepareNativeUpdateWindowsInstallation(rollbackInstaller)
-      fixture = await installation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
-      await expect(fixture.application.evaluate(() => process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS)).resolves.toBeUndefined()
+      fixture = await installation.launch(buildEnvironment({ NODE_EXTRA_CA_CERTS: server.certificatePath }))
+      await expect(fixture.application.evaluate(() => process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS)).resolves
+        .toBe(process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1' ? '1' : undefined)
       const desktopMainProcessId = await fixture.application.evaluate(() => process.pid)
       await expect(windowsProcessIsInJob(desktopMainProcessId)).resolves.toBe(true)
       const stateSentinelPath = join(fixture.runtime.harnessHome, 'native-update-state-sentinel.txt')
@@ -204,8 +269,9 @@ test.describe('installed Windows native update rollback', () => {
 
       installation = await prepareNativeUpdateWindowsInstallation(stableInstaller)
       expect(await installedPackageVersion(installation.appAsarPath)).toBe(stableVersion)
-      fixture = await installation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
-      await expect(fixture.application.evaluate(() => process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS)).resolves.toBeUndefined()
+      fixture = await installation.launch(buildEnvironment({ NODE_EXTRA_CA_CERTS: server.certificatePath }))
+      await expect(fixture.application.evaluate(() => process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS)).resolves
+        .toBe(process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1' ? '1' : undefined)
       const desktopMainProcessId = await fixture.application.evaluate(() => process.pid)
       await expect(windowsProcessIsInJob(desktopMainProcessId)).resolves.toBe(true)
       const stateSentinelPath = join(fixture.runtime.harnessHome, 'native-update-state-sentinel.txt')
@@ -234,6 +300,7 @@ test.describe('installed Windows native update rollback', () => {
         executablePath: installation.executablePath,
         appliedPath: join(pending.updatesDirectory, 'workers', `native-update-applied-${pending.transactionId}.json`),
         transactionId: pending.transactionId,
+        harnessHome: fixture.runtime.harnessHome,
         pending,
         transitions,
       })
@@ -622,12 +689,16 @@ async function prepareLinuxNativeInstallation(root: string, appImage: string): P
 /** Keep all production release variables except the test-controlled public policy and disabled signing mode. */
 function buildEnvironment(overrides: Readonly<Record<string, string | undefined>>): Record<string, string> {
   const environment = Object.fromEntries(Object.entries(process.env).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS',
+    (entry): entry is [string, string] => entry[1] !== undefined
+      && entry[0] !== 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS'
+      && entry[0] !== 'DSH_NATIVE_UPDATE_STAGE_PROBE',
   ))
   for (const [key, value] of Object.entries(overrides)) {
+    if (key === 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS') continue
     if (value === undefined) Reflect.deleteProperty(environment, key)
     else environment[key] = value
   }
+  if (process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1') environment.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS = '1'
   return environment
 }
 
@@ -1065,7 +1136,9 @@ async function readNativeTransactionMarkers(pending: PendingNativeUpdateEvidence
   const appliedPath = join(workers, `native-update-applied-${pending.transactionId}.json`)
   const [heartbeat, applied] = await Promise.all([
     readFile(heartbeatPath, 'utf8').then(value => new RegExp(
-      `^${pending.transactionId}:[0-9]{1,16}\\n$`, 'u',
+      process.platform === 'win32'
+        ? `^${pending.transactionId}:[0-9a-f]{32}:[0-9]{1,16}\\n$`
+        : `^${pending.transactionId}:[0-9]{1,16}\\n$`, 'u',
     ).test(value)).catch(() => false),
     readFile(appliedPath, 'utf8').then(value => value === `${pending.transactionId}\n`).catch(() => false),
   ])
@@ -1191,6 +1264,8 @@ async function waitForNativeApplicationExit(
     ?? await fixture.application.evaluate(() => process.pid)
   let workerParentMatchesDesktop: boolean | undefined
   if (process.platform === 'win32') {
+    const handoffDeadline = Date.now() + timeoutMs
+    const remainingHandoffMs = (): number => Math.max(1, handoffDeadline - Date.now())
     try {
       await expect.poll(
         async () => {
@@ -1199,17 +1274,18 @@ async function waitForNativeApplicationExit(
           await transitions?.record(pending, state)
           return state
         },
-        { timeout: nativeWorkerReadyTimeoutMs },
+        { timeout: Math.min(nativeWorkerReadyTimeoutMs, remainingHandoffMs()) },
       ).toEqual({
         supervisors: 1,
         scripts: 1,
         supervisorRunning: true,
         scriptRunning: true,
       })
+      // Main exits only after the worker's policy-bounded readiness checks settle.
       await expect.poll(async () => {
         if (signal?.aborted === true) throw new Error('native update e2e: native handoff observation was cancelled')
         return await nativeExitHasStarted(fixture)
-      }, { timeout: 10_000 }).toBe(true)
+      }, { timeout: remainingHandoffMs() }).toBe(true)
       await expect(readDiagnosticExitReceipts(pending.updatesDirectory)).resolves.toEqual([])
       workerParentMatchesDesktop = await workerParentMatchesDesktopProcess(
         pending.updatesDirectory,
@@ -1337,7 +1413,13 @@ async function observePendingNativeApplicationExit(
       && error.message === 'native update e2e: Runtime recorded an installation failure before Main exited'
       ? error.message
       : 'native update e2e: native handoff observation failed'
-    throw new Error(`${reason}; transitions=${transitions.summary()}`)
+    const stage = process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1' && pending !== undefined
+      ? await readNativeUpdateStageSummary(pending.updatesDirectory)
+      : undefined
+    const failureStage = process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1' && pending !== undefined
+      ? await readNativeUpdateFailureStageSummary(pending.updatesDirectory)
+      : undefined
+    throw new Error(`${reason}${stage === undefined ? '' : `; stage=${stage}`}${failureStage === undefined ? '' : `; failure-stage=${failureStage}`}; transitions=${transitions.summary()}`)
   } finally {
     failureObservation.stop()
   }
@@ -1375,7 +1457,77 @@ async function readNativeWorkerState(updatesDirectory: string): Promise<string> 
     `heartbeats:${String(names.filter(name => name.startsWith('native-update-heartbeat-')).length)}`,
     `applied:${String(names.filter(name => name.startsWith('native-update-applied-')).length)}`,
     `failures:${String(names.filter(name => name.startsWith('native-rollback-failure-')).length)}`,
+    `stages:${nativeUpdateStageSummary(names)}`,
   ].join(',')
+}
+
+const nativeUpdateDiagnosticStages = [
+  'prepare',
+  'bridge-create',
+  'bridge-identity',
+  'readiness-image',
+  'readiness-marker',
+  'cancellation-proof',
+] as const
+
+/** Return only fixed launcher stages from diagnostic receipt names, discarding their generated identities. */
+function nativeUpdateStageSummary(names: readonly string[]): string {
+  const observed = new Set<string>()
+  const receiptPattern = new RegExp(
+    '^native-update-stage-(prepare|bridge-create|bridge-identity|readiness-image|readiness-marker|cancellation-proof)'
+      + '-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json$',
+    'iu',
+  )
+  for (const name of names) {
+    const stage = name.match(receiptPattern)?.[1]
+    if (stage !== undefined) observed.add(stage.toLowerCase())
+  }
+  return nativeUpdateDiagnosticStages.filter(stage => observed.has(stage)).join('>') || 'none'
+}
+
+/** Read only fixed stage names from the test-owned private worker directory. */
+async function readNativeUpdateStageSummary(updatesDirectory: string): Promise<string> {
+  const entries = await readdir(join(updatesDirectory, 'workers'), { withFileTypes: true }).catch(() => [])
+  return nativeUpdateStageSummary(entries.filter(entry => entry.isFile()).map(entry => entry.name))
+}
+
+/** Read one opt-in schedule failure receipt while discarding its generated identity and unknown residue. */
+async function readNativeUpdateFailureStageSummary(updatesDirectory: string): Promise<string> {
+  const workersDirectory = join(updatesDirectory, 'workers')
+  const entries = await readdir(workersDirectory, { withFileTypes: true }).catch(() => [])
+  const matches = entries.filter(entry => entry.isFile() && entry.name.startsWith('native-update-failure-stage-'))
+  if (matches.length === 0) return 'none'
+  if (matches.length !== 1 || matches[0] === undefined) return 'ambiguous'
+  const match = matches[0].name.match(new RegExp([
+    '^native-update-failure-stage-(schedule-validation|schedule-journal|schedule-plan|schedule-worker)-',
+    '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json$',
+  ].join(''), 'iu'))
+  if (match?.[1] === undefined) return 'ambiguous'
+  const path = join(workersDirectory, matches[0].name)
+  const metadata = await lstat(path).catch(() => undefined)
+  if (metadata === undefined || !metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 64) return 'ambiguous'
+  const value = await readFile(path, 'utf8').catch(() => undefined)
+  return value === `${match[1].toLowerCase()}\n` ? match[1].toLowerCase() : 'ambiguous'
+}
+
+/** Read one opt-in candidate worker stage without returning its worker identifier or private path. */
+async function readNativeWorkerDiagnosticStageSummary(updatesDirectory: string): Promise<string> {
+  const workersDirectory = join(updatesDirectory, 'workers')
+  const entries = await readdir(workersDirectory, { withFileTypes: true }).catch(() => [])
+  const matches = entries.filter(entry => entry.isFile() && entry.name.startsWith('native-update-worker-stage-'))
+  if (matches.length === 0) return 'none'
+  if (matches.length !== 1 || matches[0] === undefined) return 'ambiguous'
+  const match = matches[0].name.match(new RegExp([
+    '^native-update-worker-stage-(candidate-installer|candidate-launch|candidate-identity|candidate-heartbeat|',
+    'candidate-heartbeat-written)-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-',
+    '[0-9a-f]{12}\\.json$',
+  ].join(''), 'iu'))
+  if (match?.[1] === undefined) return 'ambiguous'
+  const path = join(workersDirectory, matches[0].name)
+  const metadata = await lstat(path).catch(() => undefined)
+  if (metadata === undefined || !metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 64) return 'ambiguous'
+  const value = await readFile(path, 'utf8').catch(() => undefined)
+  return value === `${match[1].toLowerCase()}\n` ? match[1].toLowerCase() : 'ambiguous'
 }
 
 /** Observe only whether diagnostic-only supervisor receipts exist without reading their contents or generated names. */
@@ -1630,12 +1782,16 @@ async function waitForWindowsHealthyCandidate(options: {
   readonly executablePath: string
   readonly appliedPath: string
   readonly transactionId: string
+  readonly harnessHome: string
   readonly pending: PendingNativeUpdateEvidence
   readonly transitions: NativeTransitionRecorder
 }): Promise<void> {
   try {
+    let healthPhaseObserved = false
     await expect.poll(async () => {
       await options.transitions.record(options.pending)
+      const phase = await readNativeUpdatePhase(options.pending.journalPath)
+      if (phase === 'dashboard-health-checking' || phase === 'applied') healthPhaseObserved = true
       const version = await installedPackageVersion(options.appAsarPath).catch(() => undefined)
       const applied = await readFile(options.appliedPath, 'utf8').catch(() => undefined)
       const processIds = await exactWindowsProcessIds(options.executablePath)
@@ -1643,16 +1799,23 @@ async function waitForWindowsHealthyCandidate(options: {
       if (failurePhase !== undefined) {
         throw new Error(`native update e2e: Windows watchdog failed during ${failurePhase}`)
       }
-      return { version, applied, processAlive: processIds.length > 0 }
-    }, { timeout: 120_000 }).toEqual({
+      const processAlive = processIds.length > 0
+      const appliedMarker = applied === `${options.transactionId}\n`
+      const terminalOutcome = await readNativeUpdateOutcome(options.harnessHome)
+      const cleanedApplied = healthPhaseObserved && phase === undefined
+        && (terminalOutcome === 'applied:applied' || terminalOutcome === 'up-to-date:up-to-date')
+      return { version, accepted: version === candidateVersion && processAlive && (appliedMarker || cleanedApplied) }
+    }, { timeout: 120_000 }).toMatchObject({
       version: candidateVersion,
-      applied: `${options.transactionId}\n`,
-      processAlive: true,
+      accepted: true,
     })
   } catch {
     await options.transitions.record(options.pending, undefined, true)
     await waitForWindowsWorkerSettlement(options.pending.updatesDirectory, nativeWorkerReadyTimeoutMs)
-    throw new Error(`native update e2e: healthy candidate did not settle; transitions=${options.transitions.summary()}`)
+    const workerStage = process.env.DSH_NATIVE_UPDATE_STAGE_PROBE === '1'
+      ? await readNativeWorkerDiagnosticStageSummary(options.pending.updatesDirectory)
+      : undefined
+    throw new Error(`native update e2e: healthy candidate did not settle${workerStage === undefined ? '' : `; worker-stage=${workerStage}`}; transitions=${options.transitions.summary()}`)
   }
 }
 

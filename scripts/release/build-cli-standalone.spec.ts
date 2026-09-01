@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gunzipSync, unzipSync } from 'fflate'
+import { unzipSync } from 'fflate'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as tar from 'tar'
 import {
@@ -11,8 +11,31 @@ import {
   type CliStandaloneBuildDependencies,
 } from './build-cli-standalone.ts'
 import { applyStandaloneExecutablePaths, digestStandaloneTree } from './verify-cli-standalone.ts'
+import { inventoryUpdateArtifacts } from './build-update-manifest.ts'
+import type { ReleaseUpdateConfiguration } from '@harness-desktop/dsh-update-policy'
 
 const roots: string[] = []
+const updateKeyPair = generateKeyPairSync('ed25519')
+const updatePolicy: ReleaseUpdateConfiguration = {
+  schemaVersion: 3,
+  applicationId: 'io.github.naipi11.harness-desktop',
+  trust: {
+    allowedOrigins: ['https://updates.example.invalid'],
+    publicKeys: { 'release-test': updateKeyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString() },
+  },
+  healthCheckTimeoutMs: 120_000,
+  nativeWorkerReadyTimeoutMs: 300_000,
+  manifestEndpoints: {
+    'stable/cli/win32/x64/zip': 'https://updates.example.invalid/stable/cli/win32-x64.json',
+    'stable/cli/linux/x64/tar.gz': 'https://updates.example.invalid/stable/cli/linux-x64.json',
+    'stable/cli/darwin/arm64/tar.gz': 'https://updates.example.invalid/stable/cli/darwin-arm64.json',
+  },
+  rollbackManifestEndpoints: {
+    'stable/cli/win32/x64/zip/1.0.0': 'https://updates.example.invalid/stable/cli/win32-x64-rollback.json',
+    'stable/cli/linux/x64/tar.gz/1.0.0': 'https://updates.example.invalid/stable/cli/linux-x64-rollback.json',
+    'stable/cli/darwin/arm64/tar.gz/1.0.0': 'https://updates.example.invalid/stable/cli/darwin-arm64-rollback.json',
+  },
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -37,10 +60,11 @@ async function fixture(): Promise<{
   await mkdir(join(cliRoot, 'lib'), { recursive: true })
   await mkdir(join(cliRoot, 'node_modules', '@vscode', 'ripgrep-win32-x64', 'bin'), { recursive: true })
   await mkdir(runtimeRoot, { recursive: true })
-  await writeFile(join(cliRoot, 'package.json'), JSON.stringify({ name: '@harness-desktop/cli', version: '9.8.7' }))
+  await writeFile(join(cliRoot, 'package.json'), JSON.stringify({ name: '@harness-desktop/cli', version: '1.0.0' }))
   await writeFile(join(cliRoot, 'lib', 'bin.js'), "console.log('Usage: harness')\n")
   await writeFile(join(cliRoot, 'lib', 'dsh-bin.js'), "console.log('Usage: dsh')\n")
   await writeFile(join(cliRoot, 'lib', 'main.js'), 'export {}\n')
+  await writeFile(join(cliRoot, 'lib', 'standalone-launcher.js'), 'export {}\n')
   await writeFile(join(cliRoot, 'node_modules', '@vscode', 'ripgrep-win32-x64', 'bin', 'rg.exe'), 'fixture rg')
   const runtimeBytes = Buffer.from('fixture runtime distribution')
   await writeFile(join(runtimeRoot, runtimeFilename), runtimeBytes)
@@ -68,6 +92,7 @@ function dependencies(
         },
       },
     },
+    updatePolicy,
     extractNodeDistribution: async (_archive, destination) => {
       await mkdir(destination, { recursive: true })
       await writeFile(join(destination, 'node.exe'), 'fixture node')
@@ -75,26 +100,6 @@ function dependencies(
     validateCliClosure: async () => {},
     ...overrides,
   }
-}
-
-function zipModes(bytes: Uint8Array): ReadonlyMap<string, number> {
-  const view = Buffer.from(bytes)
-  let end = view.length - 22
-  while (end >= 0 && view.readUInt32LE(end) !== 0x06054b50) end -= 1
-  if (end < 0) throw new Error('fixture ZIP has no end-of-central-directory record')
-  const count = view.readUInt16LE(end + 10)
-  let offset = view.readUInt32LE(end + 16)
-  const modes = new Map<string, number>()
-  for (let index = 0; index < count; index += 1) {
-    if (view.readUInt32LE(offset) !== 0x02014b50) throw new Error('fixture ZIP central directory is malformed')
-    const nameLength = view.readUInt16LE(offset + 28)
-    const extraLength = view.readUInt16LE(offset + 30)
-    const commentLength = view.readUInt16LE(offset + 32)
-    const name = view.subarray(offset + 46, offset + 46 + nameLength).toString('utf8')
-    modes.set(name, (view.readUInt32LE(offset + 38) >>> 16) & 0o777)
-    offset += 46 + nameLength + extraLength + commentLength
-  }
-  return modes
 }
 
 async function tarModes(path: string): Promise<ReadonlyMap<string, number>> {
@@ -116,7 +121,8 @@ describe('buildCliStandaloneWithDependencies', () => {
     const input = {
       platform: 'win32' as const,
       arch: 'x64',
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
     }
 
@@ -124,9 +130,8 @@ describe('buildCliStandaloneWithDependencies', () => {
     const secondNames = await buildCliStandaloneWithDependencies({ ...input, outputDirectory: second }, dependencies(subject))
 
     expect(firstNames).toEqual([
-      'harness-cli-0.0.0-test-win32-x64.zip',
-      'harness-cli-0.0.0-test-win32-x64.tar.gz',
-      'harness-cli-0.0.0-test-win32-x64.sha256',
+      'harness-cli-1.0.0-win32-x64.zip',
+      'harness-cli-1.0.0-win32-x64.sha256',
     ])
     expect(secondNames).toEqual(firstNames)
     for (const name of firstNames) {
@@ -140,18 +145,20 @@ describe('buildCliStandaloneWithDependencies', () => {
       'dsh',
       'harness.cmd',
       'dsh.cmd',
-      'runtime/node.exe',
-      'cli/package/lib/bin.js',
-      'cli/package/lib/dsh-bin.js',
+      'payload/current/runtime/node.exe',
+      'launcher-runtime/node.exe',
+      'update-policy.json',
+      'payload/current/cli/package/lib/bin.js',
+      'payload/current/cli/package/lib/dsh-bin.js',
     ]))
     const manifest = JSON.parse(Buffer.from(zipped['manifest.json']!).toString('utf8')) as {
       readonly files: Record<string, string>
     }
     expect(Object.keys(manifest.files)).toEqual(Object.keys(manifest.files).toSorted())
     expect(Object.keys(manifest.files)).not.toContain('manifest.json')
-    expect(gunzipSync(await readFile(join(first, firstNames[1]!))).byteLength).toBeGreaterThan(0)
-    expect(await readFile(join(first, firstNames[2]!), 'utf8')).toMatch(
-      /^[0-9a-f]{64}  harness-cli-0\.0\.0-test-win32-x64\.zip\n[0-9a-f]{64}  harness-cli-0\.0\.0-test-win32-x64\.tar\.gz\n$/u,
+    expect(JSON.parse(Buffer.from(zipped['update-policy.json']!).toString('utf8'))).toEqual(updatePolicy)
+    expect(await readFile(join(first, firstNames[1]!), 'utf8')).toMatch(
+      /^[0-9a-f]{64}  harness-cli-1\.0\.0-win32-x64\.zip\n$/u,
     )
   })
 
@@ -161,7 +168,8 @@ describe('buildCliStandaloneWithDependencies', () => {
     const input = {
       platform: 'win32' as const,
       arch: 'x64',
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
       outputDirectory: output,
     }
@@ -174,6 +182,83 @@ describe('buildCliStandaloneWithDependencies', () => {
         '0.0.0-test': { win32: { x64: { filename: subject.runtimeFilename, sha256: '0'.repeat(64) } } },
       },
     }))).rejects.toThrow('standalone CLI: Node runtime checksum mismatch')
+  })
+
+  it('uses CLI versioned filenames while retaining the independently pinned Node version', async () => {
+    const subject = await fixture()
+    const first = await tempRoot('harness-cli-version-one-')
+    const second = await tempRoot('harness-cli-version-two-')
+    const common = {
+      platform: 'win32' as const,
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      nodeRuntimeRoot: subject.runtimeRoot,
+    }
+
+    const firstNames = await buildCliStandaloneWithDependencies({
+      ...common, cliVersion: '1.0.0', outputDirectory: first,
+    }, dependencies(subject))
+    await writeFile(join(subject.cliRoot, 'package.json'), JSON.stringify({ name: '@harness-desktop/cli', version: '1.0.1' }))
+    const secondNames = await buildCliStandaloneWithDependencies({
+      ...common, cliVersion: '1.0.1', outputDirectory: second,
+    }, dependencies(subject, {
+      updatePolicy: {
+        ...updatePolicy,
+        rollbackManifestEndpoints: {
+          ...updatePolicy.rollbackManifestEndpoints,
+          'stable/cli/win32/x64/zip/1.0.1': 'https://updates.example.invalid/stable/cli/win32-x64-rollback-1.0.1.json',
+        },
+      },
+    }))
+
+    expect(firstNames[0]).toBe('harness-cli-1.0.0-win32-x64.zip')
+    expect(secondNames[0]).toBe('harness-cli-1.0.1-win32-x64.zip')
+    const firstManifest = JSON.parse(Buffer.from(unzipSync(await readFile(join(first, firstNames[0]!)))['manifest.json']!).toString()) as unknown
+    const secondManifest = JSON.parse(Buffer.from(unzipSync(await readFile(join(second, secondNames[0]!)))['manifest.json']!).toString()) as unknown
+    expect(firstManifest).toMatchObject({ node: { version: '0.0.0-test' }, cli: { version: '1.0.0' } })
+    expect(secondManifest).toMatchObject({ node: { version: '0.0.0-test' }, cli: { version: '1.0.1' } })
+    const inventory = await inventoryUpdateArtifacts({
+      currentVersion: '1.0.0',
+      version: '1.0.1',
+      keyId: 'fixture-key',
+      artifacts: [{
+        channel: 'stable',
+        consumer: 'cli',
+        platform: 'win32',
+        arch: 'x64',
+        format: 'zip',
+        artifactPath: join(second, secondNames[0]!),
+        url: 'https://updates.example.invalid/harness-cli-1.0.1-win32-x64.zip',
+      }],
+    })
+    expect(inventory.artifacts[0]?.members).toEqual(['manifest.json'])
+  })
+
+  it('rejects a policy without the exact candidate or rollback endpoint before staging an archive', async () => {
+    const subject = await fixture()
+    const output = await tempRoot('harness-cli-standalone-policy-')
+    const input = {
+      platform: 'win32' as const,
+      arch: 'x64',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
+      nodeRuntimeRoot: subject.runtimeRoot,
+      outputDirectory: output,
+    }
+    let extracted = false
+    const extractNodeDistribution = async (): Promise<void> => { extracted = true }
+
+    await expect(buildCliStandaloneWithDependencies(input, dependencies(subject, {
+      updatePolicy: { ...updatePolicy, manifestEndpoints: {} },
+      extractNodeDistribution,
+    }))).rejects.toThrow('standalone CLI: update policy omits the configured candidate endpoint')
+    expect(extracted).toBe(false)
+
+    await expect(buildCliStandaloneWithDependencies(input, dependencies(subject, {
+      updatePolicy: { ...updatePolicy, rollbackManifestEndpoints: {} },
+      extractNodeDistribution,
+    }))).rejects.toThrow('standalone CLI: update policy omits the configured rollback endpoint')
+    expect(extracted).toBe(false)
   })
 
   it('rejects a foreign-platform native module before writing an archive', async () => {
@@ -190,11 +275,12 @@ describe('buildCliStandaloneWithDependencies', () => {
     await expect(buildCliStandaloneWithDependencies({
       platform: 'win32',
       arch: 'x64',
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
       outputDirectory: output,
     }, dependencies(subject))).rejects.toThrow(
-      'standalone CLI: native module cli/package/node_modules/foreign/foreign.node targets linux-x64, expected win32-x64',
+      'standalone CLI: native module payload/current/cli/package/node_modules/foreign/foreign.node targets linux-x64, expected win32-x64',
     )
   })
 
@@ -212,11 +298,12 @@ describe('buildCliStandaloneWithDependencies', () => {
     await expect(buildCliStandaloneWithDependencies({
       platform: 'win32',
       arch: 'x64',
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
       outputDirectory: output,
     }, dependencies(subject))).rejects.toThrow(
-      'standalone CLI: package missing-bin@1.2.3 declares missing bin cli/package/node_modules/missing-bin/bin.mjs',
+      'standalone CLI: package missing-bin@1.2.3 declares missing bin payload/current/cli/package/node_modules/missing-bin/bin.mjs',
     )
   })
 
@@ -253,16 +340,16 @@ describe('buildCliStandaloneWithDependencies', () => {
     await expect(buildCliStandaloneWithDependencies({
       platform: 'win32',
       arch: 'x64',
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
       outputDirectory: output,
     }, dependencies(subject))).resolves.toEqual([
-      'harness-cli-0.0.0-test-win32-x64.zip',
-      'harness-cli-0.0.0-test-win32-x64.tar.gz',
-      'harness-cli-0.0.0-test-win32-x64.sha256',
+      'harness-cli-1.0.0-win32-x64.zip',
+      'harness-cli-1.0.0-win32-x64.sha256',
     ])
     const digests = await digestStandaloneTree(subject.cliRoot, new Set())
-    expect(Object.keys(digests)).toHaveLength(8_305)
+    expect(Object.keys(digests)).toHaveLength(8_306)
     expect(Object.keys(digests)).toEqual(Object.keys(digests).toSorted((left, right) => left.localeCompare(right, 'en')))
   }, 120_000)
 
@@ -308,28 +395,32 @@ describe('buildCliStandaloneWithDependencies', () => {
     const names = await buildCliStandaloneWithDependencies({
       platform,
       arch,
-      version: '0.0.0-test',
+      nodeVersion: '0.0.0-test',
+      cliVersion: '1.0.0',
       nodeRuntimeRoot: subject.runtimeRoot,
       outputDirectory: output,
     }, buildDependencies)
-    const zipPath = join(output, names[0]!)
-    const zipped = unzipSync(await readFile(zipPath))
-    const manifest = JSON.parse(Buffer.from(zipped['manifest.json']!).toString('utf8')) as {
+    expect(names).toEqual([
+      `harness-cli-1.0.0-${platform}-${arch}.tar.gz`,
+      `harness-cli-1.0.0-${platform}-${arch}.sha256`,
+    ])
+    const extraction = await tempRoot(`harness-cli-standalone-${platform}-extract-`)
+    await tar.x({ file: join(output, names[0]!), cwd: extraction, strict: true })
+    const manifest = JSON.parse(await readFile(join(extraction, 'manifest.json'), 'utf8')) as {
       readonly executablePaths?: readonly string[]
     }
     const requiredPaths = [...new Set([
-      `cli/package/${packageExecutable}`,
-      `cli/package/${rgExecutable}`,
-      'cli/package/node_modules/fixture-bin/bin/fixture-tool',
-      'runtime/bin/node',
+      `payload/current/cli/package/${packageExecutable}`,
+      `payload/current/cli/package/${rgExecutable}`,
+      'payload/current/cli/package/node_modules/fixture-bin/bin/fixture-tool',
+      'payload/current/runtime/bin/node',
+      'launcher-runtime/bin/node',
       'harness',
       'dsh',
     ])]
     expect(manifest.executablePaths).toEqual(expect.arrayContaining(requiredPaths))
-    const zipModeMap = zipModes(await readFile(zipPath))
-    const tarModeMap = await tarModes(join(output, names[1]!))
+    const tarModeMap = await tarModes(join(output, names[0]!))
     for (const path of requiredPaths) {
-      expect(zipModeMap.get(path), `ZIP mode for ${path}`).toBe(0o755)
       expect(tarModeMap.get(path), `tar mode for ${path}`).toBe(0o755)
     }
   })

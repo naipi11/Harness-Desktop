@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/cli",
   "description": "Harness Desktop CLI: terminal, one-shot, Web, and Desktop product modes",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
@@ -16,10 +16,7 @@
     "dsh": "lib/dsh-bin.js"
   },
   "files": [
-    "lib/bin.js",
-    "lib/dsh-bin.js",
-    "lib/main.js",
-    "browser-cleanup.mjs",
+    "lib/*.js",
     "config"
   ],
   "scripts": {

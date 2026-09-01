@@ -3,9 +3,9 @@
 import { chmod, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { zipSync } from 'fflate'
+import { unzipSync, zipSync } from 'fflate'
 import * as tar from 'tar'
 import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
 import {
@@ -16,6 +16,9 @@ import {
 } from '@harness-desktop/dsh-update-policy'
 import { parseProductArgs, ProductArgumentError } from '../src/args.ts'
 import { runUpdateInvocation, type UpdateFileOperations, type UpdateInvocationResult } from '../src/update.ts'
+import { recoverStandalonePayload } from '../src/standalone-launcher.ts'
+import type { StandaloneUpdateSource } from '../src/standalone-update-source.ts'
+import type { WindowsStandaloneUpdatePlan } from '../src/windows-standalone-update.ts'
 
 interface StandaloneFixture {
   readonly entryPath: string
@@ -23,6 +26,8 @@ interface StandaloneFixture {
   readonly manifest: SignedUpdateManifest
   readonly trust: UpdateTrust
   readonly bytes: Uint8Array
+  readonly runtimeBytes: Uint8Array
+  readonly envObservationPath?: string
   readonly root: string
   readonly privateKey: KeyObject
   close(): Promise<void>
@@ -76,7 +81,7 @@ describe('CLI update', () => {
   })
 
   it('fails closed without candidate or filesystem I/O while production trust is empty', async () => {
-    const fixture = await standaloneFixture('healthy')
+    const fixture = await standaloneFixture('healthy', process.platform, true)
     const calls: string[] = []
     try {
       const before = await readFile(join(fixture.root, 'version'), 'utf8')
@@ -94,7 +99,7 @@ describe('CLI update', () => {
     } finally {
       await fixture.close()
     }
-  })
+  }, 60_000)
 
   it('verifies a supplied standalone archive then switches it using bundled Node only', async () => {
     const fixture = await standaloneFixture('healthy')
@@ -110,6 +115,7 @@ describe('CLI update', () => {
       expect(result).toEqual({ kind: 'applied', version: '1.1.0' })
       await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe('1.1.0')
       await expect(retainedVersions(fixture.root)).resolves.toEqual([])
+      await expect(readFile(`${fixture.root}.update.lock`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
       await fixture.close()
     }
@@ -131,7 +137,7 @@ describe('CLI update', () => {
     } finally {
       await fixture.close()
     }
-  })
+  }, 60_000)
 
   it('restores the retained standalone installation when the bundled health check fails', async () => {
     const fixture = await standaloneFixture('unhealthy')
@@ -150,6 +156,158 @@ describe('CLI update', () => {
       await fixture.close()
     }
   }, 60_000)
+
+  it('hands a verified Windows candidate to a detached local scheduler before the CLI exits', async () => {
+    const fixture = await standaloneFixture('healthy', 'win32', true)
+    const scheduled: WindowsStandaloneUpdatePlan[] = []
+    const source: StandaloneUpdateSource = {
+      trust: fixture.trust,
+      healthCheckTimeoutMs: 120_000,
+      loadManifest: async () => fixture.manifest,
+      loadRollbackManifest: async () => candidate(fixture, '1.0.0'),
+      download: async () => fixture.bytes,
+    }
+    try {
+      const result = await runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: 'win32',
+        scheduleWindowsUpdate: async (plan) => { scheduled.push(plan) },
+      })
+
+      expect(result).toEqual({ kind: 'restart-scheduled', version: '1.1.0' })
+      expect(scheduled).toEqual([expect.objectContaining({
+        root: fixture.root,
+        healthCheckTimeoutMs: 120_000,
+      })])
+      expect(JSON.stringify(scheduled[0])).not.toContain('https://')
+      await expect(readFile(scheduled[0]!.lockPath, 'utf8')).resolves.toContain(`"token":"${scheduled[0]!.lockToken}"`)
+      await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe('1.0.0')
+      await expect(readFile(join(scheduled[0]!.candidate, 'version'), 'utf8')).resolves.toBe('1.1.0')
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('hands the fixed launcher layout to Windows and recovers a crash before the first payload rename', async () => {
+    const fixture = await durableStandaloneFixture()
+    let scheduled: WindowsStandaloneUpdatePlan | undefined
+    const source: StandaloneUpdateSource = {
+      trust: fixture.trust,
+      healthCheckTimeoutMs: 120_000,
+      loadManifest: async () => fixture.manifest,
+      loadRollbackManifest: async () => signedCandidate(fixture, fixture.bytes, '1.0.0'),
+      download: async () => fixture.bytes,
+    }
+    try {
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: 'win32',
+        scheduleWindowsUpdate: async (plan) => { scheduled = plan },
+      })).resolves.toEqual({ kind: 'restart-scheduled', version: '1.1.0' })
+      const plan = scheduled
+      if (plan === undefined) throw new Error('durable Windows plan was not scheduled')
+      const archiveRoot = dirname(dirname(fixture.root))
+      expect(plan).toMatchObject({
+        root: fixture.root,
+        retained: join(archiveRoot, 'payload', 'retained'),
+        failed: join(archiveRoot, 'payload', 'failed'),
+        lockPath: join(archiveRoot, '.harness-update.lock'),
+      })
+      await expect(readFile(join(archiveRoot, '.harness-update.json'), 'utf8')).resolves.toContain('"phase":"prepared"')
+      const lock = JSON.parse(await readFile(plan.lockPath, 'utf8')) as Record<string, unknown>
+      await writeFile(plan.lockPath, `${JSON.stringify({ ...lock, processId: 2 ** 30, expiresAtMs: Date.now() - 1 })}\n`)
+
+      await recoverStandalonePayload(archiveRoot)
+
+      await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe('1.0.0')
+      await expect(readFile(join(archiveRoot, '.harness-update.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await fixture.close()
+    }
+  }, 30_000)
+
+  it('rejects a concurrent standalone transaction before staging and releases the lock after scheduler failure', async () => {
+    const fixture = await standaloneFixture('healthy', 'win32', true)
+    let scheduled: WindowsStandaloneUpdatePlan | undefined
+    let enterScheduler: (() => void) | undefined
+    const schedulerEntered = new Promise<void>((resolve) => { enterScheduler = resolve })
+    let releaseScheduler: (() => void) | undefined
+    const schedulerRelease = new Promise<void>((resolve) => { releaseScheduler = resolve })
+    const source: StandaloneUpdateSource = {
+      trust: fixture.trust,
+      healthCheckTimeoutMs: 120_000,
+      loadManifest: async () => fixture.manifest,
+      loadRollbackManifest: async () => candidate(fixture, '1.0.0'),
+      download: async () => fixture.bytes,
+    }
+    try {
+      const first = runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: 'win32',
+        scheduleWindowsUpdate: async (plan) => {
+          scheduled = plan
+          enterScheduler?.()
+          await schedulerRelease
+          throw new Error('fixture scheduler failure')
+        },
+      })
+      await schedulerEntered
+      const candidatesBefore = (await readdir(dirname(fixture.root))).filter(entry => entry.includes('.candidate-'))
+
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: 'win32',
+        scheduleWindowsUpdate: async () => { throw new Error('concurrent scheduler must not run') },
+      })).resolves.toEqual({ kind: 'failed', code: 'transaction-failed' })
+      expect((await readdir(dirname(fixture.root))).filter(entry => entry.includes('.candidate-'))).toEqual(candidatesBefore)
+      await expect(readFile(scheduled!.lockPath, 'utf8')).resolves.toContain(`"token":"${scheduled!.lockToken}"`)
+
+      releaseScheduler?.()
+      await expect(first).resolves.toEqual({ kind: 'failed', code: 'transaction-failed' })
+      await expect(readFile(`${fixture.root}.update.lock`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      expect((await readdir(dirname(fixture.root))).filter(entry => entry.includes('.candidate-'))).toEqual([])
+    } finally {
+      releaseScheduler?.()
+      await fixture.close()
+    }
+  })
+
+  it('does not schedule a Windows replacement without a signed current-version rollback manifest', async () => {
+    const fixture = await standaloneFixture('healthy', 'win32', true)
+    const scheduled: WindowsStandaloneUpdatePlan[] = []
+    const source: StandaloneUpdateSource = {
+      trust: fixture.trust,
+      healthCheckTimeoutMs: 120_000,
+      loadManifest: async () => fixture.manifest,
+      loadRollbackManifest: async () => { throw new Error('rollback manifest absent') },
+      download: async () => fixture.bytes,
+    }
+    try {
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: 'win32',
+        scheduleWindowsUpdate: async (plan) => { scheduled.push(plan) },
+      })).resolves.toEqual({ kind: 'failed', code: 'candidate-rejected' })
+      expect(scheduled).toEqual([])
+    } finally {
+      await fixture.close()
+    }
+  })
 
   it('applies consecutive standalone updates without retaining stale transaction roots', async () => {
     const fixture = await standaloneFixture('healthy')
@@ -184,24 +342,69 @@ describe('CLI update', () => {
     }
   }, 60_000)
 
-  it('restores declared Unix ZIP executable paths before the candidate health check', async () => {
-    const fixture = await standaloneFixture('healthy', 'linux')
+  it('restores declared Windows ZIP executable paths before the candidate health check', async () => {
+    const fixture = await standaloneFixture('healthy', 'win32')
     const chmodCalls: Array<{ readonly path: string; readonly mode: number }> = []
     try {
       const result = await update(fixture, '1.0.0', '1.1.0', {
         chmod: async (path, mode) => { chmodCalls.push({ path, mode }); await chmod(path, mode) },
-        stat: async () => ({ mode: 0o100755 }),
-      }, 'linux', async () => true)
+      }, 'win32', async () => true)
 
       expect(result).toEqual({ kind: 'applied', version: '1.1.0' })
-      expect(chmodCalls.some(call => call.mode === 0o755 && /[\\/]runtime[\\/]bin[\\/]node$/u.test(call.path))).toBe(true)
+      expect(chmodCalls.some(call => call.mode === 0o755 && /[\\/]runtime[\\/]node\.exe$/u.test(call.path))).toBe(true)
     } finally {
       await fixture.close()
     }
   }, 60_000)
 
-  it.skipIf(process.platform === 'win32')('preserves an executable tar.gz member through actual extraction', async () => {
-    const fixture = await standaloneFixture('healthy', process.platform, true)
+  it('restores catalog-declared Windows ZIP executable paths before the candidate health check', async () => {
+    const fixture = await standaloneFixture('healthy', 'win32', true)
+    const chmodCalls: Array<{ readonly path: string; readonly mode: number }> = []
+    try {
+      const catalog = catalogCandidate(fixture, '1.1.0', 'win32')
+      const result = await runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        trust: fixture.trust,
+        loadCandidate: async () => catalog,
+        platform: 'win32',
+        operations: {
+          chmod: async (path, mode) => { chmodCalls.push({ path, mode }); await chmod(path, mode) },
+        },
+        healthCheck: async () => true,
+      })
+
+      expect(result).toEqual({ kind: 'applied', version: '1.1.0' })
+      expect(chmodCalls.some(call => call.mode === 0o755 && /[\\/]runtime[\\/]node\.exe$/u.test(call.path))).toBe(true)
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it.each([
+    ['a path-traversal member', '../catalog-escape.txt'],
+    ['a Windows-separated member', 'runtime\\node.exe'],
+  ])('rejects a catalog ZIP with %s before writing the candidate', async (_name, unsafeMember) => {
+    const fixture = await standaloneFixture('healthy', 'win32', true)
+    try {
+      const catalog = catalogCandidate(fixture, '1.1.0', 'win32', unsafeMember)
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        trust: fixture.trust,
+        loadCandidate: async () => catalog,
+        platform: 'win32',
+        healthCheck: async () => true,
+      })).resolves.toEqual({ kind: 'failed', code: 'candidate-rejected' })
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('selects a tar.gz target for Unix standalone updates and preserves its executable member through actual extraction', async () => {
+    const fixture = await standaloneFixture('healthy', 'linux', true)
     try {
       const archive = await tarCandidate(fixture, '1.1.0', 0o755)
       const result = await runUpdateInvocation({
@@ -210,7 +413,8 @@ describe('CLI update', () => {
         stdout: { write: () => true },
         trust: fixture.trust,
         loadCandidate: async () => archive,
-        platform: process.platform,
+        platform: 'linux',
+        operations: { stat: async () => ({ mode: 0o100755 }) },
         healthCheck: async () => true,
       })
 
@@ -219,6 +423,122 @@ describe('CLI update', () => {
       await fixture.close()
     }
   })
+
+  it.skipIf(process.platform === 'win32')('force-terminates a candidate that ignores SIGTERM after its bounded health window', async () => {
+    const fixture = await standaloneFixture('ignores-sigterm', process.platform)
+    try {
+      const candidateArchive = await tarCandidate(
+        fixture,
+        '1.1.0',
+        0o755,
+        false,
+        "process.on('SIGTERM', () => {}); process.stdout.write('Usage: harness\\n'); setInterval(() => {}, 1000)\n",
+      )
+      const rollbackArchive = await tarCandidate(fixture, '1.0.0', 0o755)
+      const source: StandaloneUpdateSource = {
+        trust: fixture.trust,
+        healthCheckTimeoutMs: 100,
+        loadManifest: async () => candidateArchive.manifest,
+        loadRollbackManifest: async () => rollbackArchive.manifest,
+        download: async () => candidateArchive.bytes,
+      }
+      const startedAt = Date.now()
+
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: process.platform,
+      })).resolves.toEqual({ kind: 'rolled-back', version: '1.1.0' })
+
+      expect(Date.now() - startedAt).toBeLessThan(5_000)
+      await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe(fixture.expectedLiveVersion)
+    } finally {
+      await fixture.close()
+    }
+  }, 10_000)
+
+  it.skipIf(process.platform === 'win32')('does not commit a candidate that exits zero only after the health deadline', async () => {
+    const fixture = await standaloneFixture('exits-zero-on-term', process.platform)
+    try {
+      const candidateArchive = await tarCandidate(
+        fixture, '1.1.0', 0o755, false,
+        "process.on('SIGTERM', () => process.exit(0)); process.stdout.write('Usage: harness\\n'); setInterval(() => {}, 1000)\n",
+      )
+      const rollbackArchive = await tarCandidate(fixture, '1.0.0', 0o755)
+      const source: StandaloneUpdateSource = {
+        trust: fixture.trust,
+        healthCheckTimeoutMs: 100,
+        loadManifest: async () => candidateArchive.manifest,
+        loadRollbackManifest: async () => rollbackArchive.manifest,
+        download: async () => candidateArchive.bytes,
+      }
+
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: process.platform,
+      })).resolves.toEqual({ kind: 'rolled-back', version: '1.1.0' })
+      await expect(readFile(join(fixture.root, 'version'), 'utf8')).resolves.toBe(fixture.expectedLiveVersion)
+    } finally {
+      await fixture.close()
+    }
+  }, 10_000)
+
+  it.skipIf(process.platform === 'win32')('rolls back after a healthy-looking leader exits with a live process-group descendant', async () => {
+    const fixture = await standaloneFixture('leader-exits-with-descendant', process.platform)
+    try {
+      const candidateArchive = await tarCandidate(
+        fixture, '1.1.0', 0o755, false,
+        "const child = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' }); child.unref(); process.stdout.write('Usage: harness\\n')\n",
+      )
+      const rollbackArchive = await tarCandidate(fixture, '1.0.0', 0o755)
+      const source: StandaloneUpdateSource = {
+        trust: fixture.trust,
+        healthCheckTimeoutMs: 2_000,
+        loadManifest: async () => candidateArchive.manifest,
+        loadRollbackManifest: async () => rollbackArchive.manifest,
+        download: async () => candidateArchive.bytes,
+      }
+
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        source,
+        platform: process.platform,
+      })).resolves.toEqual({ kind: 'rolled-back', version: '1.1.0' })
+    } finally {
+      await fixture.close()
+    }
+  }, 10_000)
+
+  it('does not expose credential-shaped or DSH environment entries to the bundled health probe', async () => {
+    const fixture = await standaloneFixture('observes-env')
+    const names = ['DEEPSEEK_API_KEY', 'lowercase_token', 'SERVICE_PASSWORD', 'DSH_HEALTH_PROBE'] as const
+    const previous = new Map(names.map(name => [name, process.env[name]] as const))
+    try {
+      for (const name of names) process.env[name] = `not-forwarded-${name}`
+      await expect(runUpdateInvocation({
+        entryPath: fixture.entryPath,
+        version: '1.0.0',
+        stdout: { write: () => true },
+        trust: fixture.trust,
+        loadCandidate: async () => ({ manifest: fixture.manifest, bytes: fixture.bytes }),
+      })).resolves.toEqual({ kind: 'applied', version: '1.1.0' })
+      const observed = JSON.parse(await readFile(fixture.envObservationPath!, 'utf8')) as Record<string, string>
+      for (const name of names) expect(observed[name]).toBeUndefined()
+    } finally {
+      for (const [name, value] of previous) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name)
+        else process.env[name] = value
+      }
+      await fixture.close()
+    }
+  }, 60_000)
 
   it('rejects a non-executable tar.gz member through actual extraction', async () => {
     const fixture = await standaloneFixture('healthy', 'linux', true)
@@ -238,7 +558,7 @@ describe('CLI update', () => {
     }
   }, 30_000)
 
-  it('rejects an undeclared tar symlink without materializing archive members', async () => {
+  it('rejects a hostile tar.gz archive before materializing archive members', async () => {
     const fixture = await standaloneFixture('healthy', 'linux', true)
     const rejectedCandidateContents: string[][] = []
     try {
@@ -267,13 +587,14 @@ describe('CLI update', () => {
 })
 
 async function standaloneFixture(
-  health: 'healthy' | 'unhealthy',
+  health: 'healthy' | 'unhealthy' | 'ignores-sigterm' | 'exits-zero-on-term' | 'leader-exits-with-descendant' | 'observes-env',
   target = process.platform,
   minimalArchive = false,
 ): Promise<StandaloneFixture> {
   const parent = await mkdtemp(join(tmpdir(), 'harness-cli-update-'))
   const stem = `bundle-${randomUUID()}`
   const root = join(parent, stem)
+  const envObservationPath = join(parent, 'observed-env.json')
   const entryPath = join(root, 'cli', 'package', 'lib', 'update.js')
   const identifier = randomUUID().replaceAll('-', '')
   const keyPair = generateKeyPairSync('ed25519')
@@ -281,12 +602,22 @@ async function standaloneFixture(
   const origin = new URL(`https://${identifier}.invalid`).origin
   const targetPlatform = target === 'win32' || target === 'darwin' || target === 'linux' ? target : platform()
   const members = ['version', `runtime/${target === 'win32' ? 'node.exe' : 'bin/node'}`, 'cli/package/lib/bin.js', 'manifest.json']
+  const runtimeBytes = minimalArchive ? Buffer.from('node') : await readFile(process.execPath)
+  const healthSource = (health === 'healthy'
+    ? "process.stdout.write('Usage: harness\\n')\n"
+    : health === 'ignores-sigterm'
+      ? "process.on('SIGTERM', () => {})\nprocess.stdout.write('Usage: harness\\n')\nsetInterval(() => {}, 1_000)\n"
+      : health === 'exits-zero-on-term'
+        ? "process.on('SIGTERM', () => process.exit(0))\nprocess.stdout.write('Usage: harness\\n')\nsetInterval(() => {}, 1_000)\n"
+        : health === 'leader-exits-with-descendant'
+          ? "const child = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' }); child.unref(); process.stdout.write('Usage: harness\\n')\n"
+          : health === 'observes-env'
+            ? "require('node:fs').writeFileSync(__ENV_FILE__, JSON.stringify(process.env)); process.stdout.write('Usage: harness\\n')\n"
+            : 'process.exitCode = 1\n').replaceAll('__ENV_FILE__', JSON.stringify(envObservationPath))
   const files: Record<string, Uint8Array> = {
     version: Buffer.from('1.1.0'),
-    [members[1]!]: minimalArchive ? Buffer.from('node') : await readFile(process.execPath),
-    'cli/package/lib/bin.js': Buffer.from(health === 'healthy'
-      ? "process.stdout.write('Usage: harness\\n')\n"
-      : 'process.exitCode = 1\n'),
+    [members[1]!]: runtimeBytes,
+    'cli/package/lib/bin.js': Buffer.from(healthSource),
   }
   files['manifest.json'] = Buffer.from(JSON.stringify({ version: 2, executablePaths: [members[1]!] }))
   const bytes = zipSync(files)
@@ -314,9 +645,99 @@ async function standaloneFixture(
     writeFile(join(root, 'version'), '1.0.0'),
   ])
   return {
-    entryPath, expectedLiveVersion: '1.0.0', manifest, bytes, root, privateKey: keyPair.privateKey,
+    entryPath, expectedLiveVersion: '1.0.0', manifest, bytes, runtimeBytes, root, envObservationPath, privateKey: keyPair.privateKey,
     trust: { allowedOrigins: [origin], publicKeys: { [keyId]: keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString() } },
     close: async () => { await rm(parent, { recursive: true, force: true }) },
+  }
+}
+
+async function durableStandaloneFixture(): Promise<StandaloneFixture> {
+  const fixture = await standaloneFixture('healthy', 'win32')
+  const archiveRoot = join(dirname(fixture.root), `archive-${randomUUID()}`)
+  const current = join(archiveRoot, 'payload', 'current')
+  await mkdir(dirname(current), { recursive: true })
+  await rename(fixture.root, current)
+  const prefixed = Object.fromEntries(Object.entries(unzipSync(fixture.bytes)).map(([path, bytes]) => [
+    `payload/current/${path}`,
+    bytes,
+  ]))
+  const executable = 'payload/current/runtime/node.exe'
+  const files: Record<string, Uint8Array> = {
+    ...prefixed,
+    'manifest.json': Buffer.from(JSON.stringify({ version: 3, executablePaths: [executable] })),
+    'standalone-launcher.js': Buffer.from('export {}\n'),
+  }
+  const bytes = zipSync(files)
+  const manifest = signedCandidate({ ...fixture, bytes }, bytes, '1.1.0')
+  return {
+    ...fixture,
+    root: current,
+    entryPath: join(current, 'cli', 'package', 'lib', 'update.js'),
+    bytes,
+    manifest,
+  }
+}
+
+function signedCandidate(fixture: StandaloneFixture, bytes: Uint8Array, version: string): SignedUpdateManifest {
+  const { signature: _signature, ...base } = fixture.manifest
+  const artifact = base.artifacts[0]
+  if (artifact === undefined) throw new Error('standalone fixture manifest has no artifact')
+  const payload: UpdateManifestPayload = {
+    ...base,
+    version,
+    artifacts: [{
+      ...artifact,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      members: Object.keys(unzipSync(bytes)).toSorted(),
+    }],
+  }
+  return {
+    ...payload,
+    signature: {
+      ...fixture.manifest.signature,
+      value: sign(null, canonicalizeSignedUpdateManifest(payload), fixture.privateKey).toString('base64url'),
+    },
+  }
+}
+
+function catalogCandidate(
+  fixture: StandaloneFixture,
+  version: string,
+  target: 'win32' | 'darwin' | 'linux',
+  extraMember?: string,
+): { readonly manifest: SignedUpdateManifest; readonly bytes: Uint8Array } {
+  const entries = unzipSync(fixture.bytes)
+  const { 'manifest.json': _previousManifest, ...catalogFiles } = entries
+  if (extraMember !== undefined) catalogFiles[extraMember] = Buffer.from('unsafe catalog fixture')
+  const executablePaths = [target === 'win32' ? 'runtime/node.exe' : 'runtime/bin/node']
+  const files = {
+    ...catalogFiles,
+    'manifest.json': Buffer.from(JSON.stringify({
+      version: 2,
+      executablePaths,
+      files: Object.fromEntries(Object.entries(catalogFiles).map(([path, bytes]) => [
+        path,
+        createHash('sha256').update(bytes).digest('hex'),
+      ])),
+    })),
+  }
+  const bytes = zipSync(files)
+  const { signature: _signature, ...payload } = fixture.manifest
+  const artifact = {
+    ...payload.artifacts[0]!,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    members: ['manifest.json'],
+  }
+  const unsigned: UpdateManifestPayload = { ...payload, version, artifacts: [artifact] }
+  return {
+    bytes,
+    manifest: {
+      ...unsigned,
+      signature: {
+        ...fixture.manifest.signature,
+        value: sign(null, canonicalizeSignedUpdateManifest(unsigned), fixture.privateKey).toString('base64url'),
+      },
+    },
   }
 }
 
@@ -353,7 +774,7 @@ function candidate(fixture: StandaloneFixture, version: string): SignedUpdateMan
 }
 
 function forbiddenOperations(calls: string[]): Record<string, () => never> {
-  return Object.fromEntries(['access', 'mkdir', 'readFile', 'rename', 'rm', 'writeFile', 'chmod', 'stat']
+  return Object.fromEntries(['access', 'mkdir', 'readFile', 'removeFile', 'rename', 'rm', 'writeFile', 'chmod', 'stat', 'createExclusiveFile']
     .map(name => [name, () => { calls.push(name); throw new Error(`npm update called ${name}`) }]))
 }
 
@@ -370,6 +791,7 @@ async function tarCandidate(
   version: string,
   executableMode: number,
   hostileLink = false,
+  entrySource = "process.stdout.write('Usage: harness\\n')\n",
 ): Promise<{ readonly manifest: SignedUpdateManifest; readonly bytes: Uint8Array }> {
   const output = await mkdtemp(join(tmpdir(), 'harness-cli-update-tar-output-'))
   const archive = join(output, 'candidate.tar.gz')
@@ -382,8 +804,8 @@ async function tarCandidate(
     ])
     await Promise.all([
       writeFile(join(stage, 'version'), version),
-      writeFile(join(stage, 'runtime', 'bin', 'node'), 'node'),
-      writeFile(join(stage, 'cli', 'package', 'lib', 'bin.js'), "process.stdout.write('Usage: harness\\n')\n"),
+      writeFile(join(stage, 'runtime', 'bin', 'node'), fixture.runtimeBytes),
+      writeFile(join(stage, 'cli', 'package', 'lib', 'bin.js'), entrySource),
       writeFile(join(stage, 'manifest.json'), JSON.stringify({ version: 2, executablePaths: ['runtime/bin/node'] })),
     ])
     if (hostileLink) await symlink('version', join(stage, 'undeclared-link'))

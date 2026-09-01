@@ -48,6 +48,23 @@ describe('CLI update entry', () => {
     expect(stderr).toBe('CLI update applied, but cleanup failed.\n')
   })
 
+  it('reports a detached Windows transaction as scheduled rather than promising an application restart', async () => {
+    vi.doMock('../src/update.ts', () => ({
+      runUpdateInvocation: async () => ({ kind: 'restart-scheduled', version: '1.1.0' }),
+    }))
+    const { runCli } = await import('../src/main.ts')
+    let stdout = ''
+    let stderr = ''
+    const io = terminalIo(
+      (chunk) => { stdout += chunk },
+      (chunk) => { stderr += chunk },
+    )
+
+    await expect(runCli('harness', ['update'], { io })).resolves.toBe(0)
+    expect(stdout).toBe('CLI update scheduled; it completes after this command exits.\n')
+    expect(stderr).toBe('')
+  })
+
   it('does not construct Runtime, browser, or Desktop dependencies for an unsupported source layout', async () => {
     let stdout = ''
     let stderr = ''

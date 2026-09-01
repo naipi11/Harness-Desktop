@@ -8,6 +8,14 @@ import { pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { unzipSync } from 'fflate'
 import * as tar from 'tar'
+import {
+  parseReleaseUpdateConfiguration,
+  releaseManifestEndpoint,
+  releaseRollbackManifestEndpoint,
+  standaloneCliUpdateTarget,
+} from '@harness-desktop/dsh-update-policy'
+import cliPackageJson from '../../apps/cli/package.json' with { type: 'json' }
+import { productMetadata } from '../../packages/boot/app-boot/src/product-metadata.ts'
 
 const root = resolve(import.meta.dirname, '../..')
 const defaultNodeVersion = '24.19.0'
@@ -23,7 +31,8 @@ const hostileAmbientEnvironmentKeys = [
 export interface CliStandaloneVerificationInput {
   readonly platform: NodeJS.Platform
   readonly arch: string
-  readonly version: string
+  readonly nodeVersion: string
+  readonly cliVersion: string
   readonly archiveDirectory: string
 }
 
@@ -36,6 +45,7 @@ interface StandaloneManifest {
     readonly sha256: string
     readonly executable: string
   }
+  readonly cli?: { readonly name: string; readonly version: string }
   readonly launchers: readonly string[]
   readonly executablePaths: readonly string[]
   readonly nativeModules: readonly string[]
@@ -43,9 +53,9 @@ interface StandaloneManifest {
 }
 
 /**
- * Verify both standalone archive formats and execute their bundled runtime.
+ * Verify the platform-owned standalone archive and execute its bundled runtime.
  * @param input - target and archive directory to verify.
- * @returns diagnostics; an empty array means both archives and launchers passed.
+ * @returns diagnostics; an empty array means the archive and launchers passed.
  */
 export async function verifyCliStandalone(
   input: CliStandaloneVerificationInput,
@@ -134,40 +144,36 @@ function restoreEnvironment(environment: ReadonlyMap<string, string | undefined>
 async function verifyCliStandaloneArchives(
   input: CliStandaloneVerificationInput,
 ): Promise<readonly string[]> {
-  const stem = `harness-cli-${input.version}-${input.platform}-${input.arch}`
-  const zipName = `${stem}.zip`
-  const tarName = `${stem}.tar.gz`
+  const stem = `harness-cli-${input.cliVersion}-${input.platform}-${input.arch}`
+  const target = standaloneCliUpdateTarget(input.platform, input.arch)
+  if (target === undefined) return ['standalone CLI: unsupported archive target']
+  const archiveName = `${stem}.${target.format}`
   const checksumName = `${stem}.sha256`
-  const zipPath = join(input.archiveDirectory, zipName)
-  const tarPath = join(input.archiveDirectory, tarName)
+  const archivePath = join(input.archiveDirectory, archiveName)
   const checksumPath = join(input.archiveDirectory, checksumName)
-  const [zipBytes, tarBytes, checksumText] = await Promise.all([
-    readFile(zipPath),
-    readFile(tarPath),
+  const [archiveBytes, checksumText] = await Promise.all([
+    readFile(archivePath),
     readFile(checksumPath, 'utf8'),
   ])
   const expectedChecksum = [
-    `${sha256(zipBytes)}  ${zipName}`,
-    `${sha256(tarBytes)}  ${tarName}`,
+    `${sha256(archiveBytes)}  ${archiveName}`,
     '',
   ].join('\n')
   if (checksumText !== expectedChecksum) return ['standalone CLI: checksum sidecar does not match archive bytes']
 
   const violations: string[] = []
-  for (const [format, archive] of [['zip', zipPath], ['tar.gz', tarPath]] as const) {
-    const extraction = await mkdtemp(join(tmpdir(), `harness-cli-verify-${format.replace('.', '-')}-`))
+  const extraction = await mkdtemp(join(tmpdir(), `harness-cli-verify-${target.format.replace('.', '-')}-`))
+  try {
+    if (target.format === 'zip') await extractZip(archivePath, extraction)
+    else await tar.x({ file: archivePath, cwd: extraction, strict: true })
+    violations.push(...await verifyExtracted(input, extraction, target.format))
+  } catch (error) {
+    violations.push(`standalone CLI: ${target.format} verification failed: ${errorMessage(error)}`)
+  } finally {
     try {
-      if (format === 'zip') await extractZip(archive, extraction)
-      else await tar.x({ file: archive, cwd: extraction, strict: true })
-      violations.push(...await verifyExtracted(input, extraction, format))
+      await removeTree(extraction)
     } catch (error) {
-      violations.push(`standalone CLI: ${format} verification failed: ${errorMessage(error)}`)
-    } finally {
-      try {
-        await removeTree(extraction)
-      } catch (error) {
-        violations.push(`standalone CLI: ${format} cleanup failed: ${errorMessage(error)}`)
-      }
+      violations.push(`standalone CLI: ${target.format} cleanup failed: ${errorMessage(error)}`)
     }
   }
   return violations
@@ -184,13 +190,21 @@ async function verifyExtracted(
   if (manifest.target.platform !== input.platform || manifest.target.arch !== input.arch) {
     violations.push(`standalone CLI: ${format} manifest target is ${manifest.target.platform}-${manifest.target.arch}`)
   }
-  if (manifest.node.version !== input.version) {
+  if (manifest.node.version !== input.nodeVersion) {
     violations.push(`standalone CLI: ${format} manifest Node version is ${manifest.node.version}`)
   }
 
   const actualDigests = await digestStandaloneTree(extraction, new Set(['manifest.json']))
   if (JSON.stringify(actualDigests) !== JSON.stringify(manifest.files)) {
     violations.push(`standalone CLI: ${format} digest map does not match extracted files`)
+  }
+  if (typeof manifest.cli?.version !== 'string') {
+    violations.push(`standalone CLI: ${format} manifest CLI version is missing or invalid`)
+  } else {
+    if (manifest.cli.version !== input.cliVersion) {
+      violations.push(`standalone CLI: ${format} manifest CLI version is ${manifest.cli.version}`)
+    }
+    violations.push(...await verifyStandaloneReleasePolicy(extraction, input, manifest.cli.version))
   }
   const executablePaths = validateExecutablePaths(manifest.executablePaths, actualDigests, format, violations)
   for (const path of [...manifest.launchers, manifest.node.executable]) {
@@ -213,12 +227,12 @@ async function verifyExtracted(
     )
   }
   for (const path of [
-    'cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/lib/bin.js',
-    'cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/runtime.cordis.yml',
-    'cli/package/node_modules/@harness-desktop/dsh-base/cordis.patch.yml',
-    'cli/package/node_modules/@harness-desktop/dsh-web-app/cordis.patch.yml',
-    'cli/package/node_modules/@harness-desktop/dsh-headless/cordis.patch.yml',
-    'cli/package/node_modules/@harness-desktop/dsh-workflow-worker-thread/lib/worker.cjs',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/lib/bin.js',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-host-local-runtime/runtime.cordis.yml',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-base/cordis.patch.yml',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-web-app/cordis.patch.yml',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-headless/cordis.patch.yml',
+    'payload/current/cli/package/node_modules/@harness-desktop/dsh-workflow-worker-thread/lib/worker.cjs',
   ]) {
     if (actualDigests[path] === undefined) violations.push(`standalone CLI: ${format} Runtime closure omits ${path}`)
   }
@@ -233,8 +247,8 @@ async function verifyExtracted(
       extendEnv: false,
       reject: false,
     })
-    if (version.exitCode !== 0 || version.stdout.trim() !== `v${input.version}`) {
-      violations.push(`standalone CLI: ${format} bundled Node did not report v${input.version}`)
+    if (version.exitCode !== 0 || version.stdout.trim() !== `v${input.nodeVersion}`) {
+      violations.push(`standalone CLI: ${format} bundled Node did not report v${input.nodeVersion}`)
     }
     const executablePath = await execa(nodeExecutable, [
       '--eval', 'process.stdout.write(process.execPath)',
@@ -300,6 +314,43 @@ async function verifyExtracted(
     } catch (error) {
       violations.push(`standalone CLI: ${format} isolated-home cleanup failed: ${errorMessage(error)}`)
     }
+  }
+  return violations
+}
+
+/**
+ * Verify that one extracted archive embeds candidate and current-version rollback endpoints for its exact target.
+ * @param extraction - extracted standalone archive root.
+ * @param input - host target selected by the verifier.
+ * @param currentVersion - CLI package version embedded in the archive.
+ * @returns stable policy diagnostics; empty means both endpoints are present in a valid public policy.
+ */
+export async function verifyStandaloneReleasePolicy(
+  extraction: string,
+  input: CliStandaloneVerificationInput,
+  currentVersion: string,
+): Promise<readonly string[]> {
+  const violations: string[] = []
+  let policy: ReturnType<typeof parseReleaseUpdateConfiguration>
+  try {
+    policy = parseReleaseUpdateConfiguration(
+      JSON.parse(await readFile(join(extraction, 'update-policy.json'), 'utf8')) as unknown,
+      productMetadata.appId,
+    )
+  } catch {
+    violations.push('standalone CLI: release update policy is missing or invalid')
+    return violations
+  }
+  const target = standaloneCliUpdateTarget(input.platform, input.arch)
+  if (target === undefined) {
+    violations.push('standalone CLI: release update policy has an unsupported archive platform')
+    return violations
+  }
+  if (releaseManifestEndpoint(policy, target) === undefined) {
+    violations.push('standalone CLI: release update policy omits this archive target')
+  }
+  if (releaseRollbackManifestEndpoint(policy, { ...target, currentVersion }) === undefined) {
+    violations.push('standalone CLI: release update policy omits this archive rollback target')
   }
   return violations
 }
@@ -517,9 +568,10 @@ function errorMessage(error: unknown): string {
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const archiveDirectory = resolve(root, process.env.DSH_CLI_STANDALONE_OUTPUT ?? 'dist/cli-standalone')
   const violations = await verifyCliStandalone({
-    platform: process.platform,
-    arch: process.arch,
-    version: process.env.DSH_NODE_RUNTIME_VERSION ?? defaultNodeVersion,
+    platform: (process.env.DSH_CLI_STANDALONE_PLATFORM as NodeJS.Platform | undefined) ?? process.platform,
+    arch: process.env.DSH_CLI_STANDALONE_ARCH ?? process.arch,
+    nodeVersion: process.env.DSH_NODE_RUNTIME_VERSION ?? defaultNodeVersion,
+    cliVersion: process.env.DSH_CLI_VERSION ?? cliPackageJson.version,
     archiveDirectory,
   })
   if (violations.length === 0) process.stdout.write('release:verify-cli-standalone: archives verified.\n')

@@ -38,23 +38,25 @@ The former public profile, plugin-management, headless-profile, patch, and confi
 | Installed form | Behavior |
 |---|---|
 | npm | Only a resolved `node_modules/@harness-desktop/cli` layout qualifies. The command prints `npm update -g @harness-desktop/cli` and exits successfully without running npm or loading a candidate. |
-| Standalone ZIP or tar.gz | A resolved entry at `cli/package/<entry>` under a standalone bundle root qualifies; `<entry>` need not be under a `lib` directory. A separately configured distribution may supply audited trust and one candidate source. |
+| Standalone archive | A resolved entry at `payload/current/cli/package/lib/<entry>` under the fixed launcher root qualifies. Windows releases use ZIP; macOS and Linux releases use tar.gz to preserve executable modes. Every release bundle embeds audited public trust, an exact candidate source, and a rollback source keyed to its current version. |
 | Source or another layout | The installation is unsupported; the command prints `CLI update failed.` to stderr and exits `1`. |
 
-Current standalone builds supply neither production trust nor a release source. With no configured public key or allowed origin, `update` returns `up-to-date` with code `unconfigured-trust-root`, prints `No update available.`, and exits `0` before candidate I/O or filesystem mutation. A verified candidate whose version is not newer produces the same visible result with code `version-not-newer`.
+The source tree does not supply production trust or a release source. A standalone bundle whose embedded public policy is absent or invalid reports `unconfigured-update-source`, performs no candidate I/O or filesystem mutation, and exits `1`. A verified candidate whose version is not newer prints `No update available.` and exits `0` with code `version-not-newer`.
 
-When a standalone distribution is separately configured, `update` uses the shared signed-manifest policy to select a newer stable CLI target for the current platform and architecture. It verifies the signature, configured exact HTTPS origin, archive digest, exact member set, and executable paths before publishing a random sibling candidate. The transaction retains the current bundle in another random sibling, then runs the candidate's bundled Node executable with `cli/package/lib/bin.js --help`; it never uses Node from `PATH`.
+With an embedded public policy, `update` uses the shared signed-manifest policy to select the newer stable archive for its host—ZIP on Windows and tar.gz on macOS and Linux—and verify a rollback manifest for the exact installed version, platform, and architecture. It verifies both manifests and the configured exact HTTPS origin, then downloads the candidate and checks its archive digest, exact member set, and executable paths before extracting a private `.harness-candidate-<uuid>` directory. The fixed launcher, its recovery entry, public policy, lock, and phase journal remain outside the replaceable `payload/current` tree. Before each payload rename, the updater synchronizes a private temporary journal file, atomically publishes it, and synchronizes its parent directory where the platform supports that operation. The current payload moves only to deterministic `payload/retained`; a later launcher conservatively restores it after any incomplete phase and rejects malformed, escaping, linked, or ambiguous recovery paths.
 
-A healthy candidate becomes the live bundle and the retained sibling is removed. A failed health check moves the candidate aside, restores the retained bundle, and reports `rolled-back` only after cleanup succeeds. A failed restore reports `transaction-failed` instead of claiming rollback. The transaction never reads, creates, or modifies `HARNESS_HOME`, and never creates a Runtime or Web lease.
+A healthy candidate becomes `payload/current`. The retained payload is removed only after successful cleanup; a cleanup failure leaves the candidate live, retains the deterministic rollback payload, and reports `applied-with-cleanup-failure`. A failed health check moves the candidate aside, restores the retained payload, and reports `rolled-back` only after cleanup succeeds. The candidate's bundled Node and `cli/package/lib/bin.js --help` process tree is the health lifecycle unit: success requires leader exit with no surviving descendants, while failure terminates and waits for the tree before rollback. On Windows, an external system PowerShell worker assumes the exact lock identity, waits for the update command to exit, performs the journaled payload switch, and applies the same captured-tree rule; `restart-scheduled` does not launch a new interactive CLI. A dead exact lock owner or bounded expiry permits validated recovery, while a malformed lock fails closed. A failed restore reports `transaction-failed` instead of claiming rollback. The transaction never reads, creates, or modifies `HARNESS_HOME`, and never creates a Runtime or Web lease.
 
 The current standalone settlements are:
 
 | Settlement | Visible output | Exit code |
 |---|---|---|
-| `up-to-date` (`unconfigured-trust-root` or `version-not-newer`) | `No update available.` on stdout | `0` |
+| `up-to-date` (`version-not-newer`) | `No update available.` on stdout | `0` |
 | `applied` | `CLI update applied.` on stdout | `0` |
+| `applied-with-cleanup-failure` | `CLI update applied, but cleanup failed.` on stderr | `1` |
+| `restart-scheduled` | `CLI update scheduled; it completes after this command exits.` on stdout | `0` |
 | `rolled-back` | `CLI update rolled back.` on stderr | `1` |
-| `failed` (`candidate-rejected`, `transaction-failed`, or `unsupported-installation`) | `CLI update failed.` on stderr | `1` |
+| `failed` (`candidate-rejected`, `transaction-failed`, `unconfigured-update-source`, or `unsupported-installation`) | `CLI update unavailable [unconfigured-update-source]. Install a current standalone release.` for an absent policy; otherwise `CLI update failed.` on stderr | `1` |
 
 The root [release artifact matrix](../../README.md#desktop-app) owns the packaged platform and native-CI evidence boundary. Passing local checks does not configure production update trust or authorize signing, notarization, publication, upload, or GitHub Release creation.
 

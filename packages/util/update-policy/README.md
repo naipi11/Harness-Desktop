@@ -2,15 +2,15 @@
 
 English | [中文](README.zh.md)
 
-`@harness-desktop/dsh-update-policy` verifies a decoded signed update manifest and selects one redacted artifact. It accepts only exact plain-object records, valid Ed25519 signatures, strict semantic versions, configured HTTPS origins, a supported consumer and target, lowercase SHA-256 digests, and safe archive member paths. Rejections return stable codes without returning a URL, signature, key identifier, or archive payload.
+`@harness-desktop/dsh-update-policy` verifies a decoded signed update manifest and selects one exact artifact for a source owner. It accepts only exact plain-object records, valid Ed25519 signatures, strict semantic versions, configured HTTPS origins, a supported consumer, platform, architecture, and format, lowercase SHA-256 digests, and safe archive member paths. Rejections return stable codes without the raw manifest, signature, key identifier, or archive payload.
 
-The package is a parser and policy only. It does not download artifacts, install software, restart an application, or provide a trust configuration. Consumers supply the application identity, installed version, selected channel, target, allowed origins, and public keys. `EMPTY_UPDATE_TRUST` is the shipped fail-closed default.
+The package parses and selects manifests, validates public release policies, and makes restricted HTTPS reads. It does not install software, restart an application, persist update state, or provide production trust. Consumers supply the application identity, installed version, selected channel, target, allowed origins, and public keys. `EMPTY_UPDATE_TRUST` is the library-level fail-closed empty configuration.
 
 ## Public API
 
-The package entry exports `UpdateChannel`, `SignedUpdateManifest`, `UpdateManifestPolicy`, `RedactedUpdateArtifact`, `verifySignedUpdateManifest`, `canonicalizeSignedUpdateManifest`, and `EMPTY_UPDATE_TRUST`.
+Core manifest exports include `UpdateChannel`, `SignedUpdateManifest`, `UpdateManifestPolicy`, `RedactedUpdateArtifact`, `VerifiedUpdateArtifact`, `verifySignedUpdateManifest`, `canonicalizeSignedUpdateManifest`, and `EMPTY_UPDATE_TRUST`; the release-policy and restricted-HTTPS exports appear below. `VerifiedUpdateArtifact` carries the manifest-authenticated HTTPS URL only to the immediate downloader; it is not a durable Runtime outcome or installer request.
 
-`verifySignedUpdateManifest()` canonicalizes artifacts and members before checking the detached signature. `desktop` accepts a universal macOS DMG, Windows NSIS, and Linux AppImage or Deb for a concrete architecture. `cli` accepts ZIP or tar.gz standalone archives. Consumer filtering happens before target ambiguity handling, so one installation cannot accept another consumer's artifact.
+`parseReleaseUpdateConfiguration()` validates schema version 3 of a public-only embedded policy. Its five-field candidate key identifies a channel, consumer, platform, architecture, and format; its six-field rollback key adds the exact installed semantic version. `nativeWorkerReadyTimeoutMs` bounds native worker preparation before Main hands off control, while `healthCheckTimeoutMs` bounds waiting for the old process and, after installation, candidate Dashboard health. `fetchAllowedUpdateJson()` / `fetchAllowedUpdateBytes()` enforce allowed HTTPS origins and byte limits. `verifySignedUpdateManifest()` canonicalizes artifacts and members before checking the detached signature. `desktop` accepts a universal macOS ZIP or DMG, Windows NSIS, and Linux AppImage or Deb for a concrete architecture. `cli` accepts ZIP or tar.gz archives. Consumer and exact-format filtering happen before target ambiguity handling, so one installation cannot accept another consumer's artifact.
 
 ## Model Experience
 

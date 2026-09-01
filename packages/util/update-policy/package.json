@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-update-policy",
   "description": "Fail-closed signed update manifest verification and artifact selection",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": { "access": "public" },
   "repository": {
     "type": "git",

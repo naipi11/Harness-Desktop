@@ -21,7 +21,17 @@ import { pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { unzipSync, zipSync, type ZipOptions, type Zippable } from 'fflate'
 import * as tar from 'tar'
+import {
+  parseReleaseUpdateConfiguration,
+  releaseManifestEndpoint,
+  releaseRollbackManifestEndpoint,
+  standaloneCliUpdateTarget,
+  type ReleaseUpdateConfiguration,
+  type StandaloneCliUpdateTarget,
+} from '@harness-desktop/dsh-update-policy'
+import { productMetadata } from '../../packages/boot/app-boot/src/product-metadata.ts'
 import checksumAllowlistJson from './node-runtime-checksums.json' with { type: 'json' }
+import cliPackageJson from '../../apps/cli/package.json' with { type: 'json' }
 
 const root = resolve(import.meta.dirname, '../..')
 const cliRoot = resolve(root, 'apps/cli')
@@ -101,7 +111,8 @@ export type NodeRuntimeChecksumAllowlist = Readonly<Record<string, Readonly<Part
 export interface CliStandaloneBuildInput {
   readonly platform: NodeJS.Platform
   readonly arch: string
-  readonly version: string
+  readonly nodeVersion: string
+  readonly cliVersion: string
   readonly nodeRuntimeRoot: string
   readonly outputDirectory: string
 }
@@ -110,6 +121,8 @@ export interface CliStandaloneBuildInput {
 export interface CliStandaloneBuildDependencies {
   readonly cliPackageRoot: string
   readonly checksumAllowlist: NodeRuntimeChecksumAllowlist
+  /** Validated public update policy copied into the standalone bundle root. */
+  readonly updatePolicy: ReleaseUpdateConfiguration
   extractNodeDistribution(archive: string, destination: string): Promise<void>
   validateCliClosure(packageRoot: string): Promise<void>
 }
@@ -123,6 +136,11 @@ interface StandaloneManifest {
   readonly executablePaths: readonly string[]
   readonly nativeModules: readonly string[]
   readonly files: Readonly<Record<string, string>>
+}
+
+interface CliPackageManifest {
+  readonly name: string
+  readonly version: string
 }
 
 /**
@@ -148,6 +166,7 @@ export async function buildCliStandalone(
     return await buildCliStandaloneWithDependencies(input, {
       cliPackageRoot: packageRoot,
       checksumAllowlist: checksumAllowlistJson,
+      updatePolicy: await readStandaloneUpdatePolicy(),
       extractNodeDistribution,
       validateCliClosure: verifyPackedCliClosure,
     })
@@ -166,9 +185,19 @@ export async function buildCliStandaloneWithDependencies(
   input: CliStandaloneBuildInput,
   dependencies: CliStandaloneBuildDependencies,
 ): Promise<readonly string[]> {
-  const runtime = dependencies.checksumAllowlist[input.version]?.[input.platform]?.[input.arch]
+  const target = standaloneCliUpdateTarget(input.platform, input.arch)
+  if (target === undefined) {
+    throw new Error(`standalone CLI: unsupported archive target ${input.platform}/${input.arch}`)
+  }
+  const cliManifest = await readCliPackageManifest(dependencies.cliPackageRoot)
+  if (cliManifest.version !== input.cliVersion) {
+    throw new Error(`standalone CLI: packed CLI version ${cliManifest.version} does not match requested ${input.cliVersion}`)
+  }
+  assertStandaloneUpdatePolicy(dependencies.updatePolicy, target, cliManifest.version)
+
+  const runtime = dependencies.checksumAllowlist[input.nodeVersion]?.[input.platform]?.[input.arch]
   if (runtime === undefined) {
-    throw new Error(`standalone CLI: no allowlisted Node runtime for ${input.version}/${input.platform}/${input.arch}`)
+    throw new Error(`standalone CLI: no allowlisted Node runtime for ${input.nodeVersion}/${input.platform}/${input.arch}`)
   }
   const runtimeArchive = join(input.nodeRuntimeRoot, runtime.filename)
   const runtimeBytes = await readFile(runtimeArchive).catch((error: unknown) => {
@@ -183,36 +212,35 @@ export async function buildCliStandaloneWithDependencies(
   const stageParent = await mkdtemp(join(tmpdir(), 'harness-cli-standalone-'))
   const stage = join(stageParent, 'stage')
   try {
-    await mkdir(join(stage, 'cli'), { recursive: true })
-    await cp(dependencies.cliPackageRoot, join(stage, 'cli', 'package'), { recursive: true })
-    await dependencies.extractNodeDistribution(runtimeArchive, join(stage, 'runtime'))
-    const nodeExecutable = input.platform === 'win32' ? 'runtime/node.exe' : 'runtime/bin/node'
+    const payload = join(stage, 'payload', 'current')
+    await mkdir(join(payload, 'cli'), { recursive: true })
+    await cp(dependencies.cliPackageRoot, join(payload, 'cli', 'package'), { recursive: true })
+    await dependencies.extractNodeDistribution(runtimeArchive, join(payload, 'runtime'))
+    await cp(join(payload, 'runtime'), join(stage, 'launcher-runtime'), { recursive: true })
+    await cp(join(dependencies.cliPackageRoot, 'lib', 'standalone-launcher.js'), join(stage, 'standalone-launcher.js'))
+    await writeFile(join(stage, 'update-policy.json'), `${JSON.stringify(dependencies.updatePolicy)}\n`, { mode: 0o644 })
+    const nodeExecutable = input.platform === 'win32' ? 'payload/current/runtime/node.exe' : 'payload/current/runtime/bin/node'
+    const launcherNodeExecutable = input.platform === 'win32' ? 'launcher-runtime/node.exe' : 'launcher-runtime/bin/node'
     if (!(await fileExists(join(stage, ...nodeExecutable.split('/'))))) {
       throw new Error(`standalone CLI: Node distribution ${runtime.filename} omitted ${nodeExecutable}`)
     }
-    await dependencies.validateCliClosure(join(stage, 'cli', 'package'))
+    await dependencies.validateCliClosure(join(payload, 'cli', 'package'))
     const launchers = await writeLaunchers(stage, input.platform)
     const epoch = sourceDateEpoch()
     await pruneOptionalForeignNativeModules(stage, input.platform, input.arch)
     const executablePaths = await collectExecutablePaths(stage, input.platform, input.arch, [
       ...launchers,
       nodeExecutable,
+      launcherNodeExecutable,
     ])
     const executablePathSet = new Set(executablePaths)
     await normalizeTree(stage, epoch, executablePathSet)
     const nativeModules = await verifyNativeModules(stage, input.platform, input.arch)
-    const cliManifest = JSON.parse(await readFile(join(stage, 'cli', 'package', 'package.json'), 'utf8')) as {
-      readonly name?: string
-      readonly version?: string
-    }
-    if (typeof cliManifest.name !== 'string' || typeof cliManifest.version !== 'string') {
-      throw new Error('standalone CLI: packed CLI package.json omits name or version')
-    }
     const fileDigests = await digestTree(stage)
     const manifest: StandaloneManifest = {
       version: 2,
       target: { platform: input.platform, arch: input.arch },
-      node: { version: input.version, ...runtime, executable: nodeExecutable },
+      node: { version: input.nodeVersion, ...runtime, executable: nodeExecutable },
       cli: { name: cliManifest.name, version: cliManifest.version },
       launchers,
       executablePaths,
@@ -223,35 +251,78 @@ export async function buildCliStandaloneWithDependencies(
     await normalizeTree(stage, epoch, executablePathSet)
 
     await mkdir(input.outputDirectory, { recursive: true })
-    const stem = `harness-cli-${input.version}-${input.platform}-${input.arch}`
-    const zipName = `${stem}.zip`
-    const tarName = `${stem}.tar.gz`
+    const stem = `harness-cli-${input.cliVersion}-${input.platform}-${input.arch}`
+    const archiveName = `${stem}.${target.format}`
     const checksumName = `${stem}.sha256`
-    const zipPath = join(input.outputDirectory, zipName)
-    const tarPath = join(input.outputDirectory, tarName)
-    await writeDeterministicZip(stage, zipPath, epoch, executablePathSet)
-    await tar.c({
-      cwd: stage,
-      file: tarPath,
-      gzip: true,
-      filter(path, entry) {
-        const mutable = entry as { mode: number }
-        mutable.mode = (mutable.mode & ~0o777) | (executablePathSet.has(path.replaceAll('\\', '/')) ? 0o755 : 0o644)
-        return true
-      },
-      mtime: epoch,
-      portable: true,
-      strict: true,
-    }, await listTree(stage))
+    const archivePath = join(input.outputDirectory, archiveName)
+    if (target.format === 'zip') {
+      await writeDeterministicZip(stage, archivePath, epoch, executablePathSet)
+    } else {
+      await tar.c({
+        cwd: stage,
+        file: archivePath,
+        gzip: true,
+        filter(path, entry) {
+          const mutable = entry as { mode: number }
+          mutable.mode = (mutable.mode & ~0o777) | (executablePathSet.has(path.replaceAll('\\', '/')) ? 0o755 : 0o644)
+          return true
+        },
+        mtime: epoch,
+        portable: true,
+        strict: true,
+      }, await listTree(stage))
+    }
     const checksum = [
-      `${sha256(await readFile(zipPath))}  ${zipName}`,
-      `${sha256(await readFile(tarPath))}  ${tarName}`,
+      `${sha256(await readFile(archivePath))}  ${archiveName}`,
       '',
     ].join('\n')
     await writeFile(join(input.outputDirectory, checksumName), checksum)
-    return [zipName, tarName, checksumName]
+    return [archiveName, checksumName]
   } finally {
     await rm(stageParent, { recursive: true, force: true })
+  }
+}
+
+async function readCliPackageManifest(packageRoot: string): Promise<CliPackageManifest> {
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as {
+    readonly name?: unknown
+    readonly version?: unknown
+  }
+  if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') {
+    throw new Error('standalone CLI: packed CLI package.json omits name or version')
+  }
+  return { name: manifest.name, version: manifest.version }
+}
+
+function assertStandaloneUpdatePolicy(
+  policy: ReleaseUpdateConfiguration,
+  target: StandaloneCliUpdateTarget,
+  currentVersion: string,
+): void {
+  if (releaseManifestEndpoint(policy, target) === undefined) {
+    throw new Error('standalone CLI: update policy omits the configured candidate endpoint')
+  }
+  if (releaseRollbackManifestEndpoint(policy, { ...target, currentVersion }) === undefined) {
+    throw new Error('standalone CLI: update policy omits the configured rollback endpoint')
+  }
+}
+
+/**
+ * Load the public release policy selected for one standalone build.
+ * @returns a parsed, public-key-only policy that can safely enter the archive.
+ * @throws when the release build did not explicitly supply a valid public policy file.
+ */
+async function readStandaloneUpdatePolicy(): Promise<ReleaseUpdateConfiguration> {
+  const path = process.env.DSH_UPDATE_POLICY
+  if (path === undefined || path === '') {
+    throw new Error('standalone CLI: DSH_UPDATE_POLICY must name a valid public update policy file')
+  }
+  let input: unknown
+  try { input = JSON.parse(await readFile(resolve(path), 'utf8')) as unknown } catch (error) {
+    throw new Error('standalone CLI: update policy file is unavailable or invalid JSON', { cause: error })
+  }
+  try { return parseReleaseUpdateConfiguration(input, productMetadata.appId) } catch (error) {
+    throw new Error('standalone CLI: update policy file is invalid', { cause: error })
   }
 }
 
@@ -281,14 +352,14 @@ async function writeLaunchers(stage: string, platform: NodeJS.Platform): Promise
     'set -eu',
     'case "$0" in */*) root=${0%/*} ;; *) root=. ;; esac',
     'root=$(CDPATH= cd -- "$root" && pwd)',
-    `exec "$root/runtime/bin/node" "$root/cli/package/lib/${entry}" "$@"`,
+    `exec "$root/launcher-runtime/bin/node" "$root/standalone-launcher.js" ${entry} "$@"`,
     '',
   ].join('\n')
   await writeFile(join(stage, 'harness'), sh('bin.js'))
   await writeFile(join(stage, 'dsh'), sh('dsh-bin.js'))
   const cmd = (entry: 'bin.js' | 'dsh-bin.js'): string => [
     '@echo off',
-    `"%~dp0runtime\\node.exe" "%~dp0cli\\package\\lib\\${entry}" %*`,
+    `"%~dp0launcher-runtime\\node.exe" "%~dp0standalone-launcher.js" ${entry} %*`,
     '',
   ].join('\r\n')
   await writeFile(join(stage, 'harness.cmd'), cmd('bin.js'))
@@ -580,9 +651,9 @@ async function resolveExactSourcePackage(name: string, version: string): Promise
 function requiredPackageExecutables(platform: NodeJS.Platform, arch: string): readonly string[] {
   const target = `${platform}-${arch}`
   return [
-    `cli/package/node_modules/@vscode/ripgrep-${target}/bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`,
+    `payload/current/cli/package/node_modules/@vscode/ripgrep-${target}/bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`,
     ...(platform === 'darwin'
-      ? [`cli/package/node_modules/node-pty/prebuilds/${target}/spawn-helper`]
+      ? [`payload/current/cli/package/node_modules/node-pty/prebuilds/${target}/spawn-helper`]
       : []),
   ]
 }
@@ -713,12 +784,14 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(p
   if (nodeRuntimeRoot === undefined || nodeRuntimeRoot === '') {
     throw new Error('standalone CLI: DSH_NODE_RUNTIME_ROOT must name the local allowlisted Node distribution directory')
   }
-  const version = process.env.DSH_NODE_RUNTIME_VERSION ?? defaultNodeVersion
+  const nodeVersion = process.env.DSH_NODE_RUNTIME_VERSION ?? defaultNodeVersion
+  const cliVersion = process.env.DSH_CLI_VERSION ?? cliPackageJson.version
   const outputDirectory = resolve(root, process.env.DSH_CLI_STANDALONE_OUTPUT ?? 'dist/cli-standalone')
   const outputs = await buildCliStandalone({
-    platform: process.platform,
-    arch: process.arch,
-    version,
+    platform: (process.env.DSH_CLI_STANDALONE_PLATFORM as NodeJS.Platform | undefined) ?? process.platform,
+    arch: process.env.DSH_CLI_STANDALONE_ARCH ?? process.arch,
+    nodeVersion,
+    cliVersion,
     nodeRuntimeRoot,
     outputDirectory,
   })

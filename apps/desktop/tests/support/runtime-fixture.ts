@@ -136,7 +136,15 @@ export interface DesktopRuntimeFixture {
   readonly responses: DesktopResponseCapture[]
   readonly rendererErrors: string[]
   readonly desktopOutput: () => string
-  close(options?: { readonly preserveRuntimeRoot?: boolean }): Promise<void>
+  /**
+   * Release the original Desktop and its Runtime fixture.
+   * `forceRuntimeShutdown` is reserved for native-update acceptance after an external watchdog
+   * intentionally terminates a replacement Desktop.
+   */
+  close(options?: {
+    readonly preserveRuntimeRoot?: boolean
+    readonly forceRuntimeShutdown?: boolean
+  }): Promise<void>
 }
 
 /** Desktop launched while another live process owns its selected Runtime home. */
@@ -161,6 +169,8 @@ export interface DesktopExecutableLaunch {
   readonly executablePath: string
   readonly cwd: string
   readonly args?: readonly string[]
+  /** Additional process variables that cannot replace the fixture's isolated Runtime roots. */
+  readonly environment?: Readonly<Record<string, string>>
 }
 
 /**
@@ -175,6 +185,7 @@ export async function launchDesktopExecutableRuntimeFixture(
     executablePath: launch.executablePath,
     cwd: launch.cwd,
     args: [...(launch.args ?? []), '--lang=en-US'],
+    ...(launch.environment === undefined ? {} : { environment: launch.environment }),
   })
 }
 
@@ -205,6 +216,7 @@ async function launchDesktopRuntimeFixtureWith(
     readonly cleanup?: () => Promise<void>
     readonly cwd?: string
     readonly executablePath?: string
+    readonly environment?: Readonly<Record<string, string>>
   },
 ): Promise<DesktopRuntimeFixture> {
   const runtime = await startCanonicalRuntimeProcess()
@@ -217,6 +229,7 @@ async function launchDesktopRuntimeFixtureWith(
       args: [...launch.args],
       env: {
         ...process.env,
+        ...launch.environment,
         HARNESS_HOME: runtime.harnessHome,
         HOME: runtime.platformHome,
         USERPROFILE: runtime.platformHome,
@@ -258,9 +271,13 @@ async function launchDesktopRuntimeFixtureWith(
       async close(options = {}) {
         const failures: unknown[] = []
         await application?.close().catch((error: unknown) => failures.push(error))
-        await releaseRuntime(runtime).catch((error: unknown) => failures.push(error))
-        if (options.preserveRuntimeRoot !== true) {
+        if (options.forceRuntimeShutdown === true) {
           await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+        } else {
+          await releaseRuntime(runtime).catch((error: unknown) => failures.push(error))
+          if (options.preserveRuntimeRoot !== true) {
+            await cleanupRuntimeProcess(runtime).catch((error: unknown) => failures.push(error))
+          }
         }
         if (launch.cleanup !== undefined) await launch.cleanup().catch((error: unknown) => failures.push(error))
         if (failures.length === 1) throw failures[0]

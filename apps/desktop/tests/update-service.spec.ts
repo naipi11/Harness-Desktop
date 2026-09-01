@@ -13,12 +13,15 @@ interface RuntimeFixture {
   readonly outcomes: unknown[]
 }
 
-function runtimeFixture(): RuntimeFixture {
+function runtimeFixture(
+  lastOutcome?: Awaited<ReturnType<DesktopUpdateRuntime['getDesktopUpdateLastOutcome']>>,
+): RuntimeFixture {
   const outcomes: unknown[] = []
   return {
     outcomes,
     runtime: {
       getDesktopUpdateChannel: async () => 'stable',
+      getDesktopUpdateLastOutcome: async () => lastOutcome,
       recordDesktopUpdateOutcome: async (outcome) => { outcomes.push(outcome) },
     },
   }
@@ -40,7 +43,7 @@ describe('DesktopUpdateService', () => {
         adapter: fixture.adapter,
       })
 
-      await expect(service.checkAndStage()).resolves.toEqual({ kind: 'up-to-date', code: 'unconfigured-trust-root' })
+      await expect(service.checkAndStage()).resolves.toEqual({ kind: 'failed', code: 'unconfigured-update-source', channel: 'stable' })
       expect(fixture.calls).toEqual({ load: 0, download: 0, inspect: 0, stage: 0, launch: 0, restore: 0, cleanup: 0 })
     } finally {
       await fixture.close()
@@ -58,6 +61,71 @@ describe('DesktopUpdateService', () => {
       })
       await expect(readFile(fixture.retainedVersion, 'utf8')).resolves.toBe('1.0.0')
       expect(fixture.calls).toMatchObject({ load: 1, download: 1, inspect: 1, stage: 1, launch: 0 })
+      expect(outcomes).toEqual([{ version: '1.1.0', channel: 'stable', kind: 'staged', code: 'staged' }])
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('does not restage the exact candidate already rolled back from this installed version', async () => {
+    const fixture = await createDesktopUpdateFixture()
+    const { runtime, outcomes } = runtimeFixture({
+      version: '1.1.0', channel: 'stable', kind: 'rolled-back', code: 'health-check-failed', lastKnownGoodVersion: '1.0.0',
+    })
+    try {
+      const service = serviceFor(fixture.trust, fixture, runtime)
+
+      await expect(service.checkAndStage()).resolves.toEqual({ kind: 'up-to-date', code: 'no-staged-candidate' })
+      expect(fixture.calls).toEqual({ load: 1, download: 0, inspect: 0, stage: 0, launch: 0, restore: 0, cleanup: 0 })
+      expect(outcomes).toEqual([])
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('records an authenticated current-version manifest as up to date without staging', async () => {
+    const fixture = await createDesktopUpdateFixture('ready', { candidateVersion: '1.0.0' })
+    const { runtime, outcomes } = runtimeFixture()
+    try {
+      const service = serviceFor(fixture.trust, fixture, runtime)
+
+      await expect(service.checkAndStage()).resolves.toEqual({ kind: 'up-to-date', code: 'no-staged-candidate' })
+      expect(fixture.calls).toEqual({ load: 1, download: 0, inspect: 0, stage: 0, launch: 0, restore: 0, cleanup: 0 })
+      expect(outcomes).toEqual([{ version: '1.0.0', channel: 'stable', kind: 'up-to-date', code: 'up-to-date' }])
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('does not authorize a previously rolled-back candidate when its Runtime outcome cannot be read', async () => {
+    const fixture = await createDesktopUpdateFixture()
+    const { runtime, outcomes } = runtimeFixture()
+    const unavailableRuntime: DesktopUpdateRuntime = {
+      ...runtime,
+      getDesktopUpdateLastOutcome: async () => { throw new Error('Runtime settings unavailable') },
+    }
+    try {
+      const service = serviceFor(fixture.trust, fixture, unavailableRuntime)
+
+      await expect(service.checkAndStage()).resolves.toEqual({ kind: 'up-to-date', code: 'no-staged-candidate' })
+      expect(fixture.calls).toEqual({ load: 1, download: 0, inspect: 0, stage: 0, launch: 0, restore: 0, cleanup: 0 })
+      expect(outcomes).toEqual([])
+    } finally {
+      await fixture.close()
+    }
+  })
+
+  it('keeps a different candidate eligible after a recorded rollback', async () => {
+    const fixture = await createDesktopUpdateFixture()
+    const { runtime, outcomes } = runtimeFixture({
+      version: '1.2.0', channel: 'stable', kind: 'rolled-back', code: 'health-check-failed', lastKnownGoodVersion: '1.0.0',
+    })
+    try {
+      const service = serviceFor(fixture.trust, fixture, runtime)
+
+      await expect(service.checkAndStage()).resolves.toEqual({
+        kind: 'staged', code: 'candidate-staged', version: '1.1.0', channel: 'stable',
+      })
       expect(outcomes).toEqual([{ version: '1.1.0', channel: 'stable', kind: 'staged', code: 'staged' }])
     } finally {
       await fixture.close()

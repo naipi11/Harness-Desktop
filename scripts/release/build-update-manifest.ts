@@ -16,7 +16,7 @@ import {
   type UpdatePlatform,
 } from '@harness-desktop/dsh-update-policy'
 import { productMetadata } from '../../packages/boot/app-boot/src/product-metadata.ts'
-import { inspectUpdateArtifact } from './verify-update-manifests.ts'
+import { inspectStandaloneCliMemberCatalog, inspectUpdateArtifact } from './verify-update-manifests.ts'
 
 /** One local artifact selected for exactly one channel and target format. */
 export interface UpdateManifestArtifactInput {
@@ -131,6 +131,10 @@ export async function inventoryUpdateArtifacts(
   const artifacts: UpdateManifestArtifactInventory[] = []
   for (const artifactInput of [...input.artifacts].sort(compareArtifactInputs)) {
     const inspected = await inspectArtifact(artifactInput.artifactPath, artifactInput.format)
+    const compactMembers = artifactInput.consumer === 'cli'
+      ? await inspectStandaloneCliMemberCatalog(inspected.bytes, artifactInput.format)
+      : undefined
+    const members = compactMembers ?? inspected.members
     artifacts.push(Object.freeze({
       channel: artifactInput.channel,
       consumer: artifactInput.consumer,
@@ -139,7 +143,7 @@ export async function inventoryUpdateArtifacts(
       format: artifactInput.format,
       url: artifactInput.url,
       sha256: createHash('sha256').update(inspected.bytes).digest('hex'),
-      members: Object.freeze([...inspected.members].sort(compareText)),
+      members: Object.freeze([...members].sort(compareText)),
     }))
   }
   const inventory: UpdateManifestInventory = Object.freeze({
@@ -196,6 +200,7 @@ export function buildUpdateManifests(
       consumer: artifact.consumer,
       platform: artifact.platform,
       arch: runtimeArchitecture(artifact.arch),
+      format: artifact.format,
       allowedOrigins: [allowedOrigin],
       publicKeys: { [inventory.keyId]: publicKey },
     })
@@ -376,6 +381,7 @@ function assertInventoryAccepted(inventory: UpdateManifestInventory): void {
       consumer: artifact.consumer,
       platform: artifact.platform,
       arch: runtimeArchitecture(artifact.arch),
+      format: artifact.format,
       allowedOrigins: [artifactOrigin(artifact.url)],
       publicKeys: { [inventory.keyId]: publicKey },
     })

@@ -72,6 +72,7 @@ function policy(fixture: GeneratedFixture, overrides: Partial<UpdateManifestPoli
     consumer: 'desktop',
     platform: targetPlatform,
     arch: targetArchitecture,
+    format: targetFormat,
     allowedOrigins: [fixture.origin],
     publicKeys: { [fixture.keyId]: publicKey },
     ...overrides,
@@ -126,13 +127,21 @@ describe('signed update manifest policy', () => {
     ])
   })
 
-  it('accepts one newer signed artifact without exposing generated URL or signature values', () => {
+  it('accepts one newer signed artifact and retains its authenticated URL only for the downloader', () => {
     const fixture = generatedFixture()
     const result = verifySignedUpdateManifest(signedManifest(fixture), policy(fixture))
 
     expect(result).toMatchObject({ kind: 'accepted', artifact: { version: '1.1.0', channel: 'stable', sha256: 'a'.repeat(64) } })
-    expect(JSON.stringify(result)).not.toContain(fixture.origin)
+    expect(result).toMatchObject({ kind: 'accepted', artifact: { url: expect.stringContaining(fixture.origin) as unknown } })
     expect(JSON.stringify(result)).not.toContain(fixture.keyId)
+  })
+
+  it('accepts only the exact installed version for an explicit retained rollback lookup', () => {
+    const fixture = generatedFixture()
+
+    expect(verifySignedUpdateManifest(signedManifest(fixture, 'stable', currentVersion), policy(fixture, { versionMode: 'current' })))
+      .toMatchObject({ kind: 'accepted', artifact: { version: currentVersion } })
+    expectRejected(signedManifest(fixture, 'stable', '1.1.0'), policy(fixture, { versionMode: 'current' }), 'version-not-newer')
   })
 
   it.each(['stable', 'beta', 'nightly'] as const)('accepts a valid %s manifest only for the selected channel', (channel) => {
@@ -149,7 +158,7 @@ describe('signed update manifest policy', () => {
       platform: 'darwin', arch: 'universal', format: 'dmg',
     })])
 
-    expect(verifySignedUpdateManifest(manifest, policy(fixture, { platform: 'darwin', arch: 'arm64' }))).toMatchObject({
+    expect(verifySignedUpdateManifest(manifest, policy(fixture, { platform: 'darwin', arch: 'arm64', format: 'dmg' }))).toMatchObject({
       kind: 'accepted', artifact: { platform: 'darwin', arch: 'universal', format: 'dmg' },
     })
   })
@@ -161,7 +170,7 @@ describe('signed update manifest policy', () => {
       artifact(fixture, { platform: 'darwin', arch: 'arm64', format: 'dmg' }),
     ])
 
-    expectRejected(manifest, policy(fixture, { platform: 'darwin', arch: 'arm64' }), 'artifact-ambiguous')
+    expectRejected(manifest, policy(fixture, { platform: 'darwin', arch: 'arm64', format: 'dmg' }), 'artifact-ambiguous')
   })
 
   it('selects the requested consumer before target ambiguity handling', () => {
@@ -174,7 +183,7 @@ describe('signed update manifest policy', () => {
     expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'desktop' }))).toMatchObject({
       kind: 'accepted', artifact: { consumer: 'desktop', format: targetFormat },
     })
-    expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'cli' }))).toMatchObject({
+    expect(verifySignedUpdateManifest(manifest, policy(fixture, { consumer: 'cli', format: cliFormat }))).toMatchObject({
       kind: 'accepted', artifact: { consumer: 'cli', format: cliFormat },
     })
   })

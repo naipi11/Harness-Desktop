@@ -10,6 +10,7 @@ import {
   type RedactedUpdateArtifact,
   type UpdateManifestPolicy,
   type UpdateTrust,
+  type VerifiedUpdateArtifact,
 } from '@harness-desktop/dsh-update-policy'
 import { isDesktopReadyAcknowledgement } from '../readiness.ts'
 import type { StageAdapter, StagedDesktopCandidate } from './staged-install.ts'
@@ -18,19 +19,22 @@ import type { StageAdapter, StagedDesktopCandidate } from './staged-install.ts'
 export interface DesktopUpdateRuntime {
   /** @returns the Runtime-owned selected Desktop update channel. */
   getDesktopUpdateChannel(): Promise<DesktopUpdateChannel>
+  /** @returns the last redacted native update outcome, if the Runtime has committed one. */
+  getDesktopUpdateLastOutcome(): Promise<DesktopUpdateOutcome | undefined>
   /** @param outcome - one Runtime-compatible redacted updater outcome. @returns settlement after durable recording. */
   recordDesktopUpdateOutcome(outcome: DesktopUpdateOutcome): Promise<void>
 }
 
 /** Stable redacted result returned by the Desktop-local update transaction. */
 export type DesktopUpdateResult =
-  | { readonly kind: 'up-to-date'; readonly code: 'unconfigured-trust-root' | 'no-staged-candidate' }
+  | { readonly kind: 'up-to-date'; readonly code: 'no-staged-candidate' }
   | { readonly kind: 'staged'; readonly code: 'candidate-staged'; readonly version: string; readonly channel: DesktopUpdateChannel }
+  | { readonly kind: 'restart-scheduled'; readonly code: 'native-install-scheduled'; readonly version: string; readonly channel: DesktopUpdateChannel }
   | { readonly kind: 'applied'; readonly code: 'candidate-applied'; readonly version: string; readonly channel: DesktopUpdateChannel }
   | { readonly kind: 'rolled-back'; readonly code: 'desktop-health-check-failed'; readonly version: string; readonly channel: DesktopUpdateChannel }
   | {
     readonly kind: 'failed'
-    readonly code: 'candidate-manifest-rejected' | 'candidate-download-failed' | 'candidate-bytes-rejected'
+    readonly code: 'unconfigured-update-source' | 'candidate-manifest-rejected' | 'candidate-download-failed' | 'candidate-bytes-rejected'
       | 'candidate-members-rejected' | 'candidate-staging-failed' | 'candidate-restore-failed'
     readonly version?: string
     readonly channel?: DesktopUpdateChannel
@@ -50,8 +54,8 @@ export interface DesktopUpdateServiceOptions {
   readonly trust: UpdateTrust
   /** Runtime preference and outcome owner when an update source is configured. */
   readonly runtime?: DesktopUpdateRuntime
-  /** Decodes one externally supplied manifest only after trust is configured. */
-  readonly loadManifest?: () => Promise<unknown>
+  /** Decodes one configured manifest only after trust and the Runtime channel are available. */
+  readonly loadManifest?: (channel: DesktopUpdateChannel, signal?: AbortSignal) => Promise<unknown>
   /** Platform transaction owner. */
   readonly adapter: StageAdapter
 }
@@ -72,15 +76,20 @@ export class DesktopUpdateService {
    * Verifies, downloads, and stages one candidate without launching it.
    * @returns a stable redacted staging result.
    */
-  checkAndStage(): Promise<DesktopUpdateResult> {
+  checkAndStage(signal?: AbortSignal): Promise<DesktopUpdateResult> {
     return this.serialize(async () => {
+      signal?.throwIfAborted()
       this.staged = undefined
-      return await this.checkAndStageTransaction()
+      return await this.checkAndStageTransaction(signal)
     })
   }
 
-  private async checkAndStageTransaction(): Promise<DesktopUpdateResult> {
-    if (trustIsEmpty(this.options.trust)) return { kind: 'up-to-date', code: 'unconfigured-trust-root' }
+  private async checkAndStageTransaction(signal?: AbortSignal): Promise<DesktopUpdateResult> {
+    if (trustIsEmpty(this.options.trust)) {
+      const channel = await this.options.runtime?.getDesktopUpdateChannel().catch(() => undefined)
+      if (channel !== undefined) await this.record(this.options.runtime, failureOutcome(this.options.currentVersion, channel, 'unconfigured-update-source'))
+      return { kind: 'failed', code: 'unconfigured-update-source', ...(channel === undefined ? {} : { channel }) }
+    }
     const runtime = this.options.runtime
     const loadManifest = this.options.loadManifest
     if (runtime === undefined || loadManifest === undefined) return { kind: 'failed', code: 'candidate-manifest-rejected' }
@@ -92,28 +101,60 @@ export class DesktopUpdateService {
     }
     let verification: ReturnType<typeof verifySignedUpdateManifest>
     try {
-      verification = verifySignedUpdateManifest(await loadManifest(), this.policy(channel))
+      verification = verifySignedUpdateManifest(await loadManifest(channel, signal), this.policy(channel))
     } catch {
       await this.record(runtime, failureOutcome(this.options.currentVersion, channel, 'manifest-rejected'))
       return { kind: 'failed', code: 'candidate-manifest-rejected', channel }
     }
     if (verification.kind === 'rejected') {
+      if (verification.code === 'version-not-newer') {
+        await this.record(runtime, {
+          version: this.options.currentVersion,
+          channel,
+          kind: 'up-to-date',
+          code: 'up-to-date',
+        })
+        return { kind: 'up-to-date', code: 'no-staged-candidate' }
+      }
       await this.record(runtime, failureOutcome(this.options.currentVersion, channel, 'manifest-rejected'))
       return { kind: 'failed', code: 'candidate-manifest-rejected', channel }
     }
-    return await this.stageVerified(verification.artifact, channel, runtime)
+    if (await this.wasRolledBackCandidate(runtime, verification.artifact)) {
+      return { kind: 'up-to-date', code: 'no-staged-candidate' }
+    }
+    return await this.stageVerified(verification.artifact, channel, runtime, signal)
+  }
+
+  /** Refuse the exact candidate that the Runtime already recorded as a health-check rollback from this installed release. */
+  private async wasRolledBackCandidate(
+    runtime: DesktopUpdateRuntime,
+    artifact: VerifiedUpdateArtifact,
+  ): Promise<boolean> {
+    let outcome: DesktopUpdateOutcome | undefined
+    try {
+      outcome = await runtime.getDesktopUpdateLastOutcome()
+    } catch {
+      // A transient Runtime read cannot safely authorize a candidate that may already have required rollback.
+      return true
+    }
+    return outcome?.kind === 'rolled-back'
+      && outcome.code === 'health-check-failed'
+      && outcome.version === artifact.version
+      && outcome.channel === artifact.channel
+      && outcome.lastKnownGoodVersion === this.options.currentVersion
   }
 
   /**
    * Switches one staged candidate, accepting it only after the existing exact Dashboard acknowledgement.
    * @returns an applied result or a completed rollback result.
    */
-  applyStagedUpdate(): Promise<DesktopUpdateResult> {
+  applyStagedUpdate(signal?: AbortSignal): Promise<DesktopUpdateResult> {
     if (this.applying !== undefined) return this.applying
     const flight = this.serialize(async () => {
       const candidate = this.staged
       if (candidate === undefined) return { kind: 'up-to-date', code: 'no-staged-candidate' } as const
       this.staged = undefined
+      signal?.throwIfAborted()
       return await this.applyCandidate(candidate)
     }).finally(() => {
       if (this.applying === flight) this.applying = undefined
@@ -123,6 +164,14 @@ export class DesktopUpdateService {
   }
 
   private async applyCandidate(candidate: StagedDesktopCandidate): Promise<DesktopUpdateResult> {
+    if (this.options.adapter.scheduleInstall !== undefined) {
+      try {
+        await this.options.adapter.scheduleInstall(candidate)
+        return result('restart-scheduled', candidate.artifact)
+      } catch {
+        return await this.restoreAfterStagingFailure(candidate, this.options.runtime)
+      }
+    }
     try {
       const acknowledgement = await this.options.adapter.launchCandidate(candidate)
       if (!isDesktopReadyAcknowledgement(acknowledgement)) throw new Error('Desktop candidate did not acknowledge readiness.')
@@ -149,18 +198,20 @@ export class DesktopUpdateService {
       consumer: 'desktop',
       platform: this.options.platform,
       arch: this.options.arch,
+      format: desktopUpdateFormat(this.options.platform),
       ...this.options.trust,
     }
   }
 
   private async stageVerified(
-    artifact: RedactedUpdateArtifact,
+    artifact: VerifiedUpdateArtifact,
     channel: DesktopUpdateChannel,
     runtime: DesktopUpdateRuntime,
+    signal?: AbortSignal,
   ): Promise<DesktopUpdateResult> {
     let bytes: Uint8Array
     try {
-      bytes = await this.options.adapter.download(artifact)
+      bytes = await this.options.adapter.download(artifact, signal)
     } catch {
       await this.record(runtime, failureOutcome(artifact.version, channel, 'artifact-rejected'))
       return { kind: 'failed', code: 'candidate-download-failed', version: artifact.version, channel }
@@ -182,6 +233,7 @@ export class DesktopUpdateService {
     }
     const candidate: StagedDesktopCandidate = { artifact, bytes }
     try {
+      signal?.throwIfAborted()
       await this.options.adapter.stage(candidate)
       this.staged = candidate
     } catch {
@@ -211,7 +263,7 @@ export class DesktopUpdateService {
 
   private async restoreAfterStagingFailure(
     candidate: StagedDesktopCandidate,
-    runtime: DesktopUpdateRuntime,
+    runtime: DesktopUpdateRuntime | undefined,
   ): Promise<DesktopUpdateResult> {
     try {
       await this.options.adapter.restoreRetained(candidate)
@@ -237,6 +289,12 @@ export class DesktopUpdateService {
   }
 }
 
+function desktopUpdateFormat(platform: NodeJS.Platform): 'nsis' | 'zip' | 'appimage' {
+  if (platform === 'win32') return 'nsis'
+  if (platform === 'darwin') return 'zip'
+  return 'appimage'
+}
+
 function trustIsEmpty(trust: UpdateTrust): boolean {
   return trust.allowedOrigins.length === 0 || Object.keys(trust.publicKeys).length === 0
 }
@@ -251,16 +309,17 @@ function sameMembers(actual: readonly string[], declared: readonly string[]): bo
 function failureOutcome(
   version: string,
   channel: DesktopUpdateChannel,
-  code: 'manifest-rejected' | 'artifact-rejected' | 'install-failed',
+  code: 'unconfigured-update-source' | 'manifest-rejected' | 'artifact-rejected' | 'install-failed',
 ): DesktopUpdateOutcome {
   return { version, channel, kind: 'failed', code }
 }
 
 function result(
-  kind: 'staged' | 'applied' | 'rolled-back',
+  kind: 'staged' | 'restart-scheduled' | 'applied' | 'rolled-back',
   artifact: RedactedUpdateArtifact,
 ): DesktopUpdateResult {
   if (kind === 'staged') return { kind, code: 'candidate-staged', version: artifact.version, channel: artifact.channel }
+  if (kind === 'restart-scheduled') return { kind, code: 'native-install-scheduled', version: artifact.version, channel: artifact.channel }
   if (kind === 'applied') return { kind, code: 'candidate-applied', version: artifact.version, channel: artifact.channel }
   return { kind, code: 'desktop-health-check-failed', version: artifact.version, channel: artifact.channel }
 }

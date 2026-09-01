@@ -13,7 +13,9 @@ import {
 import {
   RuntimeDashboardController,
   type DesktopDashboardWindow,
+  type DesktopStartupResult,
 } from '../src/main/runtime-dashboard.ts'
+import { completeDesktopDashboardStartup } from '../src/main/dashboard-startup.ts'
 
 const navigation: DashboardNavigation = {
   origin: 'http://127.0.0.1:43123' as DashboardNavigation['origin'],
@@ -49,6 +51,7 @@ function runtimeClient(overrides: Partial<RuntimeClient>): RuntimeClient {
     declineLegacyMigration: forbidden,
     retryLegacyMigration: forbidden,
     getDesktopUpdateChannel: forbidden,
+    getDesktopUpdateLastOutcome: forbidden,
     setDesktopUpdateChannel: forbidden,
     recordDesktopUpdateOutcome: forbidden,
     observeActiveWork: forbidden,
@@ -279,5 +282,170 @@ describe('RuntimeDashboardController', () => {
     await expect(controller.close()).resolves.toBeUndefined()
     expect(closeAttachment).toHaveBeenCalledOnce()
     expect(closeClient).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Desktop Dashboard startup settlement', () => {
+  it('settles native health and admits the automatic update after a recovery retry loads the Dashboard', async () => {
+    const outcomes: string[] = []
+    let nativeJournalPhase: 'dashboard-health-checking' | 'applied' = 'dashboard-health-checking'
+    let automaticUpdateStarts = 0
+    const firstFailure = new Error('first Dashboard load failed')
+    const client = runtimeClient({
+      attachDashboard: vi.fn()
+        .mockResolvedValueOnce(attachment())
+        .mockResolvedValueOnce(attachment()),
+      recordDesktopUpdateOutcome: async (outcome) => { outcomes.push(outcome.kind) },
+      close: async () => {},
+    })
+    const transport: BrowserHandoffTransport = {
+      open: vi.fn()
+        .mockRejectedValueOnce(firstFailure)
+        .mockResolvedValueOnce(undefined),
+    }
+    const controller = new RuntimeDashboardController(client, transport)
+    const window = new FakeWindow()
+    await expect(controller.open(window)).resolves.toMatchObject({ kind: 'recovery' })
+
+    const result = await completeDesktopDashboardStartup(client, () => controller.retryAfterUserAction(window), {
+      publish: async value => value,
+      settleNativeHealth: async (runtime) => {
+        nativeJournalPhase = 'applied'
+        await runtime.recordDesktopUpdateOutcome({
+          version: '1.1.0',
+          channel: 'stable',
+          kind: 'applied',
+          code: 'applied',
+          lastKnownGoodVersion: '1.1.0',
+        })
+        return true
+      },
+      mayCheckAutomaticUpdate: () => nativeJournalPhase === 'applied',
+      scheduleAutomaticUpdate: () => { automaticUpdateStarts += 1 },
+    })
+
+    expect(result).toEqual({ kind: 'dashboard-loaded' })
+    expect(nativeJournalPhase).toBe('applied')
+    expect(outcomes).toEqual(['applied'])
+    expect(automaticUpdateStarts).toBe(1)
+  })
+
+  it('shares native settlement and automatic update admission across concurrent retry callers', async () => {
+    const client = runtimeClient({ close: async () => {} })
+    let nativeSettlements = 0
+    let automaticUpdateStarts = 0
+    const lifecycle = {
+      publish: async (value: DesktopStartupResult) => value,
+      settleNativeHealth: async () => {
+        nativeSettlements += 1
+        await Promise.resolve()
+        return true
+      },
+      mayCheckAutomaticUpdate: () => true,
+      scheduleAutomaticUpdate: () => { automaticUpdateStarts += 1 },
+    }
+
+    await Promise.all([
+      completeDesktopDashboardStartup(client, async () => ({ kind: 'dashboard-loaded' }), lifecycle),
+      completeDesktopDashboardStartup(client, async () => ({ kind: 'dashboard-loaded' }), lifecycle),
+    ])
+
+    expect(nativeSettlements).toBe(1)
+    expect(automaticUpdateStarts).toBe(1)
+  })
+
+  it('does not let an unfinished initial recovery suppress a user retry', async () => {
+    const client = runtimeClient({ close: async () => {} })
+    let releaseInitial!: (result: DesktopStartupResult) => void
+    const initialLoad = new Promise<DesktopStartupResult>((resolve) => { releaseInitial = resolve })
+    let retryLoads = 0
+    let nativeSettlements = 0
+    const lifecycle = {
+      publish: async (value: DesktopStartupResult) => value,
+      settleNativeHealth: async () => {
+        nativeSettlements += 1
+        return true
+      },
+      mayCheckAutomaticUpdate: () => true,
+      scheduleAutomaticUpdate: () => {},
+    }
+
+    const initial = completeDesktopDashboardStartup(client, async () => await initialLoad, lifecycle)
+    await Promise.resolve()
+    const retry = completeDesktopDashboardStartup(client, async () => {
+      retryLoads += 1
+      return { kind: 'dashboard-loaded' }
+    }, lifecycle)
+    releaseInitial({ kind: 'recovery', diagnostic: normalizeRecoveryDiagnostic(new Error('initial load failed')) })
+
+    await expect(initial).resolves.toMatchObject({ kind: 'recovery' })
+    await expect(retry).resolves.toEqual({ kind: 'dashboard-loaded' })
+    expect(retryLoads).toBe(1)
+    expect(nativeSettlements).toBe(1)
+  })
+
+  it('keeps native health pending when the retry observes a closed window', async () => {
+    let nativeSettlements = 0
+    let automaticUpdateStarts = 0
+    const client = runtimeClient({
+      attachDashboard: async () => attachment(),
+      close: async () => {},
+    })
+    const controller = new RuntimeDashboardController(client, { open: async () => {} })
+    const window = new FakeWindow()
+    await controller.open(window)
+    await window.closeWindow()
+
+    const result = await completeDesktopDashboardStartup(client, () => controller.retryAfterUserAction(window), {
+      publish: async value => value,
+      settleNativeHealth: async () => {
+        nativeSettlements += 1
+        return true
+      },
+      mayCheckAutomaticUpdate: () => true,
+      scheduleAutomaticUpdate: () => { automaticUpdateStarts += 1 },
+    })
+
+    expect(result).toMatchObject({ kind: 'recovery' })
+    expect(nativeSettlements).toBe(0)
+    expect(automaticUpdateStarts).toBe(0)
+  })
+
+  it('keeps the Runtime client open until retry startup settlement completes', async () => {
+    const order: string[] = []
+    let releaseNativeSettlement!: () => void
+    const nativeSettlement = new Promise<void>((resolve) => { releaseNativeSettlement = resolve })
+    const client = runtimeClient({
+      attachDashboard: async () => attachment(async () => { order.push('attachment') }),
+      close: async () => { order.push('client') },
+    })
+    const controller = new RuntimeDashboardController(client, { open: async () => {} })
+    const window = new FakeWindow()
+    await controller.open(window)
+
+    const settlement = controller.ownStartupSettlement(completeDesktopDashboardStartup(
+      client,
+      () => controller.retryAfterUserAction(window),
+      {
+        publish: async value => value,
+        settleNativeHealth: async () => {
+          order.push('native-start')
+          await nativeSettlement
+          order.push('native-end')
+          return true
+        },
+        mayCheckAutomaticUpdate: () => false,
+        scheduleAutomaticUpdate: () => {},
+      },
+    ))
+    await vi.waitFor(() => { expect(order).toContain('native-start') })
+    const close = controller.close()
+    await Promise.resolve()
+    expect(order).toEqual(['attachment', 'native-start'])
+
+    releaseNativeSettlement()
+    await Promise.all([settlement, close])
+
+    expect(order).toEqual(['attachment', 'native-start', 'native-end', 'attachment', 'client'])
   })
 })

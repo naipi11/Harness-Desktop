@@ -18,6 +18,8 @@ export type FixtureLaunchResult = 'ready' | 'missing' | 'malformed' | 'failed'
 
 /** Isolated failure behavior for one fixture-owned retention attempt. */
 export interface DesktopUpdateFixtureOptions {
+  /** Signed candidate version; callers may set the installed version to exercise an authenticated no-update result. */
+  readonly candidateVersion?: string
   /** Fail after the retained copy is complete but before it replaces the retained root. */
   readonly failRetain?: boolean
   /** Fail the retained-root publish after the selected staging attempt displaces its prior root. */
@@ -62,7 +64,8 @@ export async function createDesktopUpdateFixture(
   const retainedVersion = join(retainedRoot, 'version')
   const harnessSentinel = join(harnessHome, 'sentinel')
   const member = `${randomUUID()}/desktop`
-  const archive = Buffer.from(JSON.stringify({ members: { [member]: '1.1.0' } } satisfies FixtureArchive), 'utf8')
+  const candidateVersion = options.candidateVersion ?? '1.1.0'
+  const archive = Buffer.from(JSON.stringify({ members: { [member]: candidateVersion } } satisfies FixtureArchive), 'utf8')
   const digest = createHash('sha256').update(archive).digest('hex')
   const identifier = randomUUID().replaceAll('-', '')
   const origin = new URL(`https://${identifier}.invalid`).origin
@@ -73,7 +76,7 @@ export async function createDesktopUpdateFixture(
     schemaVersion: 1 as const,
     applicationId: `application-${identifier}`,
     channel: 'stable' as const,
-    version: '1.1.0',
+    version: candidateVersion,
     artifacts: [{
       consumer: 'desktop' as const,
       platform: platform(),
@@ -223,8 +226,8 @@ function architecture(): 'x64' | 'arm64' | 'universal' {
   throw new Error('fixture architecture is unsupported')
 }
 
-function format(): 'nsis' | 'dmg' | 'appimage' {
-  return process.platform === 'win32' ? 'nsis' : process.platform === 'darwin' ? 'dmg' : 'appimage'
+function format(): 'nsis' | 'zip' | 'appimage' {
+  return process.platform === 'win32' ? 'nsis' : process.platform === 'darwin' ? 'zip' : 'appimage'
 }
 
 /** Atomically publishes a prepared sibling while restoring the displaced target if publication fails. */

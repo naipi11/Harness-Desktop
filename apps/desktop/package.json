@@ -1,6 +1,6 @@
 {
   "name": "@harness-desktop/dsh-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -8,16 +8,17 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "prepackage": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure",
+    "prepackage": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure && pnpm --dir ../.. run prepare:desktop-native",
     "package": "electron-builder --config electron-builder.config.mjs --publish never",
-    "prepackage:dir": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure",
+    "prepackage:dir": "pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure && pnpm --dir ../.. run prepare:desktop-native",
     "package:dir": "electron-builder --dir --config electron-builder.config.mjs --publish never",
     "test": "vitest run --root ../.. apps/desktop/tests",
-    "test:update": "vitest run --root ../.. apps/desktop/tests/update-service.spec.ts apps/desktop/tests/update-manifest.spec.ts",
+    "test:update": "vitest run --root ../.. apps/desktop/tests/update-service.spec.ts apps/desktop/tests/update-manifest.spec.ts apps/desktop/tests/native-install.spec.ts apps/desktop/tests/native-transition-gate.spec.ts apps/desktop/tests/native-rollback.spec.ts apps/desktop/tests/native-rollback-launcher.spec.ts apps/desktop/tests/release-update-source.spec.ts apps/desktop/tests/self-installation.spec.ts apps/desktop/tests/windows-native-rollback-worker.spec.ts apps/desktop/tests/windows-native-update-supervisor.spec.ts",
     "test:e2e": "playwright test --grep-invert unpacked",
     "test:e2e:cross-client": "playwright test --config playwright.config.ts tests/cross-client-runtime.e2e.ts",
     "test:e2e:unpacked": "pnpm run build && pnpm run package:dir && playwright test --config playwright.config.ts tests/desktop-dashboard.e2e.ts --grep unpacked",
-    "test:e2e:installed": "playwright test --config playwright.config.ts tests/installed-artifacts.e2e.ts"
+    "test:e2e:installed": "playwright test --config playwright.config.ts tests/installed-artifacts.e2e.ts",
+    "test:e2e:native-update": "playwright test --config playwright.config.ts tests/installed-native-update-rollback.e2e.ts"
   },
   "dependencies": {
     "@harness-desktop/cordis": "workspace:^",

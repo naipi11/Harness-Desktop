@@ -60,6 +60,20 @@ export interface InstalledDesktopArtifact extends InstalledArtifactLifecycle<Des
   verifyGeneratedIcon(): Promise<void>
 }
 
+/** One isolated Windows NSIS installation retained for an actual native update and rollback test. */
+export interface NativeUpdateWindowsInstallation {
+  /** Exact installed application executable that the detached worker must replace and relaunch. */
+  readonly executablePath: string
+  /** Installed app.asar whose version transitions prove candidate replacement and rollback. */
+  readonly appAsarPath: string
+  /** Packaged policy resource used only by the temporary local update source. */
+  readonly updatePolicyPath: string
+  /** Launch the installed stable application against one isolated Runtime fixture. */
+  launch(environment: Readonly<Record<string, string>>): Promise<DesktopRuntimeFixture>
+  /** Remove the isolated NSIS installation and every preparation root after the test settles. */
+  cleanup(): Promise<void>
+}
+
 interface PreparedArtifact {
   readonly name: string
   readonly executable: string
@@ -82,6 +96,35 @@ export async function prepareInstalledDesktopArtifacts(
 ): Promise<readonly InstalledDesktopArtifact[]> {
   const prepared = await prepareNativeArtifacts(input)
   return prepared.map(subject => wrapPreparedArtifact(subject))
+}
+
+/**
+ * Install one explicitly supplied Windows NSIS artifact into a test-owned root for a native update transaction.
+ * @param installer - test-specific NSIS installer whose application id is isolated from ordinary user installations.
+ * @returns paths and cleanup ownership for the real installed executable.
+ */
+export async function prepareNativeUpdateWindowsInstallation(installer: string): Promise<NativeUpdateWindowsInstallation> {
+  if (process.platform !== 'win32') throw new Error('native Desktop update acceptance requires Windows')
+  const subject = await prepareWindowsInstaller(installer)
+  return {
+    executablePath: subject.executable,
+    appAsarPath: subject.asar,
+    updatePolicyPath: join(dirname(subject.asar), 'update-policy.json'),
+    async launch(environment) {
+      return await launchDesktopExecutableRuntimeFixture({
+        executablePath: subject.executable,
+        cwd: subject.cwd,
+        environment,
+      })
+    },
+    async cleanup() {
+      const failures: unknown[] = []
+      await subject.remove().catch((error: unknown) => { failures.push(error) })
+      await removeTree(subject.cwd).catch((error: unknown) => { failures.push(error) })
+      if (failures.length === 1) throw failures[0]
+      if (failures.length > 1) throw new AggregateError(failures, 'native Desktop update Windows installation cleanup failed')
+    },
+  }
 }
 
 async function prepareNativeArtifacts(input: InstalledArtifactInput): Promise<readonly PreparedArtifact[]> {
@@ -166,6 +209,11 @@ async function prepareWindows(releaseDirectory: string): Promise<PreparedArtifac
     /^Harness Desktop Setup \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.exe$/u,
     'Windows NSIS installer',
   )
+  return await prepareWindowsInstaller(installer)
+}
+
+async function prepareWindowsInstaller(installer: string): Promise<PreparedArtifact> {
+  await requireFile(installer, 'Windows NSIS installer')
   const root = await mkdtemp(join(tmpdir(), 'harness-desktop-installed-win32-'))
   const installation = join(root, 'Harness Desktop')
   let installerAttempted = false

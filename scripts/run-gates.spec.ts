@@ -62,7 +62,6 @@ describe('gate graph validation', () => {
     'ci-lint-contracts-ready',
     'ci-coverage',
     'ci-snapshot',
-    'ci-artifacts',
     'ci-consumers',
     'ci-windows-blocking',
     'ci-windows-complete',
@@ -87,9 +86,12 @@ describe('gate graph validation', () => {
       'build',
       'desktop-package',
       'desktop-artifacts',
+      'desktop-updater',
       'packed-cli',
       'standalone-build',
       'standalone-verify',
+      'update-manifests',
+      'cli-updater',
       'installed-desktop',
     ])
     expect(subject.find(item => item.id === 'desktop-package')).toMatchObject({
@@ -100,7 +102,7 @@ describe('gate graph validation', () => {
     expect(subject.find(item => item.id === 'packed-cli')?.env).toEqual({
       DSH_REQUIRE_BUILT_CLI_SMOKE: '1',
     })
-    expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['standalone-verify'])
+    expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['cli-updater'])
   })
 
   it('keeps the public repository link policy in the documentation gate', () => {
@@ -262,7 +264,7 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 11,
+      workers: 12,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -276,6 +278,7 @@ describe('Node 24 lane ownership', () => {
       'desktop-cross-client',
       'doc-typecheck',
       'node-next-types',
+      'artifact-test',
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
@@ -313,15 +316,6 @@ describe('Node 24 lane ownership', () => {
     })
   })
 
-  it('runs the artifact-only Vitest inventory after the artifact build', () => {
-    const subject = withPnpmEntrypoint(() => gatesForMode('ci-artifacts'))
-
-    expect(subject.find(item => item.id === 'artifact-test')).toMatchObject({
-      displayCommand: 'pnpm run test:artifact:built',
-      args: ['/private/pnpm.cjs', 'run', 'test:artifact:built'],
-      needs: ['build'],
-    })
-  })
 })
 
 describe('Linux primary graph', () => {

@@ -56,6 +56,9 @@ export type UpdateArtifactSnapshotInspector = (
   format: UpdateArtifactFormat,
 ) => Promise<readonly string[]>
 
+/** Signed member declaration used when a standalone archive carries its own authenticated full catalog. */
+export const standaloneCliMemberCatalogDeclaration = Object.freeze(['manifest.json'] as const)
+
 /** Options for one fixed inspection tool rather than a candidate executable. */
 export interface UpdateArtifactInspectionCommandOptions {
   readonly cwd?: string
@@ -118,6 +121,61 @@ export async function inspectUpdateArtifactSnapshot(
 }
 
 /**
+ * Validate the standalone archive's embedded full member catalog and return its compact signed declaration.
+ * The outer signed artifact digest authenticates the complete archive bytes; `manifest.json` then enumerates
+ * every other file, avoiding an unbounded release-manifest member array.
+ */
+export async function inspectStandaloneCliMemberCatalog(
+  snapshot: Buffer,
+  format: UpdateArtifactFormat,
+): Promise<readonly string[] | undefined> {
+  if (format === 'zip') {
+    const entries = unzipSync(snapshot)
+    return validateStandaloneCatalog(entries['manifest.json'], Object.keys(entries).filter(path => !path.endsWith('/')))
+  }
+  if (format !== 'tar.gz') throw new Error('standalone CLI member catalog requires ZIP or tar.gz')
+  const directory = await mkdtemp(join(tmpdir(), 'harness-standalone-catalog-'))
+  const path = join(directory, 'artifact.tar.gz')
+  try {
+    await writeFile(path, snapshot, { flag: 'wx', mode: 0o600 })
+    const members: string[] = []
+    const manifestChunks: Buffer[] = []
+    await tar.t({
+      file: path,
+      strict: true,
+      onReadEntry(entry) {
+        if (entry.type !== 'File') throw new Error(`standalone CLI catalog rejects ${entry.type} member`)
+        members.push(entry.path)
+        if (entry.path === 'manifest.json') entry.on('data', (chunk) => { manifestChunks.push(Buffer.from(chunk)) })
+        else entry.resume()
+      },
+    })
+    return validateStandaloneCatalog(Buffer.concat(manifestChunks), members)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+function validateStandaloneCatalog(manifestBytes: Uint8Array | undefined, actualMembers: readonly string[]): readonly string[] | undefined {
+  if (manifestBytes === undefined) return undefined
+  if (actualMembers.some(member => !isSafeMember(member))) {
+    throw new Error('standalone CLI archive manifest has unsafe member')
+  }
+  let manifest: unknown
+  try { manifest = JSON.parse(Buffer.from(manifestBytes).toString('utf8')) as unknown } catch {
+    return undefined
+  }
+  if (!isRecord(manifest) || manifest.version !== 2 || !isRecord(manifest.files)
+    || Object.values(manifest.files).some(value => typeof value !== 'string' || !/^[0-9a-f]{64}$/u.test(value))) {
+    return undefined
+  }
+  const catalog = [...Object.keys(manifest.files), 'manifest.json'].sort(compareText)
+  const actual = [...actualMembers].sort(compareText)
+  if (!sameMembers(actual, catalog)) throw new Error('standalone CLI archive manifest does not enumerate every member')
+  return standaloneCliMemberCatalogDeclaration
+}
+
+/**
  * Verify every manifest with the shared update-policy parser and its named local artifact.
  * @param input - expected targets, rollback version, and caller-supplied public-key file.
  * @param inspectSnapshot - inspector for bytes already matched to the signed digest.
@@ -161,6 +219,7 @@ export async function verifyUpdateManifests(
       consumer: target.consumer,
       platform: target.platform,
       arch: runtimeArchitecture(target.arch),
+      format: target.format,
       allowedOrigins: target.allowedOrigins,
       publicKeys: { [input.keyId]: publicKeyPem },
     })
@@ -192,7 +251,10 @@ export async function verifyUpdateManifests(
     }
     let members: readonly string[]
     try {
-      members = uniqueSortedMembers(await inspectSnapshot(snapshot, target.format))
+      const compact = target.consumer === 'cli' && usesStandaloneCatalog(artifact.members)
+        ? await inspectStandaloneCliMemberCatalog(snapshot, target.format)
+        : undefined
+      members = compact ?? uniqueSortedMembers(await inspectSnapshot(snapshot, target.format))
     } catch (error) {
       violations.push(`update manifest ${label}: local artifact inspection failed: ${errorMessage(error)}`)
       continue
@@ -202,6 +264,10 @@ export async function verifyUpdateManifests(
     }
   }
   return violations
+}
+
+function usesStandaloneCatalog(members: readonly string[]): boolean {
+  return members.length === 1 && members[0] === 'manifest.json'
 }
 
 function duplicateTargetDiagnostics(
@@ -359,6 +425,9 @@ function parse7ZipMembers(listing: string): string[] {
     if (!inEntries) continue
     const entry = record.replace(/^-{10,}\r?$/mu, '').trim()
     if (entry === '') continue
+    // NSIS executables carry an expected overlay after the embedded 7z payload;
+    // 7z emits this terminal summary after all file records.
+    if (/^Warnings: \d+$/u.test(entry)) break
     const path = /^Path = (.+)$/mu.exec(entry)?.[1]
     const attributes = /^Attributes = (.+)$/mu.exec(entry)?.[1] ?? ''
     const folder = /^Folder = (.+)$/mu.exec(entry)?.[1]
@@ -375,7 +444,12 @@ function parse7ZipMembers(listing: string): string[] {
   return members
 }
 
-function appImageFilesystemSnapshot(snapshot: Buffer): Buffer {
+/**
+ * Return the bounded SquashFS payload from a type-2 AppImage snapshot.
+ * @param snapshot - immutable candidate AppImage bytes.
+ * @returns the exact filesystem slice for a fixed archive reader.
+ */
+export function appImageFilesystemSnapshot(snapshot: Buffer): Buffer {
   if (snapshot.length < 64 || !snapshot.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
     || snapshot[8] !== 0x41 || snapshot[9] !== 0x49 || snapshot[10] !== 0x02) {
     throw new Error('AppImage artifact is not a type-2 ELF image')
@@ -440,6 +514,11 @@ function uniqueSortedMembers(members: readonly string[]): readonly string[] {
 function sameMembers(actual: readonly string[], expected: readonly string[]): boolean {
   const right = [...expected].sort(compareText)
   return actual.length === right.length && actual.every((member, index) => member === right[index])
+}
+
+function isSafeMember(path: string): boolean {
+  return !path.startsWith('/') && !path.includes('\\') && !path.includes(':')
+    && path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
 }
 
 function hasExactExpectedArtifact(manifest: unknown, target: UpdateManifestVerificationTarget): boolean {

@@ -106,6 +106,10 @@ class ControlledErrorOutput extends EventEmitter {
     this.callback?.(error)
     queueMicrotask(() => { this.emit('error', error) })
   }
+
+  succeed(): void {
+    this.callback?.()
+  }
 }
 
 class FakeWindow implements DashboardReadyWindow {
@@ -323,6 +327,31 @@ describe('Desktop Dashboard readiness', () => {
     expect(output.listenerCount('error')).toBe(0)
   })
 
+  it('keeps a shared acknowledgement write for a later waiter after the first waiter aborts', async () => {
+    const output = new ControlledErrorOutput()
+    const readiness = new DesktopReadiness(output)
+    const first = readyWindow()
+    const firstAbort = new AbortController()
+    const firstReady = readiness.wait(first, ORIGIN, firstAbort.signal)
+
+    first.webContents.emit('did-finish-load')
+    await Promise.resolve()
+    expect(output.listenerCount('error')).toBe(1)
+    firstAbort.abort(new Error('startup entered recovery'))
+    await expect(firstReady).rejects.toThrow('startup entered recovery')
+
+    const second = readyWindow()
+    const secondReady = readiness.wait(second, ORIGIN)
+    second.webContents.emit('did-finish-load')
+    await Promise.resolve()
+    output.succeed()
+
+    await expect(secondReady).resolves.toBeUndefined()
+    await settleOutputEvents()
+    expect(output.writes).toEqual(['{"kind":"desktop-dashboard-ready","version":1}\n'])
+    expect(output.listenerCount('error')).toBe(0)
+  })
+
   it('survives a real disconnected stdout pipe after callback before output error', async () => {
     const result = await runDisconnectedAcknowledgementProcess()
 
@@ -358,7 +387,7 @@ function outputError(code: string): Error & { readonly code: string } {
 }
 
 async function settleOutputEvents(): Promise<void> {
-  await new Promise<void>((resolve) => { setImmediate(() => { setImmediate(resolve) }) })
+  await new Promise<void>((resolve) => { setImmediate(() => { setImmediate(() => { setImmediate(resolve) }) }) })
 }
 
 async function runDisconnectedAcknowledgementProcess(): Promise<{ readonly exitCode: number | null; readonly stderr: string }> {

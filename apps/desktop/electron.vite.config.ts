@@ -17,7 +17,10 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: 'src/main/index.ts',
+        input: {
+          index: 'src/main/index.ts',
+          'native-rollback-worker': 'src/main/update/native-rollback-worker.ts',
+        },
       },
     },
   },

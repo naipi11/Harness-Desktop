@@ -19,7 +19,6 @@ export type Mode =
   | 'ci-lint-contracts-ready'
   | 'ci-coverage'
   | 'ci-snapshot'
-  | 'ci-artifacts'
   | 'ci-consumers'
   | 'ci-windows-blocking'
   | 'ci-windows-complete'
@@ -105,7 +104,6 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-lint-contracts-ready':
     case 'ci-coverage':
     case 'ci-snapshot':
-    case 'ci-artifacts':
     case 'ci-consumers':
     case 'ci-windows-blocking':
     case 'ci-windows-complete':
@@ -117,7 +115,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | release-smoke | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | release-smoke | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -208,8 +206,6 @@ export function gatesForMode(selected: Mode): Gate[] {
       return coverageGates()
     case 'ci-snapshot':
       return [pnpmScript('build', 'build'), snapshotGate()]
-    case 'ci-artifacts':
-      return ciArtifactGates()
     case 'ci-consumers':
       return ciConsumerGates()
     case 'ci-windows-blocking':
@@ -393,26 +389,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
   ]
 }
 
-function ciArtifactGates(): Gate[] {
-  return [
-    pnpmScript('build', 'build'),
-    pnpmScript('artifact-test', 'test:artifact:built', {
-      label: 'artifact-only tests',
-      needs: ['build'],
-    }),
-    pnpmScript('desktop-release-config', 'verify:desktop-release-config', {
-      label: 'desktop release config',
-    }),
-    pnpmScript('publint', 'publint', { needs: ['build'] }),
-    pnpmScript('node-next-types', 'verify-node-next-types', {
-      label: 'node-next types',
-      needs: ['build'],
-    }),
-    builtPackageInvariantsGate(['build']),
-    builtBinSmokeGate(),
-  ]
-}
-
 function releaseSmokeGates(): Gate[] {
   return [
     pnpmScript('generate-icons', 'generate:icons'),
@@ -460,6 +436,10 @@ function ciConsumerGates(): Gate[] {
     }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
+      needs: validatedBuild,
+    }),
+    pnpmScript('artifact-test', 'test:artifact:built', {
+      label: 'artifact-only tests',
       needs: validatedBuild,
     }),
     builtBinSmokeGate(validatedBuild),

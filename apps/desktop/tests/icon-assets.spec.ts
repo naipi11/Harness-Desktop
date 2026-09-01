@@ -7,6 +7,7 @@ interface BuilderIconConfig {
   readonly win: { readonly icon: string }
   readonly mac: { readonly icon: string }
   readonly linux: { readonly icon: string }
+  readonly nsis: { readonly include: string }
 }
 
 const windowsIcon = fileURLToPath(
@@ -18,6 +19,7 @@ const macIcon = fileURLToPath(
 const linuxIcon = fileURLToPath(
   new URL('../resources/icons/linux/harness-desktop-512.png', import.meta.url),
 )
+const nsisInclude = fileURLToPath(new URL('../build/installer.nsh', import.meta.url))
 const desktopManifest = JSON.parse(
   readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
 ) as { scripts: Record<string, string> }
@@ -39,8 +41,21 @@ it('configures Electron Builder to package the generated native icons', () => {
   expect(builderConfig.linux.icon).toBe('resources/icons/linux/harness-desktop-512.png')
 })
 
+it('removes a predecessor update policy when the new NSIS package explicitly omits one', () => {
+  expect(builderConfig.nsis.include).toBe('build/installer.nsh')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('!macro customInstall')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('FileOpen $0 "$INSTDIR\\resources\\update-policy-state" r')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('FileRead $0 $1 7')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('StrCmpS $1 "present" 0 policy_state_close')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('FileReadByte $0 $2')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('IntCmp $2 10 policy_state_eof policy_state_close policy_state_close')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('Delete "$INSTDIR\\resources\\update-policy.json"')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('Delete "$INSTDIR\\resources\\update-policy-state"')
+  expect(readFileSync(nsisInclude, 'utf8')).toContain('Abort "Harness Desktop update policy state could not be retired"')
+})
+
 it('verifies generated icons before each Desktop packaging command', () => {
-  const checks = 'pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure'
+  const checks = 'pnpm --dir ../.. run verify:icons && pnpm --dir ../.. run verify:desktop-runtime-closure && pnpm --dir ../.. run prepare:desktop-native'
   expect(desktopManifest.scripts.prepackage).toBe(checks)
   expect(desktopManifest.scripts['prepackage:dir']).toBe(checks)
 })

@@ -32,6 +32,7 @@ export class RuntimeDashboardController {
   private retryFlight: Promise<DesktopStartupResult> | undefined
   private closeFlight: Promise<void> | undefined
   private readonly attachmentCloses = new WeakMap<DashboardAttachment, Promise<void>>()
+  private readonly startupSettlements = new Set<Promise<unknown>>()
   private readonly closedWindows = new WeakSet<DesktopDashboardWindow>()
   private readonly observedWindows = new WeakSet<DesktopDashboardWindow>()
 
@@ -76,6 +77,18 @@ export class RuntimeDashboardController {
       this.retryFlight = undefined
     })
     return this.retryFlight
+  }
+
+  /**
+   * Retain a Main-owned startup settlement so close cannot release the Runtime client before it finishes.
+   * @param settlement - complete post-load native health, outcome persistence, and update-admission flight.
+   * @returns the unchanged settlement promise.
+   */
+  ownStartupSettlement<Result>(settlement: Promise<Result>): Promise<Result> {
+    this.startupSettlements.add(settlement)
+    const release = (): void => { this.startupSettlements.delete(settlement) }
+    void settlement.then(release, release)
+    return settlement
   }
 
   /** Release attachments before the Runtime client, sharing in-flight calls and retrying rejected releases. */
@@ -174,9 +187,12 @@ export class RuntimeDashboardController {
   }
 
   private async closeOwnedResources(): Promise<void> {
-    await Promise.allSettled([this.startupFlight, this.retryFlight].filter(
-      (flight): flight is Promise<DesktopStartupResult> => flight !== undefined,
-    ))
+    await Promise.allSettled([
+      ...[this.startupFlight, this.retryFlight].filter(
+        (flight): flight is Promise<DesktopStartupResult> => flight !== undefined,
+      ),
+      ...this.startupSettlements,
+    ])
     try {
       await this.closeCurrentAttachment()
       await this.client.close()

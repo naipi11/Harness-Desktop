@@ -133,6 +133,10 @@ class FakeRuntimeClient implements RuntimeClient {
     return Promise.reject(new Error('Desktop update controls are outside terminal client scope'))
   }
 
+  getDesktopUpdateLastOutcome(): ReturnType<RuntimeClient['getDesktopUpdateLastOutcome']> {
+    return Promise.reject(new Error('Desktop update controls are outside terminal client scope'))
+  }
+
   setDesktopUpdateChannel(
     _channel: Parameters<RuntimeClient['setDesktopUpdateChannel']>[0],
   ): ReturnType<RuntimeClient['setDesktopUpdateChannel']> {

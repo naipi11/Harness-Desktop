@@ -14,6 +14,7 @@ describe('Desktop Main update policy consumer', () => {
       consumer: 'desktop',
       platform: process.platform,
       arch: process.arch,
+      format: process.platform === 'win32' ? 'nsis' : process.platform === 'darwin' ? 'zip' : 'appimage',
       ...EMPTY_UPDATE_TRUST,
     }
 

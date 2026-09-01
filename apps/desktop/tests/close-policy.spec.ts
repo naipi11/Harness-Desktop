@@ -40,6 +40,7 @@ function runtimeClient(overrides: Partial<RuntimeClient>): RuntimeClient {
     declineLegacyMigration: forbidden,
     retryLegacyMigration: forbidden,
     getDesktopUpdateChannel: forbidden,
+    getDesktopUpdateLastOutcome: forbidden,
     setDesktopUpdateChannel: forbidden,
     recordDesktopUpdateOutcome: forbidden,
     observeActiveWork: forbidden,
