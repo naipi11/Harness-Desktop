@@ -67,6 +67,7 @@ function conformingBuilderConfig(): DesktopBuilderConfig {
     asar: true,
     forceCodeSigning: false,
     publish: null,
+    deb: { artifactName: 'harness-desktop_${version}_${arch}.${ext}' },
     win: {
       target: ['nsis'],
       icon: 'resources/icons/win/harness-desktop.ico',
@@ -368,6 +369,13 @@ jobs:
 }
 
 describe('desktop release config gate', () => {
+  it('declares a path-safe Debian artifact name', async () => {
+    const config = await loadBuilderConfig({ DSH_DESKTOP_SIGNING_MODE: 'disabled' })
+    expect(config.deb).toEqual({
+      artifactName: 'harness-desktop_${version}_${arch}.${ext}',
+    })
+  })
+
   it('requires an embedded public policy before a release-mode build may discover signing identities', async () => {
     await expect(loadBuilderConfig({ DSH_DESKTOP_SIGNING_MODE: 'release' }))
       .rejects.toThrow('DSH_DESKTOP_UPDATE_POLICY is required when DSH_DESKTOP_SIGNING_MODE=release')
@@ -407,6 +415,19 @@ describe('desktop release config gate', () => {
     })).toEqual(expect.arrayContaining([
       'desktopManifest: homepage must equal "https://github.com/naipi11/Harness-Desktop"',
       'desktopManifest: author must equal naipi11 <naipi11@users.noreply.github.com>',
+    ]))
+  })
+
+  it('requires a path-safe Debian artifact name', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      builderConfig: {
+        ...files.builderConfig,
+        deb: { artifactName: '${name}_${version}_${arch}.${ext}' },
+      },
+    })).toEqual(expect.arrayContaining([
+      'builderConfig.deb.artifactName: expected "harness-desktop_${version}_${arch}.${ext}"',
     ]))
   })
 

@@ -19,6 +19,7 @@ const macCategory = 'public.app-category.developer-tools'
 const linuxTargets = ['AppImage', 'deb'] as const
 const linuxIcon = 'apps/desktop/resources/icons/linux/harness-desktop-512.png'
 const linuxCategory = 'Development'
+const linuxDebArtifactName = 'harness-desktop_${version}_${arch}.${ext}'
 const staticExtraResources = [
   { from: 'resources/update/windows-native-rollback-worker.ps1', to: 'windows-native-rollback-worker.ps1' },
   { from: 'out/main/native-rollback-worker.js', to: 'native-rollback-worker.js' },
@@ -91,6 +92,7 @@ export interface DesktopBuilderConfig {
   readonly asar: boolean
   readonly forceCodeSigning: boolean
   readonly publish: unknown
+  readonly deb?: { readonly artifactName?: string }
   readonly win: {
     readonly target: readonly string[]
     readonly icon?: string
@@ -103,7 +105,11 @@ export interface DesktopBuilderConfig {
     readonly identity?: null
     readonly category: string
   }
-  readonly linux: { readonly target: readonly string[]; readonly icon?: string; readonly category: string }
+  readonly linux: {
+    readonly target: readonly string[]
+    readonly icon?: string
+    readonly category: string
+  }
 }
 
 /** Contents owned by the desktop release configuration gate. */
@@ -217,6 +223,9 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   }
   if (config.linux.category !== linuxCategory) {
     violations.push(`builderConfig.linux.category: expected ${JSON.stringify(linuxCategory)}`)
+  }
+  if (config.deb?.artifactName !== linuxDebArtifactName) {
+    violations.push(`builderConfig.deb.artifactName: expected ${JSON.stringify(linuxDebArtifactName)}`)
   }
 
   const desktopManifest = parseDesktopManifest(files.desktopManifest)

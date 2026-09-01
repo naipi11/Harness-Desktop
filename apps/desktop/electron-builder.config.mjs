@@ -56,6 +56,9 @@ export default {
     icon: 'resources/icons/linux/harness-desktop-512.png',
     category: 'Development',
   },
+  deb: {
+    artifactName: 'harness-desktop_${version}_${arch}.${ext}',
+  },
 }
 
 function verifiedUpdatePolicyPath(path) {
