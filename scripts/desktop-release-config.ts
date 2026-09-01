@@ -369,6 +369,13 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
     }
     else previousIndex = index
   }
+  const manylinuxNodePtyIndex = steps.findIndex(step => step.name === 'Rebuild Linux node-pty against manylinux 2.28')
+  const repositoryBuildIndex = steps.findIndex(step => step.name === 'Build repository and Desktop app')
+  const manylinuxNodePty = steps[manylinuxNodePtyIndex]
+  if (!workflowHasLinuxManylinuxNodePtyRebuild(manylinuxNodePty)
+    || repositoryBuildIndex === -1 || manylinuxNodePtyIndex >= repositoryBuildIndex) {
+    violations.push('desktopArtifactsWorkflow: Linux node-pty must be rebuilt against manylinux 2.28 before the repository build')
+  }
   const buildCli = steps.find(step => step.name === 'Build standalone CLI archives' && step.id === 'build-cli')
   const verifyCli = steps.find(step => step.name === 'Verify standalone CLI archives' && step.id === 'verify-cli')
   if (!provesBothMacCliArchitectures(buildCli, 'release:build-cli-standalone')) {
@@ -422,6 +429,22 @@ function workflowInvokesWindowsNativeSupervisorBuild(steps: readonly Record<stri
     if (invocations === undefined || invocations.length > 0) return true
   }
   return false
+}
+
+function workflowHasLinuxManylinuxNodePtyRebuild(step: Record<string, unknown> | undefined): boolean {
+  if (step?.if !== "${{ runner.os == 'Linux' }}" || step.shell !== 'bash' || !isRecord(step.env)
+    || step.env.RUNNER_ARCH !== '${{ runner.arch }}') return false
+  const run = normalizedRun(step.run)
+  return [
+    'case "$RUNNER_ARCH" in',
+    'manylinux_2_28_x86_64',
+    'manylinux_2_28_aarch64',
+    'realpath packages/subprocess/subprocess-local/node_modules/node-pty',
+    'docker run --rm',
+    'make -C build -j2 BUILDTYPE=Release',
+    'node-pty-glibc-versions.txt',
+    'dpkg --compare-versions "$maximum" le 2.28',
+  ].every(marker => run.includes(marker))
 }
 
 function hasExactAndCommand(script: string | undefined, command: string): boolean {

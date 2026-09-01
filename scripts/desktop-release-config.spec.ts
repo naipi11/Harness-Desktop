@@ -229,6 +229,20 @@ jobs:
           pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
           echo "DSH_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
           echo "DSH_DESKTOP_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
+      - name: Rebuild Linux node-pty against manylinux 2.28
+        if: \${{ runner.os == 'Linux' }}
+        shell: bash
+        env:
+          RUNNER_ARCH: \${{ runner.arch }}
+        run: |
+          case "$RUNNER_ARCH" in
+            X64) image=quay.io/pypa/manylinux_2_28_x86_64 ;;
+            ARM64) image=quay.io/pypa/manylinux_2_28_aarch64 ;;
+          esac
+          addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
+          docker run --rm "$image" make -C build -j2 BUILDTYPE=Release
+          readelf --version-info "$addon_dir/build/Release/pty.node" | tee node-pty-glibc-versions.txt
+          dpkg --compare-versions "$maximum" le 2.28
       - name: Build repository and Desktop app
         run: pnpm run build
       - name: Package installer
@@ -378,6 +392,19 @@ describe('desktop release config gate', () => {
 
   it('accepts the conforming builder, manifest, and workflows', () => {
     expect(collectDesktopReleaseViolations(conformingFiles())).toEqual([])
+  })
+
+  it('requires the Linux artifact row to rebuild node-pty against manylinux before packaging', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace(
+        "if: ${{ runner.os == 'Linux' }}",
+        "if: ${{ runner.os == 'macOS' }}",
+      ),
+    })).toContain(
+      'desktopArtifactsWorkflow: Linux node-pty must be rebuilt against manylinux 2.28 before the repository build',
+    )
   })
 
   it('requires both Desktop package entry points to prepare native artifacts even when the workflow builds them', () => {
