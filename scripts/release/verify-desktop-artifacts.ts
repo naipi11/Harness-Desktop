@@ -39,6 +39,7 @@ const nativeRollbackWorkerChunkDirectory = 'chunks'
 const windowsResourceDirectory = 'resources'
 const appImageResourceDirectory = 'resources'
 const debResourceDirectory = 'opt/Harness Desktop/resources'
+const linuxNodePtyBinding = 'app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'
 const packagedRuntimeAsarEntries = [
   'node_modules/@harness-desktop/dsh-host-local-runtime/lib/bin.js',
   'node_modules/@harness-desktop/dsh-home-paths/package.json',
@@ -462,8 +463,20 @@ function verifyLinuxResources(
   if (canonicalWorkers === undefined) throw new Error('desktop artifact: canonical rollback workers were not loaded')
   const label = `Linux ${format}`
   verifyEmbeddedResources(inspection, canonicalWorkers, resourceDirectory, label, violations)
+  verifyLinuxNodePtyBinding(inspection.entries, resourceDirectory, label, violations)
   if (containsExactEntry(inspection.entries, `${resourceDirectory}/${updatePolicyResource}`)) {
     verifyEmbeddedPolicy(inspection.updatePolicy, label, target, version, violations)
+  }
+}
+
+function verifyLinuxNodePtyBinding(
+  entries: readonly string[],
+  resourceDirectory: string,
+  label: string,
+  violations: string[],
+): void {
+  if (!containsExactEntry(entries, `${resourceDirectory}/${linuxNodePtyBinding}`)) {
+    violations.push(`desktop artifact: missing ${label} node-pty native binding`)
   }
 }
 

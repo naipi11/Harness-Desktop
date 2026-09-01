@@ -56,6 +56,7 @@ const runtimeAsarEntries = [
   '\\node_modules\\@harness-desktop\\dsh-home-paths\\lib\\index.js',
 ]
 const canonicalWindowsSupervisor = windowsSupervisorPe()
+const linuxNodePtyBinding = 'app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'
 const macResources = [
   'Contents/Resources/harness-desktop.icns',
   'Contents/Resources/update-policy.json',
@@ -69,6 +70,7 @@ const appImageResources = [
   'resources/windows-native-rollback-worker.ps1',
   'resources/native-rollback-worker.js',
   'resources/chunks/native-rollback-request-fixture.js',
+  `resources/${linuxNodePtyBinding}`,
 ]
 const debResources = [
   'usr/share/icons/hicolor/512x512/apps/harness-desktop.png',
@@ -76,6 +78,7 @@ const debResources = [
   'opt/Harness Desktop/resources/windows-native-rollback-worker.ps1',
   'opt/Harness Desktop/resources/native-rollback-worker.js',
   'opt/Harness Desktop/resources/chunks/native-rollback-request-fixture.js',
+  `opt/Harness Desktop/resources/${linuxNodePtyBinding}`,
 ]
 
 afterEach(async () => {
@@ -833,6 +836,28 @@ describe('verifyDesktopArtifactsWithTools', () => {
 
     await expect(verifyDesktopArtifactsWithTools({ platform: 'linux', releaseDirectory: root }, tools()))
       .resolves.toEqual([])
+  })
+
+  it('requires the target node-pty binding in both Linux package formats', async () => {
+    const root = await releaseRoot()
+    await file(join(root, 'Harness Desktop-1.0.0.AppImage'))
+    await file(join(root, 'harness-desktop_1.0.0_amd64.deb'))
+
+    await expect(verifyDesktopArtifactsWithTools({ platform: 'linux', releaseDirectory: root }, tools({
+      inspectAppImage: async () => ({
+        entries: appImageResources.filter(entry => entry !== `resources/${linuxNodePtyBinding}`),
+        updatePolicy,
+        ...canonicalWorkers,
+      }),
+      inspectDeb: async () => ({
+        entries: debResources.filter(entry => entry !== `opt/Harness Desktop/resources/${linuxNodePtyBinding}`),
+        updatePolicy,
+        ...canonicalWorkers,
+      }),
+    }))).resolves.toEqual([
+      'desktop artifact: missing Linux AppImage node-pty native binding',
+      'desktop artifact: missing Linux Deb node-pty native binding',
+    ])
   })
 
   it('rejects a malformed AppImage policy even when a valid distractor policy is listed elsewhere', async () => {
