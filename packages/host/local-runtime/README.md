@@ -39,6 +39,8 @@ The canonical composition mounts the API, Dashboard assets, session, settings, w
 
 The `desktop-update` settings namespace stores the selected `stable`, `beta`, or `nightly` channel and one fixed-format redacted outcome through that same settings provider. Native control may record only semantic versions, one of the fixed result kinds and codes, and an optional last-known-good version; Dashboard control may read or change only the channel. The Runtime does not fetch, verify, stage, apply, or roll back an artifact, and it has no production update trust root.
 
+Only native control may read the last redacted outcome; Dashboard control cannot read or write it.
+
 ## Lifecycle and leases
 
 The Runtime counts actual client attachments, Agent work, and the named background lease. Idle shutdown begins only when all three counts are zero. Migration and terminal-control transactions retain the Runtime until settlement, and direct disposal rejects without starting shutdown while any retainer remains.

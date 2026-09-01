@@ -243,6 +243,7 @@ function isRuntimeControlRequest(value: unknown): value is RuntimeControlRequest
     'decline-legacy-migration',
     'retry-legacy-migration',
     'get-desktop-update-channel',
+    'get-desktop-update-last-outcome',
     'observe-active-work',
     'stop-own-ui-work',
   ].includes(value.operation)

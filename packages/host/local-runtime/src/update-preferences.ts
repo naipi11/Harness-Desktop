@@ -30,7 +30,7 @@ export type DesktopUpdateOutcomeKind = typeof DESKTOP_UPDATE_OUTCOME_KINDS[numbe
 
 /** Stable, secret-free diagnostic codes a verified updater may persist. */
 export const DESKTOP_UPDATE_OUTCOME_CODES = [
-  'unconfigured-trust-root',
+  'unconfigured-update-source',
   'up-to-date',
   'staged',
   'applied',
@@ -155,6 +155,11 @@ export class DesktopUpdatePreferences {
   /** @returns the resolved selected update channel. */
   getChannel(): UpdateChannel {
     return this.scope.get().channel
+  }
+
+  /** @returns the last redacted native updater outcome, when one was committed. */
+  getLastOutcome(): DesktopUpdateOutcome | undefined {
+    return this.scope.get().lastOutcome
   }
 
   /**

@@ -95,7 +95,7 @@ export interface RuntimeControlServiceOptions {
   readonly commands?: Pick<CommandRuntime, 'execute'>
   readonly permissionPresets?: Pick<PermissionPresetService, 'current' | 'set'>
   /** Runtime-owned selected channel and redacted update outcome persistence. */
-  readonly updatePreferences?: Pick<DesktopUpdatePreferences, 'getChannel' | 'setChannel' | 'record'>
+  readonly updatePreferences?: Pick<DesktopUpdatePreferences, 'getChannel' | 'getLastOutcome' | 'setChannel' | 'record'>
   readonly resolution: HarnessHomeResolution
   readonly detectMigration?: typeof detectLegacyImport
   readonly recordMigration?: typeof recordLegacyImportDecision
@@ -247,7 +247,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       }
       return publicMigration(await recordMigration({ decision: 'accepted', resolution: options.resolution }))
     }))
-  const requireUpdatePreferences = (): Pick<DesktopUpdatePreferences, 'getChannel' | 'setChannel' | 'record'> => {
+  const requireUpdatePreferences = (): Pick<DesktopUpdatePreferences, 'getChannel' | 'getLastOutcome' | 'setChannel' | 'record'> => {
     if (updatePreferences === undefined) throw new Error('host-local-runtime: composed desktop update preferences are unavailable')
     return updatePreferences
   }
@@ -409,6 +409,9 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
         case 'get-desktop-update-channel':
           requireBaseClient(clients, clientId)
           return requireUpdatePreferences().getChannel()
+        case 'get-desktop-update-last-outcome':
+          requireBaseClient(clients, clientId)
+          return requireUpdatePreferences().getLastOutcome()
         case 'set-desktop-update-channel':
           requireBaseClient(clients, clientId)
           return setDesktopUpdateChannel(request.channel)

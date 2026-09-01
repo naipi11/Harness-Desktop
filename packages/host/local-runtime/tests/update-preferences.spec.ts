@@ -66,6 +66,7 @@ describe('DesktopUpdatePreferences', () => {
     const { preferences, settings } = await boot()
 
     expect(preferences.getChannel()).toBe('stable')
+    expect(preferences.getLastOutcome()).toBeUndefined()
 
     await preferences.setChannel('beta')
 
@@ -98,6 +99,30 @@ describe('DesktopUpdatePreferences', () => {
         },
       },
     })
+    expect(preferences.getLastOutcome()).toEqual({
+      version: '1.2.3',
+      channel: 'nightly',
+      kind: 'staged',
+      code: 'staged',
+    })
+  })
+
+  it('accepts the public source-configuration result code', async () => {
+    const result = await boot({
+      doc: {
+        'desktop-update': {
+          channel: 'stable',
+          lastOutcome: {
+            version: '1.2.3',
+            channel: 'stable',
+            kind: 'failed',
+            code: 'unconfigured-update-source',
+          },
+        },
+      },
+    }).then(() => 'accepted', () => 'rejected')
+
+    expect(result).toBe('accepted')
   })
 
   it('refuses a stored outcome that carries an unredacted field', async () => {
@@ -146,6 +171,10 @@ describe('DesktopUpdatePreferences', () => {
     ['an unsupported outcome code', {
       channel: 'stable',
       lastOutcome: { version: '1.2.3', channel: 'stable', kind: 'failed', code: 'network-detail' },
+    }],
+    ['the obsolete trust-root result code', {
+      channel: 'stable',
+      lastOutcome: { version: '1.2.3', channel: 'stable', kind: 'failed', code: 'unconfigured-trust-root' },
     }],
   ])('refuses %s from the stored settings document', async (_label, desktopUpdate) => {
     const result = await boot({ doc: { 'desktop-update': desktopUpdate } })

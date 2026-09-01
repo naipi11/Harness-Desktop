@@ -107,6 +107,9 @@ describe.each([
     await expect(client.recordDesktopUpdateOutcome({
       version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged',
     })).resolves.toBeUndefined()
+    expect(await client.getDesktopUpdateLastOutcome()).toEqual({
+      version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged',
+    })
     expect(await client.getDesktopUpdateChannel()).toBe('beta')
 
     await client.close()

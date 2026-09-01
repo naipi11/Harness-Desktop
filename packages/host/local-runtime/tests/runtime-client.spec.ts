@@ -216,7 +216,7 @@ describe('public Runtime connector', () => {
     expect(await client.getLegacyMigration()).toEqual(body.value)
   })
 
-  it('shares the selected update channel while keeping outcome recording native-only', async () => {
+  it('shares the selected update channel while keeping update outcome reads and writes native-only', async () => {
     root = await mkdtemp(join(tmpdir(), 'harness-runtime-dashboard-update-'))
     const home = join(root, 'home')
     await startControlledRuntime(home)
@@ -229,6 +229,9 @@ describe('public Runtime connector', () => {
     await expect(client.recordDesktopUpdateOutcome({
       version: '1.2.3', channel: 'nightly', kind: 'staged', code: 'staged',
     })).resolves.toBeUndefined()
+    expect(await client.getDesktopUpdateLastOutcome()).toEqual({
+      version: '1.2.3', channel: 'nightly', kind: 'staged', code: 'staged',
+    })
 
     const navigation = await dashboard.createBrowserHandoff()
     const exchange = await fetch(`${navigation.origin}/_harness/handoff`, {
@@ -253,6 +256,7 @@ describe('public Runtime connector', () => {
       operation: 'record-desktop-update-outcome',
       outcome: { version: '1.2.3', channel: 'beta', kind: 'staged', code: 'staged' },
     })).status).toBe(400)
+    expect((await request({ operation: 'get-desktop-update-last-outcome' })).status).toBe(400)
     expect(await client.getDesktopUpdateChannel()).toBe('beta')
   }, 20_000)
 
@@ -325,7 +329,8 @@ describe('public Runtime connector', () => {
     }
     globalThis.fetch = async (input, init) => {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { operation?: string } : undefined
-      if (body?.operation === 'status' || body?.operation === 'get-legacy-migration') {
+      if (body?.operation === 'status' || body?.operation === 'get-legacy-migration'
+        || body?.operation === 'get-desktop-update-last-outcome') {
         return new Response(JSON.stringify({ ok: true, value: hostile }), {
           status: 200, headers: { 'content-type': 'application/json' },
         })
@@ -336,6 +341,11 @@ describe('public Runtime connector', () => {
       await expect(client.status()).rejects.toBeInstanceOf(RuntimeProtocolError)
       hostile = { kind: 'imported', copied: ['C:\\Users\\person\\secret-token.txt'] }
       await expect(client.getLegacyMigration()).rejects.toBeInstanceOf(RuntimeProtocolError)
+      hostile = {
+        version: '1.2.3', channel: 'stable', kind: 'failed', code: 'manifest-rejected',
+        url: 'https://updates.example.test/manifest.json',
+      }
+      await expect(client.getDesktopUpdateLastOutcome()).rejects.toBeInstanceOf(RuntimeProtocolError)
     } finally {
       globalThis.fetch = originalFetch
     }

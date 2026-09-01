@@ -9,6 +9,7 @@ import { readPrivateEndpointRecord, type PrivateEndpointRecord, type RuntimeId }
 import { resolveHarnessHome, type HarnessHomeInput } from './data-root.ts'
 import {
   isDesktopUpdateChannel,
+  isDesktopUpdateOutcome,
   type DesktopUpdateOutcome,
 } from './update-preferences.ts'
 
@@ -235,6 +236,7 @@ export type RuntimeControlRequest =
   | { readonly operation: 'decline-legacy-migration' }
   | { readonly operation: 'retry-legacy-migration' }
   | { readonly operation: 'get-desktop-update-channel' }
+  | { readonly operation: 'get-desktop-update-last-outcome' }
   | { readonly operation: 'set-desktop-update-channel'; readonly channel: UpdateChannel }
   | { readonly operation: 'record-desktop-update-outcome'; readonly outcome: DesktopUpdateOutcome }
   | { readonly operation: 'observe-active-work' }
@@ -293,6 +295,8 @@ export interface RuntimeClient {
   retryLegacyMigration(): Promise<LegacyMigrationState>
   /** @returns the Runtime-owned selected Desktop update channel. */
   getDesktopUpdateChannel(): Promise<UpdateChannel>
+  /** @returns the last redacted native update result, which is restricted to native clients. */
+  getDesktopUpdateLastOutcome(): Promise<DesktopUpdateOutcome | undefined>
   /**
    * Persist one selected Desktop update channel through the shared Runtime.
    * @param channel - selected release channel.
@@ -561,6 +565,11 @@ class RuntimeClientConnection implements RuntimeClient {
     return this.wire.control(this.clientId, { operation: 'get-desktop-update-channel' })
   }
 
+  getDesktopUpdateLastOutcome(): Promise<DesktopUpdateOutcome | undefined> {
+    this.ensureOpen()
+    return this.wire.control(this.clientId, { operation: 'get-desktop-update-last-outcome' })
+  }
+
   setDesktopUpdateChannel(channel: UpdateChannel): Promise<UpdateChannel> {
     this.ensureOpen()
     return this.wire.control(this.clientId, { operation: 'set-desktop-update-channel', channel })
@@ -762,6 +771,7 @@ function parseControlSuccess(request: RuntimeControlRequest, value: unknown): un
     case 'get-desktop-update-channel':
     case 'set-desktop-update-channel':
       return parseDesktopUpdateChannel(value)
+    case 'get-desktop-update-last-outcome': return parseDesktopUpdateLastOutcome(value)
     case 'record-desktop-update-outcome':
       if (value !== undefined) throw new RuntimeProtocolError()
       return undefined
@@ -845,6 +855,12 @@ function parseLegacyMigrationState(value: unknown): LegacyMigrationState {
 
 function parseDesktopUpdateChannel(value: unknown): UpdateChannel {
   if (!isDesktopUpdateChannel(value)) throw new RuntimeProtocolError()
+  return value
+}
+
+function parseDesktopUpdateLastOutcome(value: unknown): DesktopUpdateOutcome | undefined {
+  if (value === undefined) return undefined
+  if (!isDesktopUpdateOutcome(value)) throw new RuntimeProtocolError()
   return value
 }
 
