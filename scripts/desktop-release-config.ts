@@ -92,7 +92,7 @@ export interface DesktopBuilderConfig {
   readonly asar: boolean
   readonly forceCodeSigning: boolean
   readonly publish: unknown
-  readonly deb?: { readonly artifactName?: string }
+  readonly deb?: { readonly artifactName?: string; readonly depends?: readonly string[] }
   readonly win: {
     readonly target: readonly string[]
     readonly icon?: string
@@ -226,6 +226,9 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
   }
   if (config.deb?.artifactName !== linuxDebArtifactName) {
     violations.push(`builderConfig.deb.artifactName: expected ${JSON.stringify(linuxDebArtifactName)}`)
+  }
+  if (!config.deb?.depends?.includes('libasound2')) {
+    violations.push('builderConfig.deb.depends: expected libasound2')
   }
 
   const desktopManifest = parseDesktopManifest(files.desktopManifest)

@@ -58,6 +58,18 @@ export default {
   },
   deb: {
     artifactName: 'harness-desktop_${version}_${arch}.${ext}',
+    depends: [
+      'libgtk-3-0',
+      'libnotify4',
+      'libnss3',
+      'libxss1',
+      'libxtst6',
+      'xdg-utils',
+      'libatspi2.0-0',
+      'libuuid1',
+      'libsecret-1-0',
+      'libasound2',
+    ],
   },
 }
 

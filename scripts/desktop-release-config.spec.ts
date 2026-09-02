@@ -67,7 +67,10 @@ function conformingBuilderConfig(): DesktopBuilderConfig {
     asar: true,
     forceCodeSigning: false,
     publish: null,
-    deb: { artifactName: 'harness-desktop_${version}_${arch}.${ext}' },
+    deb: {
+      artifactName: 'harness-desktop_${version}_${arch}.${ext}',
+      depends: ['libgtk-3-0', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils', 'libatspi2.0-0', 'libuuid1', 'libsecret-1-0', 'libasound2'],
+    },
     win: {
       target: ['nsis'],
       icon: 'resources/icons/win/harness-desktop.ico',
@@ -379,9 +382,16 @@ jobs:
 describe('desktop release config gate', () => {
   it('declares a path-safe Debian artifact name', async () => {
     const config = await loadBuilderConfig({ DSH_DESKTOP_SIGNING_MODE: 'disabled' })
-    expect(config.deb).toEqual({
+    expect(config.deb).toMatchObject({
       artifactName: 'harness-desktop_${version}_${arch}.${ext}',
     })
+  })
+
+  it('declares the Linux audio runtime dependency needed by Electron', async () => {
+    const config = await loadBuilderConfig({ DSH_DESKTOP_SIGNING_MODE: 'disabled' })
+    const deb = config.deb
+    if (typeof deb !== 'object' || deb === null || Array.isArray(deb)) throw new Error('builder config has no Debian options')
+    expect((deb as Record<string, unknown>).depends).toEqual(expect.arrayContaining(['libasound2']))
   })
 
   it('requires an embedded public policy before a release-mode build may discover signing identities', async () => {
@@ -437,6 +447,17 @@ describe('desktop release config gate', () => {
     })).toEqual(expect.arrayContaining([
       'builderConfig.deb.artifactName: expected "harness-desktop_${version}_${arch}.${ext}"',
     ]))
+  })
+
+  it('requires the Electron audio dependency in the Debian artifact', () => {
+    const files = conformingFiles()
+    expect(collectDesktopReleaseViolations({
+      ...files,
+      builderConfig: {
+        ...files.builderConfig,
+        deb: { artifactName: 'harness-desktop_${version}_${arch}.${ext}', depends: [] },
+      },
+    })).toEqual(expect.arrayContaining(['builderConfig.deb.depends: expected libasound2']))
   })
 
   it('requires the Linux artifact row to rebuild node-pty against manylinux before packaging', () => {
