@@ -474,7 +474,7 @@ function workflowHasLinuxAppImageInspectionTools(step: Record<string, unknown> |
   if (step?.if !== "${{ runner.os == 'Linux' }}" || step.shell !== 'bash') return false
   const run = normalizedRun(step.run)
   return [
-    'sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools',
+    'sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools libnspr4 libnss3 libasound2t64',
     'test -c /dev/fuse',
     'test -x /bin/fusermount3 || test -x /usr/bin/fusermount3',
     'test -x "$(command -v unsquashfs)"',

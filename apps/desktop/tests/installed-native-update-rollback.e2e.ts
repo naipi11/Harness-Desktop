@@ -364,15 +364,22 @@ test.describe('installed macOS and Linux native update rollback', () => {
       })
 
       installation = await prepareUnixNativeInstallation(target, rollback.installationArtifact)
-      fixture = await installation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
+      const nativeInstallation = installation
+      fixture = await nativeInstallation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
       await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
       await observeNativeExitLifecycle(fixture)
       await waitForUpdateDownloadRoutes(server, target)
-      const pending = await waitForPendingNativeUpdate(fixture.runtime.platformHome)
-      const handoff = await waitForNativeApplicationExit(fixture, pending, nativeHandoffTimeoutMs)
+      const desktopMainProcessId = await fixture.application.evaluate(() => process.pid)
+      const { pending, handoff } = await observePendingNativeApplicationExit(
+        fixture,
+        fixture.runtime.platformHome,
+        nativeHandoffTimeoutMs,
+        desktopMainProcessId,
+        async () => await nativeInstallation.version(candidate.updateArtifact, rollback.updateArtifact),
+      )
       await waitForCandidateThenStable({
-        installation,
+        installation: nativeInstallation,
         candidateArtifact: candidate.updateArtifact,
         stableArtifact: rollback.updateArtifact,
         harnessHome: fixture.runtime.harnessHome,
@@ -427,8 +434,9 @@ test.describe('installed macOS and Linux native update rollback', () => {
       })
 
       installation = await prepareUnixNativeInstallation(target, stable.installationArtifact)
-      expect(await installation.version(candidate.updateArtifact, stable.updateArtifact)).toBe(stableVersion)
-      fixture = await installation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
+      const nativeInstallation = installation
+      expect(await nativeInstallation.version(candidate.updateArtifact, stable.updateArtifact)).toBe(stableVersion)
+      fixture = await nativeInstallation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
       await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
       const stateSentinelPath = join(fixture.runtime.harnessHome, 'native-update-state-sentinel.txt')
@@ -438,11 +446,17 @@ test.describe('installed macOS and Linux native update rollback', () => {
       const endpointBeforeUpdate = await readFile(endpointPath)
       await observeNativeExitLifecycle(fixture)
       await waitForUpdateDownloadRoutes(server, target)
-      const pending = await waitForPendingNativeUpdate(fixture.runtime.platformHome)
-      await waitForNativeApplicationExit(fixture, pending, nativeHandoffTimeoutMs)
+      const desktopMainProcessId = await fixture.application.evaluate(() => process.pid)
+      const { pending } = await observePendingNativeApplicationExit(
+        fixture,
+        fixture.runtime.platformHome,
+        nativeHandoffTimeoutMs,
+        desktopMainProcessId,
+        async () => await nativeInstallation.version(candidate.updateArtifact, stable.updateArtifact),
+      )
 
       await waitForHealthyCandidate({
-        installation,
+        installation: nativeInstallation,
         candidateArtifact: candidate.updateArtifact,
         stableArtifact: stable.updateArtifact,
         appliedPath: join(pending.updatesDirectory, 'workers', `native-update-applied-${pending.transactionId}.json`),

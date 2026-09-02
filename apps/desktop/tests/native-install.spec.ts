@@ -52,17 +52,18 @@ function hostNativePlatform(): NativeRollbackPlan['platform'] {
   throw new Error('native Desktop test host platform is unsupported')
 }
 
-function artifact(version: string, bytes: Uint8Array): VerifiedUpdateArtifact {
+function artifact(version: string, bytes: Uint8Array, platform: 'win32' | 'linux' = 'win32'): VerifiedUpdateArtifact {
+  const linux = platform === 'linux'
   return {
     version,
     channel: 'stable',
     consumer: 'desktop',
-    platform: 'win32',
+    platform,
     arch: 'x64',
-    format: 'nsis',
-    url: `${origin}/${version}/Harness-Desktop-Setup.exe`,
+    format: linux ? 'appimage' : 'nsis',
+    url: `${origin}/${version}/${linux ? 'Harness-Desktop.AppImage' : 'Harness-Desktop-Setup.exe'}`,
     sha256: createHash('sha256').update(bytes).digest('hex'),
-    members: ['Harness Desktop Setup.exe'],
+    members: [linux ? 'AppRun' : 'Harness Desktop Setup.exe'],
   }
 }
 
@@ -281,12 +282,12 @@ describe('NativeDesktopInstallAdapter', () => {
     const storageDirectory = await mkdtemp(join(tmpdir(), 'harness-native-update-'))
     const currentBytes = Buffer.from('stable-1.0.0')
     const nextBytes = Buffer.from('candidate-1.1.0')
-    const current = artifact('1.0.0', currentBytes)
-    const next = artifact('1.1.0', nextBytes)
+    const current = artifact('1.0.0', currentBytes, 'linux')
+    const next = artifact('1.1.0', nextBytes, 'linux')
     try {
       const subject = await adapter(
         storageDirectory, '1.0.0', current, currentBytes, [], false, [], 30_000, undefined,
-        candidateLaunchNonce, new Error('private path and token must not be recorded'),
+        candidateLaunchNonce, new Error('private path and token must not be recorded'), 300_000, 'linux',
       )
       const staged = candidate(next, nextBytes)
       const previous = process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS

@@ -236,7 +236,7 @@ jobs:
         if: \${{ runner.os == 'Linux' }}
         shell: bash
         run: |
-          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools
+          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools libnspr4 libnss3 libasound2t64
           test -c /dev/fuse
           test -x /bin/fusermount3 || test -x /usr/bin/fusermount3
           test -x "\$(command -v unsquashfs)"
@@ -456,7 +456,7 @@ describe('desktop release config gate', () => {
     const files = conformingFiles()
     expect(collectDesktopReleaseViolations({
       ...files,
-      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace('fuse3 libfuse2t64 squashfs-tools', 'fuse3 libfuse2t64'),
+      desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replace('libasound2t64', 'libasound2'),
     })).toContain(
       'desktopArtifactsWorkflow: Linux AppImage static inspection must provide FUSE and unsquashfs',
     )

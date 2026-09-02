@@ -787,7 +787,7 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
   }
 
   private async writeScheduleFailureStage(stage: NativeInstallScheduleFailureStage): Promise<void> {
-    if (this.options.platform !== 'win32' || process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS !== '1') return
+    if (process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS !== '1') return
     try {
       const workers = await this.workerDirectory(true)
       if (workers === undefined) return

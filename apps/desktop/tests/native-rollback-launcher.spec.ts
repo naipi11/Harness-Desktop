@@ -191,6 +191,7 @@ describe('launchNativeRollbackWorker', () => {
       XDG_STATE_HOME: '/private/state',
       PATH: '/usr/local/bin:/usr/bin',
       DISPLAY: ':0',
+      LD_LIBRARY_PATH: '/test-only/dynamic-loader-path',
       NODE_EXTRA_CA_CERTS: '/private/loopback-ca.pem',
       DSH_TELEMETRY_DISABLED: '1',
       DEEPSEEK_API_KEY: 'must-not-cross-the-worker-boundary',
