@@ -308,6 +308,35 @@ describe('NativeDesktopInstallAdapter', () => {
     }
   })
 
+  it('records only a fixed retained-artifact staging failure stage when diagnostics are explicitly enabled', async () => {
+    const storageDirectory = await mkdtemp(join(tmpdir(), 'harness-native-update-'))
+    const currentBytes = Buffer.from('stable-1.0.0')
+    const nextBytes = Buffer.from('candidate-1.1.0')
+    const current = artifact('1.0.0', currentBytes, 'linux')
+    const next = artifact('1.1.0', nextBytes, 'linux')
+    try {
+      const subject = await adapter(
+        storageDirectory, '1.0.0', current, Buffer.from('wrong-retained-bytes'), [], false, [], 30_000, undefined,
+        candidateLaunchNonce, undefined, 300_000, 'linux',
+      )
+      const staged = candidate(next, nextBytes)
+      const previous = process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS
+      process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS = '1'
+      try {
+        await expect(subject.stage(staged)).rejects.toThrow('retained Desktop rollback digest was rejected')
+      } finally {
+        if (previous === undefined) Reflect.deleteProperty(process.env, 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS')
+        else process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS = previous
+      }
+      const workers = join(storageDirectory, 'native-updates', 'workers')
+      const receipts = (await readdir(workers)).filter(name => name.startsWith('native-update-failure-stage-'))
+      expect(receipts).toHaveLength(1)
+      await expect(readFile(join(workers, receipts[0]!), 'utf8')).resolves.toBe('stage-rollback\n')
+    } finally {
+      await rm(storageDirectory, { recursive: true, force: true })
+    }
+  })
+
   it.runIf(process.platform === 'win32')('retries a transient Windows journal replacement sharing conflict before native handoff', async () => {
     const storageDirectory = await mkdtemp(join(tmpdir(), 'harness-native-update-'))
     const currentBytes = Buffer.from('stable-1.0.0')

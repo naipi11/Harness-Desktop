@@ -114,6 +114,8 @@ interface PendingNativeUpdate {
 }
 
 type NativeInstallScheduleFailureStage = 'schedule-validation' | 'schedule-journal' | 'schedule-plan' | 'schedule-worker'
+type NativeInstallStagingFailureStage = 'stage-existing' | 'stage-rollback' | 'stage-candidate' | 'stage-retained' | 'stage-journal'
+type NativeInstallFailureStage = NativeInstallScheduleFailureStage | NativeInstallStagingFailureStage
 
 type NativeRollbackFailureReason =
   | 'candidate-version-mismatch'
@@ -166,34 +168,44 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
 
   /** @param candidate - verified bytes that become the private native-updater cache. */
   async stage(candidate: StagedDesktopCandidate): Promise<void> {
-    if (digest(candidate.bytes) !== candidate.artifact.sha256) throw new Error('candidate digest changed before native staging')
-    const existing = await this.readJournal()
-    if (existing !== undefined) {
-      if (existing.phase === 'applied' && await this.wasAppliedObserved(existing)) {
-        await this.cleanupPending(existing)
-      } else {
-        throw new Error('native Desktop update transaction has not settled')
+    let failureStage: NativeInstallStagingFailureStage = 'stage-existing'
+    try {
+      if (digest(candidate.bytes) !== candidate.artifact.sha256) throw new Error('candidate digest changed before native staging')
+      const existing = await this.readJournal()
+      if (existing !== undefined) {
+        if (existing.phase === 'applied' && await this.wasAppliedObserved(existing)) {
+          await this.cleanupPending(existing)
+        } else {
+          throw new Error('native Desktop update transaction has not settled')
+        }
       }
+      failureStage = 'stage-rollback'
+      const rollback = await this.loadRollbackCandidate(candidate.artifact)
+      failureStage = 'stage-candidate'
+      await this.stageArtifact(candidate.artifact, candidate.bytes)
+      failureStage = 'stage-retained'
+      await this.stageArtifact(rollback.artifact, rollback.bytes)
+      const pending: PendingNativeUpdate = {
+        schemaVersion: 1,
+        phase: 'staged',
+        transactionId: randomUUID(),
+        currentVersion: this.options.currentVersion,
+        version: candidate.artifact.version,
+        channel: candidate.artifact.channel,
+        format: candidate.artifact.format,
+        sha256: candidate.artifact.sha256,
+        rollbackFormat: rollback.artifact.format,
+        rollbackSha256: rollback.artifact.sha256,
+      }
+      failureStage = 'stage-journal'
+      await this.writeJournal(pending)
+      this.staged = candidate
+      this.rollback = rollback
+      this.pending = pending
+    } catch (error) {
+      await this.writeFailureStage(failureStage)
+      throw error
     }
-    const rollback = await this.loadRollbackCandidate(candidate.artifact)
-    await this.stageArtifact(candidate.artifact, candidate.bytes)
-    await this.stageArtifact(rollback.artifact, rollback.bytes)
-    const pending: PendingNativeUpdate = {
-      schemaVersion: 1,
-      phase: 'staged',
-      transactionId: randomUUID(),
-      currentVersion: this.options.currentVersion,
-      version: candidate.artifact.version,
-      channel: candidate.artifact.channel,
-      format: candidate.artifact.format,
-      sha256: candidate.artifact.sha256,
-      rollbackFormat: rollback.artifact.format,
-      rollbackSha256: rollback.artifact.sha256,
-    }
-    await this.writeJournal(pending)
-    this.staged = candidate
-    this.rollback = rollback
-    this.pending = pending
   }
 
   /** This adapter never launches an untrusted candidate process in the current installation. */
@@ -228,7 +240,7 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
       failureStage = 'schedule-worker'
       await this.options.requestRestart(plan, this.options.nativeWorkerReadyTimeoutMs)
     } catch (error) {
-      await this.writeScheduleFailureStage(failureStage)
+      await this.writeFailureStage(failureStage)
       throw error
     }
   }
@@ -786,7 +798,7 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
     await removePrivateFile(journal, 'native Desktop update journal')
   }
 
-  private async writeScheduleFailureStage(stage: NativeInstallScheduleFailureStage): Promise<void> {
+  private async writeFailureStage(stage: NativeInstallFailureStage): Promise<void> {
     if (process.env.DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS !== '1') return
     try {
       const workers = await this.workerDirectory(true)

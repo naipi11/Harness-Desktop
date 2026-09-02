@@ -365,7 +365,7 @@ test.describe('installed macOS and Linux native update rollback', () => {
 
       installation = await prepareUnixNativeInstallation(target, rollback.installationArtifact)
       const nativeInstallation = installation
-      fixture = await nativeInstallation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
+      fixture = await nativeInstallation.launch(buildEnvironment({ NODE_EXTRA_CA_CERTS: server.certificatePath }))
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
       await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
       await observeNativeExitLifecycle(fixture)
@@ -436,7 +436,7 @@ test.describe('installed macOS and Linux native update rollback', () => {
       installation = await prepareUnixNativeInstallation(target, stable.installationArtifact)
       const nativeInstallation = installation
       expect(await nativeInstallation.version(candidate.updateArtifact, stable.updateArtifact)).toBe(stableVersion)
-      fixture = await nativeInstallation.launch({ NODE_EXTRA_CA_CERTS: server.certificatePath })
+      fixture = await nativeInstallation.launch(buildEnvironment({ NODE_EXTRA_CA_CERTS: server.certificatePath }))
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
       await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
       const stateSentinelPath = join(fixture.runtime.harnessHome, 'native-update-state-sentinel.txt')
@@ -1513,7 +1513,8 @@ async function readNativeUpdateFailureStageSummary(updatesDirectory: string): Pr
   if (matches.length === 0) return 'none'
   if (matches.length !== 1 || matches[0] === undefined) return 'ambiguous'
   const match = matches[0].name.match(new RegExp([
-    '^native-update-failure-stage-(schedule-validation|schedule-journal|schedule-plan|schedule-worker)-',
+    '^native-update-failure-stage-(stage-existing|stage-rollback|stage-candidate|stage-retained|stage-journal|',
+    + 'schedule-validation|schedule-journal|schedule-plan|schedule-worker)-',
     '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json$',
   ].join(''), 'iu'))
   if (match?.[1] === undefined) return 'ambiguous'
