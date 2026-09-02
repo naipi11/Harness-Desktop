@@ -213,6 +213,16 @@ describe('launchNativeRollbackWorker', () => {
     })
   })
 
+  it('passes a test-only loader prefix only under explicit native-update diagnostics', () => {
+    expect(createElectronWorkerEnvironment({
+      DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS: '1',
+      DSH_TEST_ELECTRON_LD_LIBRARY_PATH: '/test-only/runtime-libraries',
+    })).toEqual({
+      ELECTRON_RUN_AS_NODE: '1',
+      LD_LIBRARY_PATH: '/test-only/runtime-libraries',
+    })
+  })
+
   it('preserves only the non-secret Windows user paths needed by a restarted Desktop', () => {
     expect(createWindowsWorkerEnvironment({
       SystemRoot: 'C:\\Windows',

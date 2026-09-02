@@ -15,6 +15,7 @@ import {
 
 const workerReadyPollMs = 25
 const diagnosticsEnvironmentKey = 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS'
+const testLibraryPathEnvironmentKey = 'DSH_TEST_ELECTRON_LD_LIBRARY_PATH'
 const windowsBridgeRequestEnvironmentKey = 'DSH_NATIVE_WMI_LAUNCH'
 const windowsBridgeOutputLimit = 1024
 const windowsEnvironmentBlockLimit = 16 * 1024
@@ -878,6 +879,9 @@ export function createElectronWorkerEnvironment(source: NodeJS.ProcessEnv = proc
   for (const key of electronWorkerEnvironmentKeys) {
     const value = source[key]
     if (value !== undefined) environment[key] = value
+  }
+  if (source[diagnosticsEnvironmentKey] === '1' && source[testLibraryPathEnvironmentKey] !== undefined) {
+    environment.LD_LIBRARY_PATH = source[testLibraryPathEnvironmentKey]
   }
   return environment
 }
