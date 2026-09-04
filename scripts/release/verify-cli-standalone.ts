@@ -1,7 +1,7 @@
 /** Verify standalone CLI archives by extracting and executing their bundled runtime. */
 
 import { createHash } from 'node:crypto'
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -254,7 +254,11 @@ async function verifyExtracted(
     const executablePath = await execa(nodeExecutable, [
       '--eval', 'process.stdout.write(process.execPath)',
     ], { cwd: isolatedCwd, env: environment, extendEnv: false, reject: false })
-    if (executablePath.exitCode !== 0 || resolve(executablePath.stdout) !== resolve(nodeExecutable)) {
+    const expectedNodePath = await realpath(nodeExecutable)
+    const actualNodePath = executablePath.exitCode === 0
+      ? await realpath(executablePath.stdout.trim()).catch(() => '')
+      : ''
+    if (executablePath.exitCode !== 0 || !samePath(actualNodePath, expectedNodePath)) {
       violations.push(`standalone CLI: ${format} process.execPath is outside the bundled runtime`)
     }
     for (const path of nativeModuleLoadPaths(manifest.nativeModules)) {
@@ -272,10 +276,10 @@ async function verifyExtracted(
       runLauncher(input.platform, extraction, 'dsh', ['--help'], isolatedCwd, environment),
     ])
     if (harness.exitCode !== 0 || !/^Usage: harness/mu.test(harness.stdout)) {
-      violations.push(`standalone CLI: ${format} harness launcher failed from empty cwd`)
+      violations.push(`standalone CLI: ${format} harness launcher failed from empty cwd: ${launcherDiagnostic(harness)}`)
     }
     if (dsh.exitCode !== 0 || !/^Usage: dsh/mu.test(dsh.stdout)) {
-      violations.push(`standalone CLI: ${format} dsh launcher failed from empty cwd`)
+      violations.push(`standalone CLI: ${format} dsh launcher failed from empty cwd: ${launcherDiagnostic(dsh)}`)
     }
     let runtimePid: number | undefined
     try {
@@ -283,7 +287,7 @@ async function verifyExtracted(
         input.platform, extraction, 'harness', ['web', '--background', '--no-open'], isolatedCwd, environment,
       )
       if (started.exitCode !== 0 || started.stdout !== 'Web lease: web present') {
-        violations.push(`standalone CLI: ${format} harness failed to start the bundled Runtime: ${started.stderr}`)
+        violations.push(`standalone CLI: ${format} harness failed to start the bundled Runtime: ${launcherDiagnostic(started)}`)
       } else {
         const harnessHome = environment.HARNESS_HOME
         if (harnessHome === undefined) throw new Error('standalone CLI: isolated environment omitted HARNESS_HOME')
@@ -294,11 +298,11 @@ async function verifyExtracted(
         const status = await runLauncher(input.platform, extraction, 'dsh', ['web', '--status'], isolatedCwd, environment)
         if (status.exitCode !== 0 || !status.stdout.includes('Runtime: running')
           || !status.stdout.includes('Web lease: web present')) {
-          violations.push(`standalone CLI: ${format} dsh failed to attach to the bundled Runtime: ${status.stderr}`)
+          violations.push(`standalone CLI: ${format} dsh failed to attach to the bundled Runtime: ${launcherDiagnostic(status)}`)
         }
         const stopped = await runLauncher(input.platform, extraction, 'harness', ['web', '--stop'], isolatedCwd, environment)
         if (stopped.exitCode !== 0 || stopped.stdout !== 'Web lease: web absent') {
-          violations.push(`standalone CLI: ${format} harness failed to release the bundled Runtime lease: ${stopped.stderr}`)
+          violations.push(`standalone CLI: ${format} harness failed to release the bundled Runtime lease: ${launcherDiagnostic(stopped)}`)
         }
       }
     } finally {
@@ -434,6 +438,19 @@ async function runLauncher(
     timeout: 90_000,
   })
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+}
+
+function launcherDiagnostic(result: { readonly exitCode: number | undefined; readonly stdout: string; readonly stderr: string }): string {
+  return `exit=${String(result.exitCode)} stdout=${JSON.stringify(result.stdout)} stderr=${JSON.stringify(result.stderr)}`
+    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_]+/gu, '[REDACTED]')
+    .replace(/((?:token|password|secret|api[_-]?key)\s*[=:]\s*)\S+/giu, '$1[REDACTED]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 4 * 1024)
 }
 
 async function waitForProcessExit(pid: number): Promise<void> {
