@@ -130,6 +130,7 @@ describe('isolated Deb configuration', () => {
     const args = isolatedDpkgInstallArguments('/tmp/harness-root', '/release/harness-desktop.deb')
     expect(args).toEqual([
       '--root=/tmp/harness-root',
+      '--force-depends',
       '--install',
       '/release/harness-desktop.deb',
     ])

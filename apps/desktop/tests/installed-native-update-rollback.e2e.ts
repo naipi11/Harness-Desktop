@@ -718,7 +718,7 @@ async function prepareMacNativeInstallation(root: string, dmg: string): Promise<
   try {
     await execa('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg], { reject: true })
     attached = true
-    await cp(join(mount, 'Harness Desktop.app'), bundle, { recursive: true })
+    await cp(await findMacApplication(mount), bundle, { recursive: true })
   } finally {
     if (attached) await execa('hdiutil', ['detach', mount], { reject: true })
   }
@@ -738,6 +738,28 @@ async function prepareMacNativeInstallation(root: string, dmg: string): Promise<
       await removeOwnedNativeInstallationRoot(root, 'darwin')
     },
   }
+}
+
+async function findMacApplication(directory: string): Promise<string> {
+  const found: string[] = []
+  const visit = async (current: string, depth: number): Promise<void> => {
+    if (depth > 2) return
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (entry.isSymbolicLink() || !entry.isDirectory()) continue
+      const path = join(current, entry.name)
+      if (entry.name.endsWith('.app')) {
+        found.push(path)
+        continue
+      }
+      await visit(path, depth + 1)
+    }
+  }
+  await visit(directory, 0)
+  const application = found[0]
+  if (found.length !== 1 || application === undefined) {
+    throw new Error(`native update e2e: expected exactly one macOS application bundle, found ${String(found.length)}`)
+  }
+  return application
 }
 
 async function prepareLinuxNativeInstallation(root: string, appImage: string): Promise<NativeUpdateUnixInstallation> {

@@ -190,7 +190,7 @@ export function wrapPreparedArtifact(subject: PreparedArtifact): InstalledDeskto
  * @returns dpkg arguments with configured-install semantics.
  */
 export function isolatedDpkgInstallArguments(root: string, deb: string): readonly string[] {
-  return [`--root=${root}`, '--install', deb]
+  return [`--root=${root}`, '--force-depends', '--install', deb]
 }
 
 /**

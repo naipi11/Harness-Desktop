@@ -37,6 +37,7 @@ const root = resolve(import.meta.dirname, '../..')
 const cliRoot = resolve(root, 'apps/cli')
 const defaultNodeVersion = '24.19.0'
 const defaultSourceDateEpoch = 1_704_067_200
+const nodePtyPatchFile = 'node-pty@1.1.0.patch'
 
 /**
  * Deploy the complete built CLI Runtime graph, then pack it with physical bundled dependencies.
@@ -55,12 +56,17 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
       '--ignore-scripts',
       deployedPackage,
     ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
+    await mkdir(join(deployedPackage, 'patches'), { recursive: true })
+    await cp(
+      join(root, 'patches', nodePtyPatchFile),
+      join(deployedPackage, 'patches', nodePtyPatchFile),
+    )
     await execa('pnpm', [
       '--dir', deployedPackage,
       'install', '--prod', '--offline', '--frozen-lockfile', '--ignore-scripts',
       '--config.node-linker=hoisted',
       '--config.confirm-modules-purge=false',
-    ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
+    ], { cwd: deployedPackage, env: { ...process.env, CI: 'true' }, reject: true })
     if (process.platform === 'linux') {
       await retainLinuxNodePtyBinding(
         join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty'),

@@ -640,12 +640,33 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       const child = spawn(executable, [entry], {
         cwd: home,
         env: packagedRuntimeEnvironment(home, platformHome),
-        stdio: ['pipe', 'ignore', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
+      let stdout = ''
       let stderr = ''
       let settled = false
       let forcedFailure = false
+      let stdinClosed = false
+      const outputLimit = 16 * 1_024
+      const isReady = (): boolean => stdout.includes('harness-runtime: ready ')
+        || stderr.includes('harness-runtime: ready ')
+      const closeInputWhenReady = (): void => {
+        if (!stdinClosed && isReady()) {
+          stdinClosed = true
+          child.stdin.end()
+        }
+      }
+      const appendOutput = (target: 'stdout' | 'stderr', chunk: string): void => {
+        if (target === 'stdout') stdout += chunk
+        else stderr += chunk
+        if (Buffer.byteLength(stdout, 'utf8') + Buffer.byteLength(stderr, 'utf8') > outputLimit) {
+          forcedFailure = true
+          child.kill()
+          return
+        }
+        closeInputWhenReady()
+      }
       const finish = (value: boolean): void => {
         if (settled) return
         settled = true
@@ -656,26 +677,20 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         forcedFailure = true
         child.kill()
       }, 30_000)
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', (chunk: string) => { appendOutput('stdout', chunk) })
       child.stderr.setEncoding('utf8')
-      child.stderr.on('data', (chunk: string) => {
-        stderr += chunk
-        if (Buffer.byteLength(stderr, 'utf8') > 16 * 1_024) {
-          forcedFailure = true
-          child.kill()
-          return
-        }
-        if (stderr.includes('harness-runtime: ready ')) child.stdin.end()
-      })
+      child.stderr.on('data', (chunk: string) => { appendOutput('stderr', chunk) })
       child.once('error', (error) => {
         console.error(`desktop artifact: packaged Runtime process error: ${error instanceof Error ? error.message : String(error)}`)
         finish(false)
       })
       child.once('exit', (code, signal) => {
-        const ready = stderr.includes('harness-runtime: ready ')
+        const ready = isReady()
         const loaded = !forcedFailure && code === 0 && ready
-          && !stderr.includes('ERR_MODULE_NOT_FOUND')
+          && !`${stdout}\n${stderr}`.includes('ERR_MODULE_NOT_FOUND')
         if (!loaded) {
-          const detail = packagedRuntimeDiagnostic(stderr)
+          const detail = packagedRuntimeDiagnostic(`${stdout}\n${stderr}`)
           const status = forcedFailure ? 'forced-failure' : `exit-${String(code)}`
           console.error(`desktop artifact: packaged Runtime status=${status} signal=${String(signal)} ready=${String(ready)}${detail === '' ? '' : ` stderr=${detail}`}`)
         }
