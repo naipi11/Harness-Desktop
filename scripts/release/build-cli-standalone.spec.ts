@@ -501,6 +501,21 @@ describe('buildCliStandaloneWithDependencies', () => {
     })
   })
 
+  it('materializes a missing deployed Linux node-pty package before retaining its binding', async () => {
+    const sourceRoot = await tempRoot('harness-cli-node-pty-source-materialize-')
+    const deployedRoot = join(await tempRoot('harness-cli-node-pty-deployed-materialize-'), 'node-pty')
+    await mkdir(join(sourceRoot, 'build', 'Release'), { recursive: true })
+    await writeFile(join(sourceRoot, 'package.json'), JSON.stringify({
+      name: 'node-pty', version: '1.1.0', files: ['lib/'],
+    }))
+    await writeFile(join(sourceRoot, 'build', 'Release', 'pty.node'), linuxX64NativeModule())
+
+    await retainLinuxNodePtyBinding(sourceRoot, deployedRoot)
+
+    await expect(readFile(join(deployedRoot, 'package.json'), 'utf8')).resolves.toContain('node-pty')
+    await expect(readFile(join(deployedRoot, 'build', 'Release', 'pty.node'))).resolves.toEqual(linuxX64NativeModule())
+  })
+
   it('rejects a missing source Linux node-pty binding before the packed payload can be written', async () => {
     const sourceRoot = await tempRoot('harness-cli-node-pty-source-missing-')
     const deployedRoot = await tempRoot('harness-cli-node-pty-deployed-missing-')

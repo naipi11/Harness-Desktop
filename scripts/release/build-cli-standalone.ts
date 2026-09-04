@@ -52,6 +52,7 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
       '--filter', '@harness-desktop/cli',
       'deploy', '--legacy', '--prod',
       '--ignore-scripts',
+      '--config.node-linker=hoisted',
       deployedPackage,
     ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
     if (process.platform === 'linux') {
@@ -75,6 +76,7 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
         ] as const),
     ))
     const bundledDependencies = Object.keys(dependencies)
+    delete manifest.devDependencies
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies, bundledDependencies }, undefined, 2)}\n`)
     await repairMissingDeclaredBins(deployedPackage)
     await verifyPackedCliClosure(deployedPackage)
@@ -523,6 +525,10 @@ export async function retainLinuxNodePtyBinding(
   deployedPackageRoot: string,
 ): Promise<void> {
   const sourceManifest = await readNodePtyManifest(sourcePackageRoot, 'source')
+  if (!(await fileExists(join(deployedPackageRoot, 'package.json')))) {
+    await mkdir(deployedPackageRoot, { recursive: true })
+    await cp(sourcePackageRoot, deployedPackageRoot, { recursive: true, dereference: true })
+  }
   const deployedManifest = await readNodePtyManifest(deployedPackageRoot, 'deployed')
   if (sourceManifest.version !== deployedManifest.version) {
     throw new Error(`packed CLI: Linux node-pty source version ${sourceManifest.version} does not match deployed version ${deployedManifest.version}`)
