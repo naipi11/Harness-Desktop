@@ -59,6 +59,20 @@ import {
   WindowRuntimeOwners,
 } from './window-options.ts'
 
+if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1') {
+  await import(pathToFileURL(join(
+    process.resourcesPath,
+    'app.asar',
+    'node_modules',
+    '@harness-desktop',
+    'dsh-host-local-runtime',
+    'lib',
+    'bin.js',
+  )).href)
+  app.quit()
+  process.exit(0)
+}
+
 const runtimeConnector = createRuntimeConnector()
 const desktopReadiness = new DesktopReadiness()
 const ownsDesktopInstance = app.requestSingleInstanceLock()
@@ -539,19 +553,6 @@ registerDesktopIpc<BrowserWindow, IpcMainInvokeEvent>({
 
 void app.whenReady().then(async () => {
   if (!ownsDesktopInstance) {
-    app.quit()
-    return
-  }
-  if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1') {
-    await import(pathToFileURL(join(
-      process.resourcesPath,
-      'app.asar',
-      'node_modules',
-      '@harness-desktop',
-      'dsh-host-local-runtime',
-      'lib',
-      'bin.js',
-    )).href)
     app.quit()
     return
   }

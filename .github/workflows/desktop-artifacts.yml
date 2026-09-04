@@ -207,6 +207,10 @@ jobs:
           DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
         run: pnpm run release:verify-packed-cli
 
+      - name: Restore development workspace after packaged CLI smoke
+        if: ${{ always() }}
+        run: pnpm install --frozen-lockfile --prod=false
+
       - name: Build standalone CLI archives
         id: build-cli
         shell: bash
