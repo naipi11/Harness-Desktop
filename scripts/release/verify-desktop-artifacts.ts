@@ -666,15 +666,32 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         }
         if (stderr.includes('harness-runtime: ready ')) child.stdin.end()
       })
-      child.once('error', () => { finish(false) })
+      child.once('error', (error) => {
+        console.error(`desktop artifact: packaged Runtime process error: ${error instanceof Error ? error.message : String(error)}`)
+        finish(false)
+      })
       child.once('exit', (code) => {
-        finish(!forcedFailure && code === 0 && stderr.includes('harness-runtime: ready ')
-          && !stderr.includes('ERR_MODULE_NOT_FOUND'))
+        const loaded = !forcedFailure && code === 0 && stderr.includes('harness-runtime: ready ')
+          && !stderr.includes('ERR_MODULE_NOT_FOUND')
+        if (!loaded) {
+          const detail = packagedRuntimeDiagnostic(stderr)
+          if (detail !== '') console.error(`desktop artifact: packaged Runtime stderr: ${detail}`)
+        }
+        finish(loaded)
       })
     })
   } finally {
     await rm(home, { recursive: true, force: true })
   }
+}
+
+function packagedRuntimeDiagnostic(stderr: string): string {
+  return stderr
+    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_]+/gu, '[REDACTED]')
+    .replace(/((?:token|password|secret|api[_-]?key)\s*[=:]\s*)\S+/giu, '$1[REDACTED]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 4 * 1_024)
 }
 
 function packagedRuntimeEnvironment(home: string, platformHome: string): NodeJS.ProcessEnv {

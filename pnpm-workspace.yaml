@@ -24,6 +24,13 @@ packages:
 # builds must resolve those matching names to this workspace's pinned sources.
 linkWorkspacePackages: true
 
+# Universal macOS packaging must retain both target-native optional packages
+# while each current runner still installs only its current operating system.
+supportedArchitectures:
+  cpu:
+    - x64
+    - arm64
+
 overrides:
   '@harness-desktop/cosmokit': 'link:vendor/cosmokit'
   '@harness-desktop/schemastery': 'link:vendor/schemastery'

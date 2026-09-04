@@ -97,6 +97,7 @@ jobs:
           docker run --rm \
             --user "$(id -u):$(id -g)" \
             -v "$PWD:$PWD" \
+            -v "$RUNNER_TEMP:$RUNNER_TEMP:ro" \
             -v "$HOME/.cache/node-gyp:$HOME/.cache/node-gyp:ro" \
             -w "$addon_dir" \
             "$image" \

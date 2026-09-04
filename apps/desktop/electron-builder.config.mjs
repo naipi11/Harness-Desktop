@@ -49,6 +49,10 @@ export default {
     target: [{ target: 'dmg', arch: ['universal'] }, { target: 'zip', arch: ['universal'] }],
     icon: 'resources/icons/mac/harness-desktop.icns',
     category: 'public.app-category.developer-tools',
+    // pnpm installs both Darwin architectures so the universal app carries
+    // each target-native optional binary; retain identical copies instead of
+    // attempting to lipo a single-architecture package file.
+    x64ArchFiles: 'Contents/Resources/app.asar.unpacked/node_modules/**',
     ...(signingMode === 'release' ? {} : { identity: null }),
   },
   linux: {

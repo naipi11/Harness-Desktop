@@ -8,6 +8,8 @@ Status: implemented
 
 Linux AppImage 可能在 detached worker 发布事务 heartbeat 之后才启动挂载后的 Electron Main。若要求 heartbeat 时间戳晚于 candidate 的 epoch 估计，就会拒绝这个合法启动并触发 health-check rollback。source live Runtime entry 也需要使用解析后的 package URL，因为 ClientModuleRegistry 的 metadata 解析锚点位于 local-runtime package，而不是每个 bundle package。成功的 candidate 会在 finalization 期间移除 applied marker，因此要求这个短暂 marker 的已安装更新测试无法区分已提交 candidate 与失败的交接。
 
+hosted macOS arm64 runner 在 electron-builder 创建 x64/arm64 pair 之前只安装了 host 架构的 optional native package，因此 universal packaging 在两个 app 中看到了相同的 arm64 `sharp` Mach-O。manylinux node-pty Makefile 保留了指向容器挂载范围之外 runner-temp `node-gyp` include 的绝对路径。Windows packaged Runtime verifier 还丢弃了可以说明加载失败原因的子进程 diagnostic。
+
 ## Decision
 
 `apps/desktop/tests/support/runtime-live-entry.mjs` 在 boot 前使用 `import.meta.resolve()` 解析 source patch 插入项中的每个 bare package name，同时保留 `cordis:` 与已有的 `file:` entry。Built Runtime composition 继续使用现有的 patch 解析路径。`isCurrentWatchdogHeartbeat()` 允许 Linux heartbeat 不早于 `candidateStartedBeforeMs - healthCheckTimeoutMs`，且不晚于观测时间；Windows launch nonce 语法与默认的严格 helper 行为保持不变。Linux 已安装更新测试接受两种情况：带有存活 candidate process 的实时 applied marker，或 candidate version 已安装、私有 journal 已消失且 Runtime 报告 `applied:applied` 或 `up-to-date:up-to-date`。
@@ -15,6 +17,8 @@ Linux AppImage 可能在 detached worker 发布事务 heartbeat 之后才启动�
 freshness window 使用已有 policy health window，而不是新增部署 tunable 字段。事务专属私有存储和 worker 的终态 applied outcome 仍然是必需条件，因此近期 heartbeat 不能在没有 detached worker proof 的情况下提交更新。source resolver 属于测试 Runtime 基础设施；它不会仅为改变解析锚点而向 `dsh-host-local-runtime` 增加所有 bundle package 的直接依赖。
 
 Windows PowerShell 在执行 supervisor 的 worker 脚本前会向 `PATHEXT` 追加 `.CPL`。`createWindowsWorkerEnvironment()` 显式包含这个扩展，使 WMI 子进程 receipt 与受限环境一致，同时不扩大允许的环境变量名称集合。
+
+workspace 为当前操作系统声明同时解析 x64 与 arm64 optional dependency。macOS builder 保留相同的目标 native Mach-O package 文件，同时继续对架构不同的文件执行 lipo。manylinux job 以只读方式把生成 Makefile 使用的 `RUNNER_TEMP` 挂载到相同路径。packaged Runtime verifier 在子进程无法加载时只报告有长度上限且已脱敏的 stderr 摘要。
 
 ## Alternatives considered
 

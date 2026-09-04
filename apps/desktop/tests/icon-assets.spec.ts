@@ -5,7 +5,7 @@ import { createWindowOptions, desktopIconPath } from '../src/main/window-options
 
 interface BuilderIconConfig {
   readonly win: { readonly icon: string }
-  readonly mac: { readonly icon: string }
+  readonly mac: { readonly icon: string; readonly x64ArchFiles: string }
   readonly linux: { readonly icon: string }
   readonly nsis: { readonly include: string }
 }
@@ -38,6 +38,7 @@ it('selects the generated native icon for each desktop platform', () => {
 it('configures Electron Builder to package the generated native icons', () => {
   expect(builderConfig.win.icon).toBe('resources/icons/win/harness-desktop.ico')
   expect(builderConfig.mac.icon).toBe('resources/icons/mac/harness-desktop.icns')
+  expect(builderConfig.mac.x64ArchFiles).toBe('Contents/Resources/app.asar.unpacked/node_modules/**')
   expect(builderConfig.linux.icon).toBe('resources/icons/linux/harness-desktop-512.png')
 })
 
