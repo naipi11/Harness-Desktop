@@ -945,7 +945,8 @@ const windowsWorkerEnvironmentNameSet = new Set([
 /**
  * Preserve the non-secret per-user paths that the replacement Desktop needs while excluding ambient credentials.
  * @param environment - current Main process environment, provided explicitly for focused tests.
- * @returns constrained Windows worker environment with the system root required by PowerShell.
+ * @returns constrained Windows worker environment with the system root required by
+ * PowerShell; PATHEXT includes the extension PowerShell adds for control-panel files.
  */
 export function createWindowsWorkerEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {}
@@ -956,7 +957,9 @@ export function createWindowsWorkerEnvironment(environment: NodeJS.ProcessEnv = 
   }
   for (const key of windowsWorkerEnvironmentKeys) {
     const value = environment[key]
-    if (value !== undefined) result[key] = value
+    if (value !== undefined) {
+      result[key] = key === 'PATHEXT' ? normalizeWindowsPowerShellPathExtensions(value) : value
+    }
   }
   if (systemRoot !== undefined) {
     const systemDrive = windowsSystemDrive(systemRoot)
@@ -968,6 +971,11 @@ export function createWindowsWorkerEnvironment(environment: NodeJS.ProcessEnv = 
   }
   if (environment[diagnosticsEnvironmentKey] === '1') result[diagnosticsEnvironmentKey] = '1'
   return result
+}
+
+function normalizeWindowsPowerShellPathExtensions(value: string): string {
+  if (value.split(';').some(extension => extension.trim().toUpperCase() === '.CPL')) return value
+  return value === '' ? '.CPL' : `${value};.CPL`
 }
 
 function windowsSystemDrive(systemRoot: string): string | undefined {

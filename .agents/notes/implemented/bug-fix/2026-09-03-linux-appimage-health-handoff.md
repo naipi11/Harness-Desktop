@@ -1,0 +1,31 @@
+# Agent Note: Linux AppImage health handoff
+
+Status: implemented
+
+English | [中文](2026-09-03-linux-appimage-health-handoff.zh.md)
+
+## Problem
+
+A Linux AppImage may start its mounted Electron Main after the detached worker publishes the transaction heartbeat. Requiring the heartbeat timestamp to be later than the candidate's epoch estimate can reject that valid launch and trigger health-check rollback. The source live Runtime entry also needs package-resolved module URLs because ClientModuleRegistry metadata resolution is anchored at the local-runtime package, not at every bundle package. The successful candidate then removes the applied marker during finalization, so an installed-update test that requires that transient marker cannot distinguish a committed candidate from a failed handoff.
+
+## Decision
+
+`apps/desktop/tests/support/runtime-live-entry.mjs` resolves every bare package name in source patch insertions with `import.meta.resolve()` before boot, while preserving `cordis:` and existing `file:` entries. Built Runtime composition keeps its existing patch resolution path. `isCurrentWatchdogHeartbeat()` accepts a Linux heartbeat no earlier than `candidateStartedBeforeMs - healthCheckTimeoutMs` and no later than the observation time; the Windows launch nonce grammar and the default strict helper behavior remain unchanged. The Linux installed-update test accepts either the live applied marker with a live candidate process or a candidate-version installation whose private journal is gone and Runtime reports `applied:applied` or `up-to-date:up-to-date`.
+
+The freshness window is the existing policy health window, not a new deployment tuning field. Transaction-specific private storage and the worker's terminal applied outcome remain required, so a recent heartbeat cannot commit an update without the detached worker's proof. The source resolver is test-runtime infrastructure; it does not add bundle packages to `dsh-host-local-runtime` merely to change a resolution anchor.
+
+Windows PowerShell appends `.CPL` to `PATHEXT` before it executes the supervisor's worker script. `createWindowsWorkerEnvironment()` includes that extension explicitly, so the WMI child receipt matches the constrained environment without expanding the allowed environment-name set.
+
+## Alternatives considered
+
+**Add a fixed delay before writing the worker heartbeat.** Rejected. AppImage mount and Electron startup time vary by runner, and a fixed delay either preserves the race or wastes the health window.
+
+**Remove the Linux lower timestamp bound.** Rejected. A same-transaction heartbeat remains private and transaction-bound, but an unbounded old record would weaken restart handling. The configured health window limits the accepted age.
+
+**Require the applied marker to survive candidate finalization.** Rejected. Finalization owns marker removal after Runtime records the terminal outcome. The test consumes that durable outcome instead of changing the update lifecycle.
+
+**Add every browser package as a direct local-runtime dependency.** Rejected. That duplicates the bundle dependency graph and leaves source patch resolution dependent on package layout. File URLs make the source loader's package origin explicit.
+
+## Consequences
+
+Linux AppImage candidates can complete the health handoff when the runtime forks or mounts the Main process after the worker's immediate launch return. The installed Linux test proves both candidate replacement and the post-finalization `applied` outcome, while the existing rollback scenario still requires a retained stable artifact when health is never acknowledged. Native Linux evidence still depends on a runner with the required Electron libraries, FUSE, SquashFS tooling, and target-compatible native bindings; WSL results do not provide macOS evidence or manylinux compatibility proof.

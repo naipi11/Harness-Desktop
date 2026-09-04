@@ -21,6 +21,11 @@ const workerTemplate = resolve(import.meta.dirname, '../resources/update/windows
 const supervisorTemplate = resolve(import.meta.dirname, '../out/native/win32-x64/windows-native-update-supervisor.exe')
 
 windows('windows-native-rollback-worker', () => {
+  it('includes the control-panel extension that Windows PowerShell adds to PATHEXT', () => {
+    expect(createWindowsWorkerEnvironment({ PATHEXT: '.COM;.EXE' }).PATHEXT).toBe('.COM;.EXE;.CPL')
+    expect(createWindowsWorkerEnvironment({ PATHEXT: '.COM;.CPL' }).PATHEXT).toBe('.COM;.CPL')
+  })
+
   it('accepts only the launched candidate identity when applied atomically replaces checking', async () => {
     const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     const command = [

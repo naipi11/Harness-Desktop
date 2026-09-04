@@ -203,6 +203,22 @@ describe('NativeDesktopInstallAdapter', () => {
     )).toBe(false)
   })
 
+  it('accepts a Linux heartbeat within the configured startup freshness window', () => {
+    const transactionId = '11111111-1111-4111-8111-111111111111'
+
+    expect(isCurrentWatchdogHeartbeat(
+      `${transactionId}:1700000000000\n`, transactionId, 1700000000100, 1700000000200, 'linux', undefined, 200,
+    )).toBe(true)
+  })
+
+  it('rejects a Linux heartbeat older than the configured startup freshness window', () => {
+    const transactionId = '11111111-1111-4111-8111-111111111111'
+
+    expect(isCurrentWatchdogHeartbeat(
+      `${transactionId}:1700000000000\n`, transactionId, 1700000000201, 1700000000300, 'linux', undefined, 200,
+    )).toBe(false)
+  })
+
   it('rejects a Windows heartbeat for another transaction when the launch nonce matches', () => {
     const expectedTransactionId = '11111111-1111-4111-8111-111111111111'
 

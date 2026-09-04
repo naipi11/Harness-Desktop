@@ -93,6 +93,68 @@ test.describe('native update handoff observation', () => {
     })).toBe('recovery-after-candidate-launch')
   })
 
+  test('identifies only processes whose APPIMAGE exactly names the isolated AppImage', async () => {
+    const appImagePath = '/tmp/harness-desktop-native-update-linux-probe/Harness Desktop.AppImage'
+    const environments = new Map<number, Uint8Array | undefined>([
+      [101, Buffer.from(`APPIMAGE=${appImagePath}\0CHILD=renderer\0`, 'utf8')],
+      [102, Buffer.from(`APPIMAGE=${appImagePath}.previous\0`, 'utf8')],
+      [103, Buffer.from(`OTHER=APPIMAGE=${appImagePath}\0`, 'utf8')],
+      [104, undefined],
+      [105, Buffer.from(`APPIMAGE=${appImagePath}\0`, 'utf8')],
+    ])
+    const liveStat = `101 (Harness Desktop) ${['S', ...Array<string>(18).fill('0'), '101'].join(' ')}`
+    const zombieStat = `105 (Harness Desktop) ${['Z', ...Array<string>(18).fill('0'), '105'].join(' ')}`
+
+    await expect(exactLinuxAppImageProcessIds(appImagePath, {
+      async listProcessIds() { return ['101', '102', '103', '104', '105', 'not-a-process'] },
+      async readEnvironment(processId) { return environments.get(processId) },
+      async readStat(processId) { return processId === 105 ? zombieStat : processId === 101 ? liveStat : undefined },
+    })).resolves.toEqual([101])
+  })
+
+  test('requires the exact Linux AppImage path below its isolated temporary root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'harness-desktop-native-update-linux-'))
+    try {
+      await expect(assertOwnedLinuxAppImagePath(join(root, 'Harness Desktop.AppImage'))).resolves.toBeUndefined()
+      await expect(assertOwnedLinuxAppImagePath(join(root, 'other.AppImage'))).rejects.toThrow('refusing Linux AppImage cleanup outside its owned temporary root')
+      await expect(assertOwnedLinuxAppImagePath(join(tmpdir(), 'not-owned', 'Harness Desktop.AppImage'))).rejects.toThrow('refusing Linux AppImage cleanup outside its owned temporary root')
+    } finally {
+      await removeOwnedNativeInstallationRoot(root, 'linux')
+    }
+  })
+
+  test('rejects a reused or zombie Linux PID before cleanup sends SIGKILL', () => {
+    const reference = { processId: 101, startTicks: '12345' }
+    expect(isSameLiveLinuxProcess(reference, { state: 'S', startTicks: '12345' })).toBe(true)
+    expect(isSameLiveLinuxProcess(reference, { state: 'S', startTicks: '12346' })).toBe(false)
+    expect(isSameLiveLinuxProcess(reference, { state: 'Z', startTicks: '12345' })).toBe(false)
+    expect(isSameLiveLinuxProcess(reference, undefined)).toBe(false)
+  })
+
+  test('stops a mounted Linux AppImage process that keeps the exact outer APPIMAGE path', async () => {
+    test.skip(process.platform !== 'linux', 'requires Linux procfs')
+    const root = await mkdtemp(join(tmpdir(), 'harness-desktop-native-update-linux-'))
+    const appImagePath = join(root, 'Harness Desktop.AppImage')
+    const child = execa(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
+      env: { ...process.env, APPIMAGE: appImagePath },
+      reject: false,
+      windowsHide: true,
+    })
+    try {
+      const processId = child.pid
+      if (processId === undefined) throw new Error('native update e2e: Linux AppImage cleanup fixture has no process identifier')
+      await expect.poll(() => nativeProcessIsAlive(processId), { timeout: 5_000 }).toBe(true)
+
+      await stopExactPosixProcesses(appImagePath)
+
+      await expect.poll(() => nativeProcessIsAlive(processId), { timeout: 5_000 }).toBe(false)
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      await removeOwnedNativeInstallationRoot(root, 'linux')
+    }
+  })
+
   test('accepts only one fixed schedule failure stage receipt', async () => {
     const root = await mkdtemp(join(tmpdir(), 'harness-native-update-stage-'))
     try {
@@ -462,6 +524,7 @@ test.describe('installed macOS and Linux native update rollback', () => {
         appliedPath: join(pending.updatesDirectory, 'workers', `native-update-applied-${pending.transactionId}.json`),
         transactionId: pending.transactionId,
         journalPath: pending.journalPath,
+        harnessHome: fixture.runtime.harnessHome,
       })
       expect(fixture.runtime.child.exitCode).toBeNull()
       await expect(readFile(stateSentinelPath, 'utf8')).resolves.toBe(stateSentinel)
@@ -1514,7 +1577,7 @@ async function readNativeUpdateFailureStageSummary(updatesDirectory: string): Pr
   if (matches.length !== 1 || matches[0] === undefined) return 'ambiguous'
   const match = matches[0].name.match(new RegExp([
     '^native-update-failure-stage-(stage-existing|stage-rollback|stage-candidate|stage-retained|stage-journal|',
-    + 'schedule-validation|schedule-journal|schedule-plan|schedule-worker)-',
+    'schedule-validation|schedule-journal|schedule-plan|schedule-worker)-',
     '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json$',
   ].join(''), 'iu'))
   if (match?.[1] === undefined) return 'ambiguous'
@@ -1834,7 +1897,7 @@ async function waitForWindowsHealthyCandidate(options: {
   }
 }
 
-/** Wait for the Unix worker proof while the authenticated candidate remains the installed release. */
+/** Wait for the Unix worker proof or terminal Runtime outcome while the authenticated candidate is installed. */
 async function waitForHealthyCandidate(options: {
   readonly installation: NativeUpdateUnixInstallation
   readonly candidateArtifact: string
@@ -1842,15 +1905,24 @@ async function waitForHealthyCandidate(options: {
   readonly appliedPath: string
   readonly transactionId: string
   readonly journalPath: string
+  readonly harnessHome: string
 }): Promise<void> {
-  await expect.poll(async () => ({
-    version: await options.installation.version(options.candidateArtifact, options.stableArtifact).catch(() => undefined),
-    applied: await readFile(options.appliedPath, 'utf8').catch(() => undefined),
-    processAlive: await candidateProcessAlive(options.journalPath),
-  }), { timeout: 120_000 }).toEqual({
+  await expect.poll(async () => {
+    const phase = await readNativeUpdatePhase(options.journalPath)
+    const version = await options.installation.version(options.candidateArtifact, options.stableArtifact).catch(() => undefined)
+    const applied = await readFile(options.appliedPath, 'utf8').catch(() => undefined)
+    const processAlive = await candidateProcessAlive(options.journalPath)
+    const terminalOutcome = await readNativeUpdateOutcome(options.harnessHome)
+    const appliedMarker = applied === `${options.transactionId}\n`
+    const cleanedApplied = phase === undefined
+      && (terminalOutcome === 'applied:applied' || terminalOutcome === 'up-to-date:up-to-date')
+    return {
+      version,
+      accepted: version === candidateVersion && ((appliedMarker && processAlive) || cleanedApplied),
+    }
+  }, { timeout: 120_000 }).toMatchObject({
     version: candidateVersion,
-    applied: `${options.transactionId}\n`,
-    processAlive: true,
+    accepted: true,
   })
 }
 
@@ -1886,12 +1958,51 @@ async function readCandidateProcess(journalPath: string): Promise<NativeCandidat
 }
 
 async function linuxProcessStartTicks(processId: number): Promise<string | undefined> {
-  const content = await readFile(`/proc/${String(processId)}/stat`, 'utf8').catch(() => undefined)
-  if (content === undefined) return undefined
+  const identity = await readLinuxProcessIdentity(processId)
+  return identity !== undefined && isLiveLinuxProcess(identity) ? identity.startTicks : undefined
+}
+
+interface LinuxProcessIdentity {
+  readonly state: string
+  readonly startTicks: string
+}
+
+/** Read the current Linux PID identity; a missing or unreadable proc record has no usable identity. */
+async function readLinuxProcessIdentity(
+  processId: number,
+  readStat: (processId: number) => Promise<string | undefined> = readLinuxProcessStat,
+): Promise<LinuxProcessIdentity | undefined> {
+  const content = await readStat(processId)
+  return content === undefined ? undefined : parseLinuxProcessIdentity(content)
+}
+
+/** Parse the Linux process state and start tick fields after a possibly parenthesized command name. */
+function parseLinuxProcessIdentity(content: string): LinuxProcessIdentity | undefined {
   const closingParenthesis = content.lastIndexOf(')')
   if (closingParenthesis === -1) return undefined
-  const value = content.slice(closingParenthesis + 1).trim().split(/\s+/u)[19]
-  return value !== undefined && /^\d{1,32}$/u.test(value) ? value : undefined
+  const fields = content.slice(closingParenthesis + 1).trim().split(/\s+/u)
+  const state = fields[0]
+  const startTicks = fields[19]
+  if (state === undefined || !/^[A-Za-z]$/u.test(state) || startTicks === undefined || !/^\d{1,32}$/u.test(startTicks)) {
+    return undefined
+  }
+  return { state, startTicks }
+}
+
+/** Zombies and dead-task records no longer represent a process that cleanup may terminate. */
+function isLiveLinuxProcess(identity: LinuxProcessIdentity): boolean {
+  return identity.state !== 'Z' && identity.state !== 'X' && identity.state !== 'x'
+}
+
+/** Read a Linux proc stat record without treating normal exit or permission races as test failures. */
+async function readLinuxProcessStat(processId: number): Promise<string | undefined> {
+  try {
+    return await readFile(`/proc/${String(processId)}/stat`, 'utf8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EACCES' || code === 'ENOENT' || code === 'EPERM') return undefined
+    throw error
+  }
 }
 
 async function installedPackageVersion(asarPath: string): Promise<string> {
@@ -1940,15 +2051,97 @@ function windowsSystemTool(relativePath: string): string {
   return join(systemRoot, 'System32', ...relativePath.split('\\'))
 }
 
-/** Terminate only macOS/Linux processes whose command begins with the test-owned installed executable. */
-async function stopExactPosixProcesses(executablePath: string): Promise<void> {
-  for (const processId of await exactPosixProcessIds(executablePath)) {
+const nativeProcessStopTimeoutMs = 5_000
+
+interface LinuxAppImageProcessOperations {
+  listProcessIds(): Promise<readonly string[]>
+  readEnvironment(processId: number): Promise<Uint8Array | undefined>
+  readStat(processId: number): Promise<string | undefined>
+}
+
+interface LinuxProcessReference {
+  readonly processId: number
+  readonly startTicks: string
+}
+
+const linuxAppImageProcessOperations: LinuxAppImageProcessOperations = {
+  async listProcessIds() { return await readdir('/proc') },
+  async readEnvironment(processId) {
     try {
-      process.kill(processId, 'SIGKILL')
+      return await readFile(`/proc/${String(processId)}/environ`)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EACCES' || code === 'ENOENT' || code === 'EPERM') return undefined
+      throw error
     }
+  },
+  async readStat(processId) { return await readLinuxProcessStat(processId) },
+}
+
+/** Terminate and await only macOS/Linux processes independently bound to this test-owned installation. */
+async function stopExactPosixProcesses(executablePath: string): Promise<void> {
+  if (process.platform === 'linux') {
+    await assertOwnedLinuxAppImagePath(executablePath)
+    await stopExactLinuxAppImageProcesses(executablePath)
+    return
   }
+  await stopExactMacProcesses(executablePath)
+}
+
+/** Terminate exact macOS processes and wait until their exact command identity disappears. */
+async function stopExactMacProcesses(executablePath: string): Promise<void> {
+  const deadline = Date.now() + nativeProcessStopTimeoutMs
+  for (;;) {
+    const processIds = await exactPosixProcessIds(executablePath)
+    if (processIds.length === 0) return
+    for (const processId of processIds) {
+      try {
+        process.kill(processId, 'SIGKILL')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      }
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('native update e2e: isolated POSIX Desktop process did not stop')
+    }
+    await delay(25)
+  }
+}
+
+/** Terminate exact Linux AppImage processes only when their PID start token remains unchanged. */
+async function stopExactLinuxAppImageProcesses(executablePath: string): Promise<void> {
+  const deadline = Date.now() + nativeProcessStopTimeoutMs
+  for (;;) {
+    const references = await exactLinuxCleanupProcessReferences(executablePath)
+    if (references.length === 0) return
+    for (const reference of references) {
+      const identity = await readLinuxProcessIdentity(reference.processId)
+      if (!isSameLiveLinuxProcess(reference, identity)) continue
+      try {
+        process.kill(reference.processId, 'SIGKILL')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      }
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('native update e2e: isolated Linux AppImage process did not stop')
+    }
+    await delay(25)
+  }
+}
+
+/** Return every live Linux process independently tied to the isolated outer AppImage. */
+async function exactLinuxCleanupProcessReferences(executablePath: string): Promise<readonly LinuxProcessReference[]> {
+  const commandProcessIds = await exactPosixProcessIds(executablePath)
+  const commandReferences = await Promise.all(commandProcessIds.map(async processId => await liveLinuxProcessReference(processId)))
+  const references = new Map<number, LinuxProcessReference>()
+  for (const reference of commandReferences) {
+    if (reference !== undefined) references.set(reference.processId, reference)
+  }
+  for (const reference of await exactLinuxAppImageProcessReferences(executablePath)) {
+    references.set(reference.processId, reference)
+  }
+  return [...references.values()]
 }
 
 /** Return only POSIX processes whose command begins with the exact test-owned installed executable. */
@@ -1963,6 +2156,83 @@ async function exactPosixProcessIds(executablePath: string): Promise<readonly nu
     const processId = Number(match[1])
     return Number.isSafeInteger(processId) && processId > 0 ? [processId] : []
   })
+}
+
+/** Return only Linux processes whose AppImage runtime retained the exact test-owned outer image path. */
+async function exactLinuxAppImageProcessIds(
+  executablePath: string,
+  operations: LinuxAppImageProcessOperations = linuxAppImageProcessOperations,
+): Promise<readonly number[]> {
+  return (await exactLinuxAppImageProcessReferences(executablePath, operations)).map(reference => reference.processId)
+}
+
+/** Return only live Linux processes whose AppImage runtime retained the exact test-owned outer image path. */
+async function exactLinuxAppImageProcessReferences(
+  executablePath: string,
+  operations: LinuxAppImageProcessOperations = linuxAppImageProcessOperations,
+): Promise<readonly LinuxProcessReference[]> {
+  const expectedEntry = Buffer.from(`APPIMAGE=${executablePath}`, 'utf8')
+  const entries = await operations.listProcessIds()
+  const processIds = entries.flatMap((entry) => {
+    const processId = Number(entry)
+    return Number.isSafeInteger(processId) && processId > 0 && String(processId) === entry ? [processId] : []
+  })
+  const matches = await Promise.all(processIds.map(async (processId) => {
+    const environment = await operations.readEnvironment(processId)
+    if (environment === undefined || !hasExactLinuxEnvironmentEntry(environment, expectedEntry)) return undefined
+    return await liveLinuxProcessReference(processId, processId => operations.readStat(processId))
+  }))
+  return matches.flatMap(reference => reference === undefined ? [] : [reference])
+}
+
+/** Bind one Linux PID to its current start tick only while its proc state remains live. */
+async function liveLinuxProcessReference(
+  processId: number,
+  readStat: (processId: number) => Promise<string | undefined> = readLinuxProcessStat,
+): Promise<LinuxProcessReference | undefined> {
+  const identity = await readLinuxProcessIdentity(processId, readStat)
+  return identity !== undefined && isLiveLinuxProcess(identity) ? { processId, startTicks: identity.startTicks } : undefined
+}
+
+/** Refuse to terminate a PID whose process record changed or became a zombie after discovery. */
+function isSameLiveLinuxProcess(
+  reference: LinuxProcessReference,
+  identity: LinuxProcessIdentity | undefined,
+): boolean {
+  return identity !== undefined && isLiveLinuxProcess(identity) && identity.startTicks === reference.startTicks
+}
+
+/** Compare one NUL-delimited Linux environment entry without exposing any process environment values. */
+function hasExactLinuxEnvironmentEntry(environment: Uint8Array, expected: Uint8Array): boolean {
+  let start = 0
+  while (start < environment.byteLength) {
+    const end = environment.indexOf(0, start)
+    const entry = environment.subarray(start, end === -1 ? environment.byteLength : end)
+    if (entry.byteLength === expected.byteLength && entry.every((value, index) => value === expected[index])) return true
+    if (end === -1) return false
+    start = end + 1
+  }
+  return false
+}
+
+/** Require the only Linux AppImage path that the installed-update fixture itself creates. */
+async function assertOwnedLinuxAppImagePath(executablePath: string): Promise<void> {
+  const resolvedExecutablePath = resolve(executablePath)
+  const root = dirname(resolvedExecutablePath)
+  const expectedPrefix = 'harness-desktop-native-update-linux-'
+  const invalidPath = dirname(root) !== resolve(tmpdir())
+    || !basename(root).startsWith(expectedPrefix)
+    || basename(resolvedExecutablePath) !== 'Harness Desktop.AppImage'
+  if (invalidPath) {
+    throw new Error('native update e2e: refusing Linux AppImage cleanup outside its owned temporary root')
+  }
+  const metadata = await lstat(root).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  })
+  if (metadata === undefined || !metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error('native update e2e: refusing Linux AppImage cleanup outside its owned temporary root')
+  }
 }
 
 async function removeOwnedNativeInstallationRoot(root: string, platform: 'darwin' | 'linux'): Promise<void> {

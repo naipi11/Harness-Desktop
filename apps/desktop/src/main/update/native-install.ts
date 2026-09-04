@@ -767,6 +767,7 @@ export class NativeDesktopInstallAdapter implements StageAdapter {
         this.heartbeatOperations.wallNow(),
         this.options.platform,
         windowsLaunchNonce,
+        this.options.healthCheckTimeoutMs,
       )) return true
       await this.heartbeatOperations.delay(25)
     } while (true)
@@ -867,6 +868,7 @@ function isSha256(value: unknown): value is string { return typeof value === 'st
  * @param observedAtMs - current wall time used only to reject future timestamps.
  * @param platform - native marker grammar selector.
  * @param windowsLaunchNonce - strict nonce parsed from the Windows candidate argv.
+ * @param startupFreshnessWindowMs - bounded Linux startup window allowed before the candidate's epoch estimate.
  * @returns whether the heartbeat belongs to this transaction and candidate launch.
  */
 export function isCurrentWatchdogHeartbeat(
@@ -876,6 +878,7 @@ export function isCurrentWatchdogHeartbeat(
   observedAtMs: number,
   platform: NodeJS.Platform,
   windowsLaunchNonce?: string,
+  startupFreshnessWindowMs = 0,
 ): boolean {
   if (platform === 'win32') {
     const match = value.match(/^([0-9a-f-]{36}):([0-9a-f]{32}):(\d{1,16})\n$/iu)
@@ -887,7 +890,8 @@ export function isCurrentWatchdogHeartbeat(
   const match = value.match(/^([0-9a-f-]{36}):(\d{1,16})\n$/iu)
   if (match?.[1] === undefined || match[2] === undefined || match[1] !== transactionId) return false
   const writtenAt = Number(match[2])
-  return Number.isSafeInteger(writtenAt) && writtenAt >= candidateStartedBeforeMs && writtenAt <= observedAtMs
+  const earliestAccepted = Math.max(0, candidateStartedBeforeMs - startupFreshnessWindowMs)
+  return Number.isSafeInteger(writtenAt) && writtenAt >= earliestAccepted && writtenAt <= observedAtMs
 }
 
 /** @param argv - candidate process argv. @returns one strict nonce or undefined for missing, malformed, or repeated values. */
