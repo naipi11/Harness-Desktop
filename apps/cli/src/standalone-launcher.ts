@@ -194,11 +194,19 @@ function processIdentityMatches(processId: number, executablePaths: readonly str
 
 function escapeRegularExpression(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') }
 
-if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (process.argv[1] !== undefined && isLauncherEntry(process.argv[1])) {
   const requested = process.argv[2]
   if (requested !== 'bin.js' && requested !== 'dsh-bin.js') throw new Error('standalone CLI launcher entry is invalid')
   await recoverStandalonePayload()
   const entry = join(root, 'payload', 'current', 'cli', 'package', 'lib', requested)
   process.argv.splice(1, 2, entry)
   await import(pathToFileURL(entry).href)
+}
+
+function isLauncherEntry(path: string): boolean {
+  try {
+    return realpathSync(path) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
 }

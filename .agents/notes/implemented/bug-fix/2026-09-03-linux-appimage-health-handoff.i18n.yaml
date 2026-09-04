@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-03-linux-appimage-health-handoff.md
-2026-09-03-linux-appimage-health-handoff.md: 5477b053bbe7b2ee878b6b22d5d422b258c20c98
-2026-09-03-linux-appimage-health-handoff.zh.md: c8bca4cb6fc96ac4d0709e4c0c227405c59f54a0
+2026-09-03-linux-appimage-health-handoff.md: 55af3a4daaac5e5dd2bc3d1175396634c1b3d0dc
+2026-09-03-linux-appimage-health-handoff.zh.md: b8ea5f0887808e622167bd636297767b2b71c88c

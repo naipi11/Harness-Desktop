@@ -651,6 +651,7 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       if (process.platform === 'win32') {
         delete environment.ELECTRON_RUN_AS_NODE
         environment.DSH_DESKTOP_RUNTIME_PROBE = '1'
+        environment.DSH_RUNTIME_PROBE_MODE = 'module-load'
       }
       const child = spawn(executable, args, {
         cwd: home,

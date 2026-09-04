@@ -84,6 +84,8 @@ export interface StartRuntimeProcessOptions {
   readonly electronRunAsNode?: string
   /** Spawn one post-listen descendant that reports whether the marker survived. */
   readonly probeDescendantEnvironment?: boolean
+  /** Load the declared Runtime bin and return without starting its long-lived server. */
+  readonly runtimeProbeMode?: 'module-load'
 }
 
 /** Start the real declared/source Runtime bin with an isolated home and observation hook. */
@@ -156,6 +158,7 @@ export async function startRuntimeProcess(options: StartRuntimeProcessOptions): 
       : { HARNESS_RUNTIME_TEST_FAILURE_MESSAGE: options.failureMessage.replace('{HARNESS_HOME}', harnessHome) }),
     ...(options.electronRunAsNode === undefined ? {} : { ELECTRON_RUN_AS_NODE: options.electronRunAsNode }),
     ...(options.probeDescendantEnvironment === true ? { HARNESS_RUNTIME_TEST_PROBE_DESCENDANT_ENV: '1' } : {}),
+    ...(options.runtimeProbeMode === undefined ? {} : { DSH_RUNTIME_PROBE_MODE: options.runtimeProbeMode }),
   }
   const child = spawn(launch.command, args, { cwd, env, windowsHide: true })
   let stdout = ''
