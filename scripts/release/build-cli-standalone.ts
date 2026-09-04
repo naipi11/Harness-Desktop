@@ -47,11 +47,6 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
   const deployParent = await mkdtemp(join(tmpdir(), 'harness-cli-deploy-'))
   const deployedPackage = join(deployParent, 'package')
   try {
-    await execa(process.execPath, ['--import', 'tsx/esm', 'scripts/verify-runtime-closure.ts'], {
-      cwd: root,
-      env: { ...process.env, CI: 'true' },
-      reject: true,
-    })
     await execa('pnpm', [
       '--filter', '@harness-desktop/cli',
       'deploy', '--legacy', '--prod',

@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
@@ -59,10 +60,18 @@ import {
   WindowRuntimeOwners,
 } from './window-options.ts'
 
-if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1') {
+if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1' || process.argv.includes('--dsh-runtime-probe')) {
+  const probeStartedFile = process.env.DSH_RUNTIME_PROBE_STARTED_FILE
+  if (probeStartedFile !== undefined && probeStartedFile !== '') {
+    await writeFile(probeStartedFile, 'started\n', { flag: 'wx', mode: 0o600 })
+  }
   try {
     await import('@harness-desktop/dsh-host-local-runtime/bin')
   } catch (error) {
+    const probeErrorFile = process.env.DSH_RUNTIME_PROBE_ERROR_FILE
+    if (probeErrorFile !== undefined && probeErrorFile !== '') {
+      await writeFile(probeErrorFile, `${String(error)}\n`, { flag: 'wx', mode: 0o600 })
+    }
     process.stderr.write(`packaged Runtime probe failed: ${String(error)}\n`)
     process.exit(1)
   }

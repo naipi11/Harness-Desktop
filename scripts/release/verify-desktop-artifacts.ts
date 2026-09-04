@@ -637,6 +637,8 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
   try {
     const platformHome = join(home, 'platform-home')
     const readyFile = join(home, 'runtime-ready')
+    const probeStartedFile = join(home, 'runtime-probe-started')
+    const probeErrorFile = join(home, 'runtime-probe-error')
     const probePath = join(home, 'packaged-runtime-probe.mjs')
     if (process.platform !== 'win32') {
       await writeFile(probePath, `await import(${JSON.stringify(pathToFileURL(entry).href)})\n`, { mode: 0o600 })
@@ -645,14 +647,19 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
     await mkdir(join(platformHome, 'AppData', 'Local'), { recursive: true })
     return await new Promise<boolean>((resolveLoad) => {
       const environment = packagedRuntimeEnvironment(home, platformHome)
-      const args = process.platform === 'win32' ? [] : [probePath]
+      const args = process.platform === 'win32' ? ['--dsh-runtime-probe'] : [probePath]
       if (process.platform === 'win32') {
         delete environment.ELECTRON_RUN_AS_NODE
         environment.DSH_DESKTOP_RUNTIME_PROBE = '1'
       }
       const child = spawn(executable, args, {
         cwd: home,
-        env: { ...environment, DSH_RUNTIME_READY_FILE: readyFile },
+        env: {
+          ...environment,
+          DSH_RUNTIME_PROBE_ERROR_FILE: probeErrorFile,
+          DSH_RUNTIME_PROBE_STARTED_FILE: probeStartedFile,
+          DSH_RUNTIME_READY_FILE: readyFile,
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
@@ -662,6 +669,7 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       let forcedFailure = false
       let stdinClosed = false
       let readyFileSeen = false
+      let probeError = ''
       const outputLimit = 16 * 1_024
       const isReady = (): boolean => stdout.includes('harness-runtime: ready ')
         || stderr.includes('harness-runtime: ready ')
@@ -705,6 +713,12 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
           readyFileSeen = true
           closeInputWhenReady()
         })
+        void readFile(probeErrorFile, 'utf8').then((value) => {
+          if (settled || probeError !== '') return
+          probeError = value
+          forcedFailure = true
+          child.kill('SIGKILL')
+        }, () => {})
       }, 25)
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk: string) => { appendOutput('stdout', chunk) })
@@ -719,7 +733,7 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         const loaded = !forcedFailure && code === 0 && ready
           && !`${stdout}\n${stderr}`.includes('ERR_MODULE_NOT_FOUND')
         if (!loaded) {
-          const detail = packagedRuntimeDiagnostic(`${stdout}\n${stderr}`)
+          const detail = packagedRuntimeDiagnostic(`${stdout}\n${stderr}\n${probeError}`)
           const status = forcedFailure ? 'forced-failure' : `exit-${String(code)}`
           console.error(`desktop artifact: packaged Runtime status=${status} signal=${String(signal)} ready=${String(ready)}${detail === '' ? '' : ` stderr=${detail}`}`)
         }
