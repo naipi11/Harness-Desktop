@@ -213,10 +213,10 @@ jobs:
         run: |
           if [[ "${RUNNER_OS}" == "macOS" ]]; then
             for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm run release:build-cli-standalone
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm exec tsx scripts/release/build-cli-standalone.ts
             done
           else
-            pnpm run release:build-cli-standalone
+            pnpm exec tsx scripts/release/build-cli-standalone.ts
           fi
 
       - name: Verify standalone CLI archives

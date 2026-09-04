@@ -542,6 +542,19 @@ void app.whenReady().then(async () => {
     app.quit()
     return
   }
+  if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1') {
+    await import(pathToFileURL(join(
+      process.resourcesPath,
+      'app.asar',
+      'node_modules',
+      '@harness-desktop',
+      'dsh-host-local-runtime',
+      'lib',
+      'bin.js',
+    )).href)
+    app.quit()
+    return
+  }
   const nativeUpdateStartup = await initializeNativeUpdates()
   if (nativeUpdateStartup !== 'continue') {
     app.quit()

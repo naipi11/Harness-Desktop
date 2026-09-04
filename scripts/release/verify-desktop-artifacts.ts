@@ -638,13 +638,21 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
     const platformHome = join(home, 'platform-home')
     const readyFile = join(home, 'runtime-ready')
     const probePath = join(home, 'packaged-runtime-probe.mjs')
-    await writeFile(probePath, `await import(${JSON.stringify(pathToFileURL(entry).href)})\n`, { mode: 0o600 })
+    if (process.platform !== 'win32') {
+      await writeFile(probePath, `await import(${JSON.stringify(pathToFileURL(entry).href)})\n`, { mode: 0o600 })
+    }
     await mkdir(join(platformHome, 'AppData', 'Roaming'), { recursive: true })
     await mkdir(join(platformHome, 'AppData', 'Local'), { recursive: true })
     return await new Promise<boolean>((resolveLoad) => {
-      const child = spawn(executable, [probePath], {
+      const environment = packagedRuntimeEnvironment(home, platformHome)
+      const args = process.platform === 'win32' ? [] : [probePath]
+      if (process.platform === 'win32') {
+        delete environment.ELECTRON_RUN_AS_NODE
+        environment.DSH_DESKTOP_RUNTIME_PROBE = '1'
+      }
+      const child = spawn(executable, args, {
         cwd: home,
-        env: { ...packagedRuntimeEnvironment(home, platformHome), DSH_RUNTIME_READY_FILE: readyFile },
+        env: { ...environment, DSH_RUNTIME_READY_FILE: readyFile },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
