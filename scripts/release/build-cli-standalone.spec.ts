@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as tar from 'tar'
 import {
   buildCliStandaloneWithDependencies,
-  relocateNodePtyPatchPath,
   repairMissingDeclaredBins,
   retainLinuxNodePtyBinding,
   type CliStandaloneBuildDependencies,
@@ -41,23 +40,6 @@ const updatePolicy: ReleaseUpdateConfiguration = {
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
-})
-
-describe('relocateNodePtyPatchPath', () => {
-  it.each([
-    ['folded', 'patchedDependencies:\n  node-pty@1.1.0: >-\n    ../outside/patches/node-pty@1.1.0.patch\nallowBuilds:\n'],
-    ['inline', 'patchedDependencies:\n  node-pty@1.1.0: ../outside/patches/node-pty@1.1.1.patch\nallowBuilds:\n'],
-  ])('relocates the %s deploy path without duplicating the declaration', (_label, workspace) => {
-    const relocated = relocateNodePtyPatchPath(workspace)
-    expect(relocated).toContain('  node-pty@1.1.0: patches/node-pty@1.1.0.patch')
-    expect(relocated.match(/node-pty@1\.1\.0:/gu)).toHaveLength(1)
-  })
-
-  it('rejects a deploy workspace without the tracked patch declaration', () => {
-    expect(() => relocateNodePtyPatchPath('allowBuilds:\n  node-pty: true\n')).toThrow(
-      'packed CLI: deployed workspace does not declare the node-pty patch path',
-    )
-  })
 })
 
 async function tempRoot(label: string): Promise<string> {

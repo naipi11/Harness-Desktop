@@ -1474,7 +1474,10 @@ async function observePendingNativeApplicationExit(
   readonly handoff: Awaited<ReturnType<typeof waitForNativeApplicationExit>>
   readonly transitions: NativeTransitionRecorder
 }> {
-  const failureObservation = observeNativeInstallFailure(fixture.runtime.harnessHome)
+  const failureObservation = observeNativeInstallFailure(
+    fixture.runtime.harnessHome,
+    () => nativeProcessIsAlive(desktopMainProcessId),
+  )
   const transitions = createNativeTransitionRecorder({
     fixture,
     harnessHome: fixture.runtime.harnessHome,
@@ -1841,7 +1844,10 @@ async function readNativeUpdateOutcome(harnessHome: string): Promise<string> {
 }
 
 /** Stop the handoff wait when Runtime records a terminal local installation failure. */
-function observeNativeInstallFailure(harnessHome: string): { readonly promise: Promise<never>; stop(): void } {
+function observeNativeInstallFailure(
+  harnessHome: string,
+  mainProcessIsAlive: () => boolean,
+): { readonly promise: Promise<never>; stop(): void } {
   let stopped = false
   let reading = false
   let timer: NodeJS.Timeout | undefined
@@ -1850,7 +1856,7 @@ function observeNativeInstallFailure(harnessHome: string): { readonly promise: P
     if (stopped || reading) return
     reading = true
     void readNativeUpdateOutcome(harnessHome).then((outcome) => {
-      if (outcome === 'failed:install-failed') {
+      if (outcome === 'failed:install-failed' && mainProcessIsAlive()) {
         stopped = true
         if (timer !== undefined) clearInterval(timer)
         rejectFailure?.(new Error('native update e2e: Runtime recorded an installation failure before Main exited'))

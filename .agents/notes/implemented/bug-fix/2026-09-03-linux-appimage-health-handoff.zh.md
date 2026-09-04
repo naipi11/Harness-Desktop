@@ -20,9 +20,9 @@ freshness window 使用已有 policy health window，而不是新增部署 tunab
 
 Windows PowerShell 在执行 supervisor 的 worker 脚本前会向 `PATHEXT` 追加 `.CPL`。`createWindowsWorkerEnvironment()` 显式包含这个扩展，使 WMI 子进程 receipt 与受限环境一致，同时不扩大允许的环境变量名称集合。
 
-workspace 为当前操作系统声明同时解析 x64 与 arm64 optional dependency。macOS builder 保留相同的目标 native Mach-O package 文件，同时继续对架构不同的文件执行 lipo。manylinux job 以只读方式把生成 Makefile 使用的 `RUNNER_TEMP` 挂载到相同路径。CLI deploy 会将仓库跟踪的 node-pty patch 复制到临时包，将 deploy 后的 workspace 改写为使用该包内的相对 patch 路径，并从该包目录执行安装。隔离 Deb fixture 只在自有 dpkg root 内使用 `--force-depends`，因为该 root 不含 runner 的系统包；它仍要求包状态为已配置、文件与 launcher 正确、真实启动成功且宿主状态不变。
+workspace 为当前操作系统声明同时解析 x64 与 arm64 optional dependency。macOS builder 保留相同的目标 native Mach-O package 文件，同时继续对架构不同的文件执行 lipo。manylinux job 以只读方式把生成 Makefile 使用的 `RUNNER_TEMP` 挂载到相同路径。CLI release path 使用 `pnpm deploy --legacy`，把 workspace package 复制到临时包内，避免 injected link 保留指向源树的路径。隔离 Deb fixture 只在自有 dpkg root 内使用 `--force-depends`，因为该 root 不含 runner 的系统包；它仍要求包状态为已配置、文件与 launcher 正确、真实启动成功且宿主状态不变。
 
-workflow helper 使用 `process.execPath` 启动 fixture。macOS DMG 与 ZIP inspection 在有深度上限的范围内定位唯一的非 symlink `.app` bundle，并相对于该 bundle 应用必需资源检查。Linux hosted UI smoke 使用私有 Xvfb display，因为 runner 没有 X server。Electron Builder 显式保留 `runAsNode` fuse 供 packaged worker probe 使用。Windows Runtime verification 同时 pipe stdout 和 stderr，记录退出码、signal、forced-failure 状态和 ready marker，以及有长度上限的 diagnostic。
+workflow helper 使用 `process.execPath` 启动 fixture。macOS DMG 与 ZIP inspection 在有深度上限的范围内定位唯一的非 symlink `.app` bundle，并相对于该 bundle 应用必需资源检查。Linux hosted UI smoke 使用私有 Xvfb display，因为 runner 没有 X server。Electron Builder 显式保留 `runAsNode` fuse 供 packaged worker probe 使用。Windows Runtime verification 使用临时外部 ESM probe 导入精确的 asar entry，同时 pipe stdout 和 stderr，记录退出码、signal、forced-failure 状态和 ready marker，以及有长度上限的 diagnostic；超时只终止该 child tree，并重试删除自有目录。
 
 ## Alternatives considered
 

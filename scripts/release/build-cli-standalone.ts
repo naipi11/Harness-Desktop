@@ -37,7 +37,6 @@ const root = resolve(import.meta.dirname, '../..')
 const cliRoot = resolve(root, 'apps/cli')
 const defaultNodeVersion = '24.19.0'
 const defaultSourceDateEpoch = 1_704_067_200
-const nodePtyPatchFile = 'node-pty@1.1.0.patch'
 
 /**
  * Deploy the complete built CLI Runtime graph, then pack it with physical bundled dependencies.
@@ -51,25 +50,10 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
     await execa('pnpm', ['run', 'verify:cli-runtime-closure'], { cwd: root, reject: true })
     await execa('pnpm', [
       '--filter', '@harness-desktop/cli',
-      'deploy', '--prod',
-      '--config.inject-workspace-packages=true',
+      'deploy', '--legacy', '--prod',
       '--ignore-scripts',
       deployedPackage,
     ], { cwd: root, env: { ...process.env, CI: 'true' }, reject: true })
-    await mkdir(join(deployedPackage, 'patches'), { recursive: true })
-    await cp(
-      join(root, 'patches', nodePtyPatchFile),
-      join(deployedPackage, 'patches', nodePtyPatchFile),
-    )
-    const workspacePath = join(deployedPackage, 'pnpm-workspace.yaml')
-    const workspace = await readFile(workspacePath, 'utf8')
-    await writeFile(workspacePath, relocateNodePtyPatchPath(workspace))
-    await execa('pnpm', [
-      '--dir', deployedPackage,
-      'install', '--prod', '--offline', '--frozen-lockfile', '--ignore-scripts',
-      '--config.node-linker=hoisted',
-      '--config.confirm-modules-purge=false',
-    ], { cwd: deployedPackage, env: { ...process.env, CI: 'true' }, reject: true })
     if (process.platform === 'linux') {
       await retainLinuxNodePtyBinding(
         join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty'),
@@ -108,27 +92,6 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
   } finally {
     await rm(deployParent, { recursive: true, force: true })
   }
-}
-
-/**
- * Repoint a deployed pnpm workspace's node-pty patch at the copied patch file.
- * @param workspace - deploy-generated workspace configuration.
- * @returns workspace configuration whose patch path is package-relative.
- */
-export function relocateNodePtyPatchPath(workspace: string): string {
-  const workspaceLines = workspace.split(/\r?\n/u)
-  const patchDeclarationIndex = workspaceLines.findIndex(line => line.startsWith('  node-pty@1.1.0:'))
-  if (patchDeclarationIndex < 0) {
-    throw new Error('packed CLI: deployed workspace does not declare the node-pty patch path')
-  }
-  const continuation = workspaceLines[patchDeclarationIndex + 1]
-  const declaration = `  node-pty@1.1.0: patches/${nodePtyPatchFile}`
-  workspaceLines.splice(
-    patchDeclarationIndex,
-    continuation?.trim().endsWith(nodePtyPatchFile) ? 2 : 1,
-    declaration,
-  )
-  return workspaceLines.join('\n')
 }
 
 /** One allowlisted local Node distribution. */
