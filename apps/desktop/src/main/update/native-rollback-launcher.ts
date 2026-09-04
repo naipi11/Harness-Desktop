@@ -335,13 +335,17 @@ async function validatePrivateWorkerDirectory(
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error('native Desktop rollback worker directory is not a real directory')
   const canonicalRoot = await dependencies.canonicalize(win32.dirname(workerDirectory))
   const canonicalWorkers = await dependencies.canonicalize(workerDirectory)
-  if (canonicalWorkers.toLowerCase() !== win32.join(canonicalRoot, 'workers').toLowerCase()) {
+  if (normalizeWindowsCanonicalPath(canonicalWorkers) !== normalizeWindowsCanonicalPath(win32.join(canonicalRoot, 'workers'))) {
     throw new Error('native Desktop rollback worker directory escaped its private update root')
   }
-  if (win32.resolve(workerDirectory).toLowerCase() !== win32.resolve(canonicalWorkers).toLowerCase()) {
+  if (normalizeWindowsCanonicalPath(workerDirectory) !== normalizeWindowsCanonicalPath(canonicalWorkers)) {
     throw new Error('native Desktop rollback worker directory is not canonical')
   }
   return canonicalWorkers
+}
+
+function normalizeWindowsCanonicalPath(path: string): string {
+  return win32.resolve(path.replace(/^\\\\\?\\/u, '')).replace(/[\\/]+$/u, '').toLowerCase()
 }
 
 function validatePrivateSiblingPaths(workerDirectory: string, paths: readonly string[]): void {

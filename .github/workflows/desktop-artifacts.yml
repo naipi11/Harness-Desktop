@@ -269,6 +269,14 @@ jobs:
           fi
           exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
 
+      - name: Upload installed Desktop error contexts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-installed-error-context-${{ matrix.runner }}
+          path: apps/desktop/test-results/**/error-context.md
+          if-no-files-found: ignore
+
       - name: Write redacted native release evidence
         id: release-evidence
         if: ${{ always() }}
