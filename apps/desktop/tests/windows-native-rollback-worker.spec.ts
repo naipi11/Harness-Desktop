@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -230,10 +230,12 @@ windows('windows-native-rollback-worker', () => {
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      await expect(successfulOutput(probe).then((text): unknown => JSON.parse(text) as unknown)).resolves.toEqual({
-        candidate: workingDirectory,
-        stable: workingDirectory,
-      })
+      const receipt = JSON.parse(await successfulOutput(probe)) as { readonly candidate: string; readonly stable: string }
+      const canonicalWorkingDirectory = await realpath(workingDirectory)
+      await expect(Promise.all([realpath(receipt.candidate), realpath(receipt.stable)])).resolves.toEqual([
+        canonicalWorkingDirectory,
+        canonicalWorkingDirectory,
+      ])
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 25 })
     }

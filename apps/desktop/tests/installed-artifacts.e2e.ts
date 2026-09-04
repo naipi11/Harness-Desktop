@@ -17,7 +17,18 @@ test('launches native installed artifacts after authenticated Dashboard boot and
   })
   expect(artifacts.length).toBeGreaterThan(0)
   await runInstalledArtifactCollection(artifacts, async (artifact, fixture) => {
-    await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
+    try {
+      await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
+    } catch (error) {
+      const pageText = await fixture.page.locator('body').innerText().catch(() => '')
+      const diagnostic = [
+        `artifact=${artifact.name}`,
+        `desktop-output=${redactDiagnostic(fixture.desktopOutput())}`,
+        `renderer-errors=${redactDiagnostic(fixture.rendererErrors.join('\n'))}`,
+        `page-text=${redactDiagnostic(pageText)}`,
+      ].join('\n')
+      throw new Error(`installed Desktop Dashboard did not become ready\n${diagnostic}`, { cause: error })
+    }
     await expect(fixture.page.locator('#root')).toHaveAttribute('data-harness-dashboard-ready', 'true')
     await expect.poll(() => fixture.desktopOutput().split(/\r?\n/u).filter(
       line => line === '{"kind":"desktop-dashboard-ready","version":1}',
@@ -26,3 +37,9 @@ test('launches native installed artifacts after authenticated Dashboard boot and
     await artifact.verifyGeneratedIcon()
   })
 })
+
+function redactDiagnostic(value: string): string {
+  return value
+    .replace(/(token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu, '$1=[REDACTED]')
+    .slice(-4_096)
+}
