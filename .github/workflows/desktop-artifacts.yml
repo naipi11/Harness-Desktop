@@ -196,10 +196,23 @@ jobs:
         id: desktop-updater
         shell: bash
         run: |
+          tests=(
+            apps/desktop/tests/update-service.spec.ts
+            apps/desktop/tests/update-manifest.spec.ts
+            apps/desktop/tests/native-install.spec.ts
+            apps/desktop/tests/native-transition-gate.spec.ts
+            apps/desktop/tests/native-rollback.spec.ts
+            apps/desktop/tests/native-rollback-launcher.spec.ts
+            apps/desktop/tests/installer-policy-state.spec.ts
+            apps/desktop/tests/release-update-source.spec.ts
+            apps/desktop/tests/self-installation.spec.ts
+            apps/desktop/tests/windows-native-rollback-worker.spec.ts
+            apps/desktop/tests/windows-native-update-supervisor.spec.ts
+          )
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run desktop:test-updater
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
           fi
-          exec pnpm run desktop:test-updater
+          exec node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
 
       - name: Verify packed CLI from an empty offline prefix
         id: packed-cli
