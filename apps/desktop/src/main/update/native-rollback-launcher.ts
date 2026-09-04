@@ -338,9 +338,6 @@ async function validatePrivateWorkerDirectory(
   if (normalizeWindowsCanonicalPath(canonicalWorkers) !== normalizeWindowsCanonicalPath(win32.join(canonicalRoot, 'workers'))) {
     throw new Error('native Desktop rollback worker directory escaped its private update root')
   }
-  if (normalizeWindowsCanonicalPath(workerDirectory) !== normalizeWindowsCanonicalPath(canonicalWorkers)) {
-    throw new Error('native Desktop rollback worker directory is not canonical')
-  }
   return canonicalWorkers
 }
 
@@ -596,13 +593,8 @@ async function exactImageRunningForReadiness(
   supervisorPath: string,
   dependencies: NativeRollbackWorkerDependencies,
   deadline: number,
-): Promise<boolean | undefined> {
-  try {
-    return await exactImageRunning(supervisorPath, dependencies, deadline)
-  } catch (error) {
-    if (monotonicNow(dependencies) >= deadline) return undefined
-    throw error
-  }
+): Promise<boolean> {
+  return await exactImageRunning(supervisorPath, dependencies, deadline)
 }
 
 function observeWorker(child: NativeRollbackWorkerChild): WorkerTerminal {

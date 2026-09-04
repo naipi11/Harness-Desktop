@@ -1075,7 +1075,7 @@ windows('windows-native-rollback-worker', () => {
       await Promise.all([waitForPresent(workerProcessIdPath), waitForPresent(descendantPath)])
       workerProcessId = Number.parseInt(await readFile(workerProcessIdPath, 'utf8'), 10)
       descendantProcessId = Number.parseInt(await readFile(descendantPath, 'utf8'), 10)
-      await expect(result).rejects.toThrow('did not become ready')
+      await expect(result).rejects.toThrow('exact-image inspection failed')
       expect(processIsAlive(descendantProcessId)).toBe(false)
       await waitForAbsent([
         supervisorPath,

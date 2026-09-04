@@ -302,13 +302,13 @@ async function prepareMac(releaseDirectory: string): Promise<PreparedArtifact> {
     try {
       await execa('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg], { reject: true })
       attached = true
-      const source = join(mount, 'Harness Desktop.app')
-      const destination = join(applications, 'Harness Desktop.app')
+      const source = await findMacAppBundle(mount)
+      const destination = join(applications, basename(source))
       await cp(source, destination, { recursive: true })
     } finally {
       if (attached) await execa('hdiutil', ['detach', mount], { reject: true })
     }
-    const app = join(applications, 'Harness Desktop.app')
+    const app = await findMacAppBundle(applications)
     const executable = join(app, 'Contents', 'MacOS', 'harness-desktop')
     const asar = join(app, 'Contents', 'Resources', 'app.asar')
     const lipo = await execa('lipo', ['-info', executable], { reject: true })
@@ -330,6 +330,15 @@ async function prepareMac(releaseDirectory: string): Promise<PreparedArtifact> {
     await removeTree(root)
     throw error
   }
+}
+
+async function findMacAppBundle(directory: string): Promise<string> {
+  const matches = (await readdir(directory, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory() && !entry.isSymbolicLink() && entry.name.endsWith('.app'))
+  if (matches.length !== 1) {
+    throw new Error(`installed desktop artifact: expected exactly one macOS app bundle, found ${String(matches.length)}`)
+  }
+  return join(directory, matches[0]!.name)
 }
 
 async function prepareLinux(releaseDirectory: string): Promise<readonly PreparedArtifact[]> {

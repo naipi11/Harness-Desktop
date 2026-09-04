@@ -21,10 +21,17 @@ test('launches native installed artifacts after authenticated Dashboard boot and
       await fixture.page.getByRole('region', { name: 'Engineering workbench' }).waitFor({ timeout: 45_000 })
     } catch (error) {
       const pageText = await fixture.page.locator('body').innerText().catch(() => '')
+      const bootManifest = await fixture.page.evaluate(() => {
+        const value = (globalThis as { __DSH_BOOT__?: unknown }).__DSH_BOOT__
+        if (typeof value !== 'object' || value === null) return value
+        const record = value as { plugins?: unknown; modules?: unknown }
+        return { modules: record.modules, plugins: record.plugins }
+      }).catch(() => undefined)
       const diagnostic = [
         `artifact=${artifact.name}`,
         `desktop-output=${redactDiagnostic(fixture.desktopOutput())}`,
         `renderer-errors=${redactDiagnostic(fixture.rendererErrors.join('\n'))}`,
+        `boot-manifest=${redactDiagnostic(JSON.stringify(bootManifest) ?? 'undefined')}`,
         `page-text=${redactDiagnostic(pageText)}`,
       ].join('\n')
       throw new Error(`installed Desktop Dashboard did not become ready\n${diagnostic}`, { cause: error })
