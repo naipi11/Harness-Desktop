@@ -254,9 +254,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
           fi
-          exec node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
+          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
 
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback
@@ -265,9 +265,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
           fi
-          exec node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
+          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
 
       - name: Write redacted native release evidence
         id: release-evidence
