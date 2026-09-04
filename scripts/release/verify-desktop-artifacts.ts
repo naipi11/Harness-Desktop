@@ -669,6 +669,7 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       let forcedFailure = false
       let stdinClosed = false
       let readyFileSeen = false
+      let probeStartedFileSeen = false
       let probeError = ''
       const outputLimit = 16 * 1_024
       const isReady = (): boolean => stdout.includes('harness-runtime: ready ')
@@ -708,6 +709,9 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       }, 30_000)
       const readyPoller = setInterval(() => {
         if (readyFileSeen || settled) return
+        void exists(probeStartedFile).then((present) => {
+          if (present) probeStartedFileSeen = true
+        })
         void exists(readyFile).then((present) => {
           if (!present || readyFileSeen || settled) return
           readyFileSeen = true
@@ -735,7 +739,7 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         if (!loaded) {
           const detail = packagedRuntimeDiagnostic(`${stdout}\n${stderr}\n${probeError}`)
           const status = forcedFailure ? 'forced-failure' : `exit-${String(code)}`
-          console.error(`desktop artifact: packaged Runtime status=${status} signal=${String(signal)} ready=${String(ready)}${detail === '' ? '' : ` stderr=${detail}`}`)
+          console.error(`desktop artifact: packaged Runtime status=${status} signal=${String(signal)} started=${String(probeStartedFileSeen)} ready=${String(ready)}${detail === '' ? '' : ` stderr=${detail}`}`)
         }
         finish(loaded)
       })

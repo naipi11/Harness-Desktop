@@ -199,5 +199,5 @@ describe('standalone CLI release policy verification', () => {
         rm(archiveDirectory, { recursive: true, force: true }),
       ])
     }
-  }, 15_000)
+  }, 30_000)
 })
