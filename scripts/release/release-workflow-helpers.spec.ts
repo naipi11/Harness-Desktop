@@ -56,14 +56,14 @@ describe('selectReleaseCandidateOperation', () => {
       name,
       name === selected ? 'true' : 'false',
     ]))
-    const result = await execa('node', [candidateHelper], { env: environment, extendEnv: false })
+    const result = await execa(process.execPath, [candidateHelper], { env: environment, extendEnv: false })
     expect(result.stdout).toContain('this workflow performs no release action')
   })
 
   it('rejects zero or multiple selections', async () => {
     const none = Object.fromEntries(candidateEnvironmentNames.map(name => [name, 'false']))
-    await expect(execa('node', [candidateHelper], { env: none, extendEnv: false })).rejects.toThrow('exactly one')
-    await expect(execa('node', [candidateHelper], {
+    await expect(execa(process.execPath, [candidateHelper], { env: none, extendEnv: false })).rejects.toThrow('exactly one')
+    await expect(execa(process.execPath, [candidateHelper], {
       env: { ...none, SIGN_WINDOWS: 'true', PUBLISH_NPM: 'true' },
       extendEnv: false,
     })).rejects.toThrow('exactly one')
@@ -71,7 +71,7 @@ describe('selectReleaseCandidateOperation', () => {
 
   it('parses only explicit true and false workflow environment values', async () => {
     const environment = Object.fromEntries(candidateEnvironmentNames.map(name => [name, 'false']))
-    await expect(execa('node', [candidateHelper], {
+    await expect(execa(process.execPath, [candidateHelper], {
       env: { ...environment, SIGN_WINDOWS: '1' },
       extendEnv: false,
     })).rejects.toThrow('SIGN_WINDOWS must be true or false')

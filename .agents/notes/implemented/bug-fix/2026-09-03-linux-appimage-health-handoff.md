@@ -10,6 +10,8 @@ A Linux AppImage may start its mounted Electron Main after the detached worker p
 
 The hosted macOS arm64 runner installed only its host architecture's optional native packages before electron-builder created the x64/arm64 pair, so universal packaging saw the same arm64 `sharp` Mach-O in both apps. The manylinux node-pty Makefile retained an absolute runner-temp `node-gyp` include that was outside the container mount. The Windows packaged Runtime verifier also discarded the child diagnostic that would identify a load failure.
 
+The release-workflow helper tests intentionally clear the child environment, so invoking a bare `node` binary is not portable on a hosted runner. The macOS artifact verifier also assumed that every DMG and ZIP uses the literal `Harness Desktop.app` bundle name, although the archive layout is the authoritative source.
+
 ## Decision
 
 `apps/desktop/tests/support/runtime-live-entry.mjs` resolves every bare package name in source patch insertions with `import.meta.resolve()` before boot, while preserving `cordis:` and existing `file:` entries. Built Runtime composition keeps its existing patch resolution path. `isCurrentWatchdogHeartbeat()` accepts a Linux heartbeat no earlier than `candidateStartedBeforeMs - healthCheckTimeoutMs` and no later than the observation time; the Windows launch nonce grammar and the default strict helper behavior remain unchanged. The Linux installed-update test accepts either the live applied marker with a live candidate process or a candidate-version installation whose private journal is gone and Runtime reports `applied:applied` or `up-to-date:up-to-date`.
@@ -19,6 +21,8 @@ The freshness window is the existing policy health window, not a new deployment 
 Windows PowerShell appends `.CPL` to `PATHEXT` before it executes the supervisor's worker script. `createWindowsWorkerEnvironment()` includes that extension explicitly, so the WMI child receipt matches the constrained environment without expanding the allowed environment-name set.
 
 The workspace declares x64 and arm64 optional dependency resolution for the current operating system. The macOS builder retains identical target-native Mach-O package files while still lipo-merging files that differ by architecture. The manylinux job mounts `RUNNER_TEMP` read-only at the same path used by the generated Makefile. The packaged Runtime verifier reports only a bounded, secret-redacted stderr summary when the child cannot load.
+
+The workflow helper launches its fixture with `process.execPath`. macOS DMG and ZIP inspection locates exactly one non-symlink `.app` bundle within a bounded depth and applies required-resource checks relative to that bundle. Windows Runtime verification records the exit code, signal, forced-failure state, and ready marker alongside the bounded diagnostic.
 
 ## Alternatives considered
 

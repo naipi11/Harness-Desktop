@@ -670,12 +670,14 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         console.error(`desktop artifact: packaged Runtime process error: ${error instanceof Error ? error.message : String(error)}`)
         finish(false)
       })
-      child.once('exit', (code) => {
-        const loaded = !forcedFailure && code === 0 && stderr.includes('harness-runtime: ready ')
+      child.once('exit', (code, signal) => {
+        const ready = stderr.includes('harness-runtime: ready ')
+        const loaded = !forcedFailure && code === 0 && ready
           && !stderr.includes('ERR_MODULE_NOT_FOUND')
         if (!loaded) {
           const detail = packagedRuntimeDiagnostic(stderr)
-          if (detail !== '') console.error(`desktop artifact: packaged Runtime stderr: ${detail}`)
+          const status = forcedFailure ? 'forced-failure' : `exit-${String(code)}`
+          console.error(`desktop artifact: packaged Runtime status=${status} signal=${String(signal)} ready=${String(ready)}${detail === '' ? '' : ` stderr=${detail}`}`)
         }
         finish(loaded)
       })
@@ -771,7 +773,7 @@ const nativeDesktopArtifactTools: DesktopArtifactTools = {
       try {
         await execa('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, snapshotPath], { reject: true })
         attached = true
-        return await inspectMacApplication(join(mount, 'Harness Desktop.app'), nativeRollbackWorkerChunks)
+        return await inspectMacApplication(await findMacApplication(mount), nativeRollbackWorkerChunks)
       } finally {
         if (attached) await execa('hdiutil', ['detach', mount], { reject: true })
         await rm(mount, { recursive: true, force: true })
@@ -784,7 +786,7 @@ const nativeDesktopArtifactTools: DesktopArtifactTools = {
       const extraction = await mkdtemp(join(tmpdir(), 'harness-desktop-zip-'))
       try {
         await execa('ditto', ['-x', '-k', snapshotPath, extraction], { reject: true })
-        return await inspectMacApplication(join(extraction, 'Harness Desktop.app'), nativeRollbackWorkerChunks)
+        return await inspectMacApplication(await findMacApplication(extraction), nativeRollbackWorkerChunks)
       } finally {
         await rm(extraction, { recursive: true, force: true })
       }
@@ -1213,14 +1215,13 @@ interface ZipLocalEntry {
   readonly dataEnd: number
 }
 
-const macRequiredZipPaths = [
-  'Harness Desktop.app/Contents/MacOS/harness-desktop',
-  'Harness Desktop.app/Contents/Resources/update-policy.json',
-  'Harness Desktop.app/Contents/Resources/windows-native-rollback-worker.ps1',
-  'Harness Desktop.app/Contents/Resources/native-rollback-worker.js',
-  'Harness Desktop.app/Contents/Resources/chunks',
+const macRequiredZipSuffixes = [
+  'Contents/MacOS/harness-desktop',
+  'Contents/Resources/update-policy.json',
+  'Contents/Resources/windows-native-rollback-worker.ps1',
+  'Contents/Resources/native-rollback-worker.js',
 ] as const
-const macNativeRollbackWorkerChunkRoot = 'Harness Desktop.app/Contents/Resources/chunks'
+const macNativeRollbackWorkerChunkSuffix = 'Contents/Resources/chunks'
 
 /**
  * Reject a macOS Desktop ZIP whose member names or symbolic links can redirect installation resources.
@@ -1265,8 +1266,12 @@ export function assertSafeMacZipSnapshot(snapshot: Buffer): void {
 
 /** @returns whether one ZIP symbolic link can redirect a rollback resource needed before Dashboard health. */
 function isRequiredMacZipPath(path: string): boolean {
-  return path.startsWith(`${macNativeRollbackWorkerChunkRoot}/`)
-    || macRequiredZipPaths.some(required => required === path || required.startsWith(`${path}/`))
+  const appSeparator = path.indexOf('.app/')
+  if (appSeparator === -1) return false
+  const suffix = path.slice(appSeparator + '.app/'.length)
+  return suffix === macNativeRollbackWorkerChunkSuffix
+    || suffix.startsWith(`${macNativeRollbackWorkerChunkSuffix}/`)
+    || macRequiredZipSuffixes.some(required => required === suffix || required.startsWith(`${suffix}/`))
 }
 
 /** Read a bounded symbolic-link target without inflating unrelated ZIP members. */
@@ -1483,6 +1488,29 @@ async function inspectMacApplication(
     lipoInfo,
     ...await readExtractedResources(app, 'Contents/Resources', nativeRollbackWorkerChunks),
   }
+}
+
+async function findMacApplication(directory: string): Promise<string> {
+  const found: string[] = []
+  const visit = async (current: string, depth: number): Promise<void> => {
+    if (depth > 3) return
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (entry.isSymbolicLink() || !entry.isDirectory()) continue
+      const candidate = join(current, entry.name)
+      if (entry.name.endsWith('.app')) {
+        found.push(candidate)
+        continue
+      }
+      await visit(candidate, depth + 1)
+    }
+  }
+  await visit(directory, 0)
+  if (found.length !== 1) {
+    throw new Error(`desktop artifact: macOS image must contain exactly one app bundle, found ${String(found.length)}`)
+  }
+  const application = found[0]
+  if (application === undefined) throw new Error('desktop artifact: macOS app bundle disappeared during inspection')
+  return application
 }
 
 async function recursiveEntries(directory: string, prefix = ''): Promise<string[]> {
