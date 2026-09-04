@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from '@harness-desktop/dsh-credentials'
+import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@harness-desktop/dsh-launch-environment'
+import type { CredentialRef } from '@harness-desktop/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
@@ -49,12 +49,12 @@ function updates(ctx: Context): CredentialRef[] {
 
 describe('resolveSpec', () => {
   it('defaults to .credentials.yaml under the harness home with watching on', () => {
-    const spec = resolveSpec({ dshHome: '/custom/home' })
+    const spec = resolveSpec({ harnessHome: '/custom/home' })
     expect(spec).toEqual({ filename: resolve('/custom/home/.credentials.yaml'), watch: true, debounceMs: 100 })
   })
 
   it('lets an explicit path win over the home', () => {
-    const spec = resolveSpec({ path: '/etc/dsh/creds.yaml', dshHome: '/ignored', watch: false, debounceMs: 5 })
+    const spec = resolveSpec({ path: '/etc/dsh/creds.yaml', harnessHome: '/ignored', watch: false, debounceMs: 5 })
     expect(spec).toEqual({ filename: resolve('/etc/dsh/creds.yaml'), watch: false, debounceMs: 5 })
   })
 })

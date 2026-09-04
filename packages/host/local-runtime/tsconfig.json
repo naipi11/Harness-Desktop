@@ -1,0 +1,51 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../webserver"
+    },
+    {
+      "path": "../../util/atomic-write"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../util/update-policy"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../interaction/commands"
+    },
+    {
+      "path": "../apiproxy"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    }
+  ]
+}

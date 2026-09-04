@@ -1,4 +1,4 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 import type { ConversationViewDefinition } from '../contract/conversation.ts'
 import { ConversationDefinitionRegistry } from './definition-registry.ts'
 

@@ -1,14 +1,14 @@
-# `@deepseek-ai/dsh-cmdline`
+# `@harness-desktop/dsh-cmdline`
 
 English | [中文](README.zh.md)
 
-The command line a dsh launcher hands to the app it boots. The launcher parses only its own flags (`--profile`, `--patch`, the config dumps) and hands **everything after them** to the tree verbatim, so an app owns its flag family, its `--help` text, and its parse errors instead of the launcher knowing them.
+The command snapshot an internal app-boot composition hands to an app it boots. Internal composition owners may provide app-specific arguments so the app owns its help and parse errors. The public `dsh` product parser does not expose arbitrary pass-through arguments, profile flags, overlays, or config dumps.
 
 ## The launcher values
 
 A launcher calls `provideCmdline(ctx, host)` before any tree entry mounts, which provides:
 
-- `ctx.cmdlineArgs` — the invocation's inner arguments. `get()` is the whole interface, and it returns a snapshot: `dsh --profile tui --resume abc` yields `['--resume', 'abc']`.
+- `ctx.cmdlineArgs` — an internal composition's app arguments. `get()` is the whole interface and returns an immutable snapshot; this service does not imply that the public product parser accepts arbitrary app flags.
 - `ctx.appExit` — a bounded process-exit request, wired to the launcher's shutdown controller.
 
 An embedding host with no command line provides an empty list; that is the honest answer, not a missing value.
@@ -32,14 +32,14 @@ Its Loader row carries no launcher marker or special kind:
 
 ```yaml
 - id: web-startup
-  name: '@deepseek-ai/dsh-web-app/startup'
+  name: '@harness-desktop/dsh-web-app/startup'
 ```
 
 Every row configured from those values uses ordinary service injection and direct lazy config access:
 
 ```yaml
 - id: webserver
-  name: '@deepseek-ai/dsh-host-webserver'
+  name: '@harness-desktop/dsh-host-webserver'
   inject: [webStartup]
   config:
     host: !!js ctx.webStartup.host ?? '127.0.0.1'
@@ -54,7 +54,7 @@ Loader defers a row's `!!js` interpolation until that row's declared injections 
 
 ### Shared immutable arguments
 
-`get()` does not consume or mutate argv. Multiple plugins can parse the same snapshot and independently provide services. The launcher does not inspect the composition for a command-line owner; a profile with no reader simply ignores its app arguments.
+`get()` does not consume or mutate argv. Multiple plugins can parse the same internal snapshot and independently provide services. App-boot does not inspect an internal composition for a command-line owner; a composition with no reader simply ignores its app arguments.
 
 An out-of-tree plugin brings its own commander copy, so commander's control-flow errors are detected structurally rather than by class identity; an identity check would rethrow a printed help as a fatal load failure.
 
@@ -68,6 +68,6 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **Launcher flags must precede app arguments.** The split is positional: the first token the launcher does not recognize starts the inner arguments, so `--patch` placed after an app flag belongs to the app. The launcher's parser consumes one `--`, so an app argument that must survive as a literal `--` needs `-- --`.
+- **The internal composition owner supplies the complete snapshot before boot.** Product callers use the documented interactive, run, Web, or Desktop grammar; unknown public flags are rejected rather than forwarded here.
 - **An app-owned service has no statically declared provider.** Consumer rows name it through ordinary injection; a bundle that omits its provider fails at settlement with pending entries naming the service rather than at load.
 - **A user patch that replaces a row's whole `config` drops its expressions.** A flag beats the value written beside it, not a literal a user wrote in place of the expression; keeping the expression is what keeps the flag winning.

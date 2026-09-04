@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-settings-general",
+  "name": "@harness-desktop/dsh-client-ui-settings-general",
   "description": "Settings ownerless-copy and product onboarding plugin: the General section, shell trigger/header chrome content, settings dictionaries, and the versioned welcome notice",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/client/ui-settings-general"
   },
   "type": "module",
@@ -32,12 +32,12 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-sidebar"
+        "@harness-desktop/dsh-client-runtime",
+        "@harness-desktop/dsh-client-ui-settings",
+        "@harness-desktop/dsh-client-locale",
+        "@harness-desktop/dsh-client-connection",
+        "@harness-desktop/dsh-api-remotes",
+        "@harness-desktop/dsh-client-ui-sidebar"
       ],
       "platform": "web"
     }
@@ -48,37 +48,37 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
+    "@harness-desktop/schemastery": "workspace:^",
     "clsx": "^2.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-web-react": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-settings": "workspace:^",
+    "@harness-desktop/dsh-client-ui-sidebar": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-client-web-react": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-web-react": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-test-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-settings": "workspace:^",
+    "@harness-desktop/dsh-client-ui-sidebar": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-client-web-react": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "@types/react": "~18.3.1",
     "react": "^18.2.0"
   },

@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+/** Private Runtime-process entry used by future local launchers. */
+
+import { once } from 'node:events'
+import { writeFile } from 'node:fs/promises'
+import { createLocalRuntimePlugin } from './data-root.ts'
+import { startCanonicalRuntime } from './runtime.ts'
+import { consumeElectronRunAsNodeEnvironment } from './runtime-client.ts'
+
+consumeElectronRunAsNodeEnvironment(process.env)
+
+if (process.env.DSH_RUNTIME_PROBE_MODE === 'module-load') {
+  const readyFile = process.env.DSH_RUNTIME_READY_FILE
+  if (readyFile !== undefined && readyFile !== '') {
+    await writeFile(readyFile, 'harness-runtime: ready probe\n', { flag: 'wx', mode: 0o600 })
+  }
+  process.stderr.write('harness-runtime: ready probe\n')
+} else {
+  let restoreOutput = (): void => {}
+  try {
+    restoreOutput = silenceStartupOutput()
+    const harnessHome = createLocalRuntimePlugin({ env: process.env })
+    const runtime = await startCanonicalRuntime({
+      harnessHome,
+      idleTimeoutMs: 60_000,
+      ...(process.env.DSH_HOME === undefined ? {} : { legacyDshHome: process.env.DSH_HOME }),
+    })
+    restoreOutput()
+    process.stderr.write(`harness-runtime: ready ${JSON.stringify(runtime.status())}\n`)
+    const readyFile = process.env.DSH_RUNTIME_READY_FILE
+    if (readyFile !== undefined && readyFile !== '') {
+      await writeFile(readyFile, 'harness-runtime: ready\n', { flag: 'wx', mode: 0o600 })
+    }
+    if (process.env.HARNESS_RUNTIME_TEST_MODE === 'stdin-lifetime') {
+      process.stdin.resume()
+      await once(process.stdin, 'end')
+      await runtime.dispose()
+    }
+  } catch {
+    restoreOutput()
+    process.stderr.write('harness-runtime: startup failed\n')
+    process.exitCode = 1
+  }
+}
+
+/** Suppress partial Loader output until startup either commits or rejects. */
+function silenceStartupOutput(): () => void {
+  const stdoutWrite = process.stdout.write.bind(process.stdout)
+  const stderrWrite = process.stderr.write.bind(process.stderr)
+  process.stdout.write = () => true
+  process.stderr.write = () => true
+  let restored = false
+  return () => {
+    if (restored) return
+    restored = true
+    process.stdout.write = stdoutWrite
+    process.stderr.write = stderrWrite
+  }
+}

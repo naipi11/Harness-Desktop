@@ -1,0 +1,47 @@
+# Validate one manual release-candidate request without performing the selected
+# signing, notarization, publication, upload, or release operation.
+name: Release candidate preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      sign-windows:
+        description: Validate a future Windows signing request
+        type: boolean
+        default: false
+      notarize-macos:
+        description: Validate a future macOS notarization request
+        type: boolean
+        default: false
+      sign-update-manifests:
+        description: Validate a future update-manifest signing request
+        type: boolean
+        default: false
+      publish-npm:
+        description: Validate a future npm publication request
+        type: boolean
+        default: false
+      create-github-release:
+        description: Validate a future GitHub Release request
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  preflight:
+    name: Require one isolated candidate operation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Require exactly one candidate operation
+        env:
+          SIGN_WINDOWS: ${{ inputs['sign-windows'] }}
+          NOTARIZE_MACOS: ${{ inputs['notarize-macos'] }}
+          SIGN_UPDATE_MANIFESTS: ${{ inputs['sign-update-manifests'] }}
+          PUBLISH_NPM: ${{ inputs['publish-npm'] }}
+          CREATE_GITHUB_RELEASE: ${{ inputs['create-github-release'] }}
+        run: node scripts/release/select-release-candidate-operation.mjs

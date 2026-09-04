@@ -3,16 +3,16 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { agentEvents } from '@deepseek-ai/dsh-agent'
-import { TOOL_ORDER_REST } from '@deepseek-ai/dsh-system-prompt'
-import type { Message } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import { agentEvents } from '@harness-desktop/dsh-agent'
+import { TOOL_ORDER_REST } from '@harness-desktop/dsh-system-prompt'
+import type { Message } from '@harness-desktop/dsh-llm'
+import { SessionId } from '@harness-desktop/dsh-session'
 import * as acpAgent from '../src/index.ts'
 
 /**
- * In-process unit coverage for the @deepseek-ai/dsh-acp-demo composition:
+ * In-process unit coverage for the @harness-desktop/dsh-acp-demo composition:
  * mounting it brings up the agent-spine-demo spine + JSONL persistence + the ACP
  * bridge in one `ctx.plugin`. It loads no Loader-only plugin (no hmr), so it
  * mounts in a plain Context.
@@ -32,6 +32,8 @@ async function mount(config: acpAgent.Config, withBash = false): Promise<Context
     })
   }
   config.persistenceRoot ??= await mkdtemp(join(tmpdir(), 'dsh-acp-demo-persistence-'))
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-home-'))
+  config.harnessHome ??= harnessHome
   await ctx.plugin(acpAgent, config)
   return ctx
 }
@@ -39,7 +41,7 @@ async function mount(config: acpAgent.Config, withBash = false): Promise<Context
 async function isolatedSkillsConfig(catalogDescriptionMaxLength?: number): Promise<NonNullable<acpAgent.Config['skills']>> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-skills-'))
   return {
-    filesystem: { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents') },
+    filesystem: { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents') },
     ...catalogDescriptionMaxLength !== undefined ? { tool: { catalogDescriptionMaxLength } } : {},
   }
 }
@@ -60,18 +62,18 @@ async function composePrefix(ctx: Context): Promise<Message[]> {
 }
 
 async function withIsolatedSkillHomes<T>(run: () => Promise<T>): Promise<T> {
-  const oldDshHome = process.env.DSH_HOME
+  const oldHarnessHome = process.env.HARNESS_HOME
   const oldAgentsHome = process.env.DSH_AGENTS_HOME
   const home = await mkdtemp(join(tmpdir(), 'dsh-acp-demo-default-skills-'))
-  process.env.DSH_HOME = join(home, '.dsh')
+  process.env.HARNESS_HOME = join(home, '.harness-home')
   process.env.DSH_AGENTS_HOME = join(home, '.agents')
   try {
     return await run()
   } finally {
-    if (oldDshHome === undefined) {
-      delete process.env.DSH_HOME
+    if (oldHarnessHome === undefined) {
+      delete process.env.HARNESS_HOME
     } else {
-      process.env.DSH_HOME = oldDshHome
+      process.env.HARNESS_HOME = oldHarnessHome
     }
     if (oldAgentsHome === undefined) {
       delete process.env.DSH_AGENTS_HOME
@@ -129,6 +131,7 @@ describe('dsh-acp-demo composition', () => {
     const ctx = new Context()
     // No persona: covers the omitted-persona forwarding branch too.
     await acpAgent.apply(ctx, {
+      harnessHome: '/test/harness',
       provider: 'mock',
       model: 'mock',
       skills: await isolatedSkillsConfig(),
@@ -154,16 +157,16 @@ describe('dsh-acp-demo composition', () => {
   it('uses default skill config when apply is called directly without skills', async () => {
     await withIsolatedSkillHomes(async () => {
       const ctx = new Context()
-      await acpAgent.apply(ctx, { provider: 'mock', model: 'mock', workspaceContext: false })
+      await acpAgent.apply(ctx, { harnessHome: process.env.HARNESS_HOME!, provider: 'mock', model: 'mock', workspaceContext: false })
       expect(ctx.skills).toBeDefined()
       expect(await ctx.skills.list()).toEqual([])
       await ctx.fiber.dispose()
     })
   })
 
-  it('forwards skill config and dshHome into agent-spine-demo', async () => {
+  it('forwards skill config and harnessHome into agent-spine-demo', async () => {
     const skills = await isolatedSkillsConfig(6)
-    const ctx = await mount({ provider: 'mock', model: 'mock', persona: 'hi', dshHome: skills.filesystem!.dshHome!, skills, workspaceContext: false })
+    const ctx = await mount({ provider: 'mock', model: 'mock', persona: 'hi', harnessHome: skills.filesystem!.harnessHome!, skills, workspaceContext: false })
     ctx.skills.register({ name: 'acp-skill', description: 'ACP skill', source: 'runtime', content: 'body' })
     expect(JSON.stringify(await composePrefix(ctx))).toContain('- `acp-skill`: ACP...')
     await ctx.fiber.dispose()

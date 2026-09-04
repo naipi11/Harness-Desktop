@@ -52,6 +52,7 @@ describe('jsonrpc-agent keyless smoke', () => {
     { label: 'reports max-token turns with mapping disabled through env', envValue: 'false' },
   ])('$label', async ({ envValue }) => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-agent-smoke-'))
+    const harnessHome = join(root, '.harness-home')
     const modelRequests: Record<string, unknown>[] = []
     const modelServer = createServer((request, response) => {
       let body = ''
@@ -82,7 +83,7 @@ describe('jsonrpc-agent keyless smoke', () => {
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
         DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
         DSH_CWD: root,
-        DSH_SESSION_ROOT: join(root, '.sessions'),
+        HARNESS_HOME: harnessHome,
         ...(envValue === undefined ? {} : { DSH_MAX_TOKENS_AS_SUCCESS: envValue }),
       },
       timeout: 35_000,
@@ -159,7 +160,8 @@ describe('jsonrpc-agent keyless smoke', () => {
       expect(shutdown).toMatchObject({ jsonrpc: '2.0', id: 3, result: {} })
       const exit = await child
       expect(exit.exitCode, `signal=${String(exit.signal)}; stderr=${stderr}`).toBe(0)
-      const sessionsRoot = join(root, '.sessions')
+      const sessionsRoot = join(harnessHome, 'sessions')
+      expect(await readdir(root)).not.toContain('.sessions')
       const files = await readdir(sessionsRoot, { recursive: true })
       const log = files.find(file => file.endsWith('.jsonl.zstd'))
       expect(log).toBeDefined()
@@ -196,7 +198,7 @@ describe('jsonrpc-agent keyless smoke', () => {
     expect(exitCode, stderr).toBe(1)
     expect(stdout).toBe('')
     expect(stderr).toContain('plugin tree failed to load')
-    expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@deepseek-ai/dsh-sdk-jsonrpc-server)')
+    expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@harness-desktop/dsh-sdk-jsonrpc-server)')
     expect(stderr).toContain('sometimes')
   }, 30_000)
 })

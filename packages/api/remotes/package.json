@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-api-remotes",
+  "name": "@harness-desktop/dsh-api-remotes",
   "description": "Remote BFF assembly and Host Agent/Session lookup policy",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/api/remotes"
   },
   "type": "module",
@@ -36,7 +36,7 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-api-gateway"
+        "@harness-desktop/dsh-api-gateway"
       ],
       "platform": "web",
       "immediately": true
@@ -55,42 +55,42 @@
     "lib/types/**/*.d.ts"
   ],
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@harness-desktop/dsh-typert-protocol": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-message-feedback": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^"
+    "@harness-desktop/cordis": "workspace:^",
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-api-gateway": "workspace:^",
+    "@harness-desktop/dsh-commands": "workspace:^",
+    "@harness-desktop/dsh-credentials": "workspace:^",
+    "@harness-desktop/dsh-goal": "workspace:^",
+    "@harness-desktop/dsh-cordis-host-runner": "workspace:^",
+    "@harness-desktop/dsh-host-plugin-inventory": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-agent-presets": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-message-feedback": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
+    "@harness-desktop/dsh-typert-registry": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-message-feedback": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-api-gateway": "workspace:^",
+    "@harness-desktop/dsh-commands": "workspace:^",
+    "@harness-desktop/dsh-credentials": "workspace:^",
+    "@harness-desktop/dsh-goal": "workspace:^",
+    "@harness-desktop/dsh-cordis-host-runner": "workspace:^",
+    "@harness-desktop/dsh-host-plugin-inventory": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-agent-presets": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-message-feedback": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
+    "@harness-desktop/dsh-typert-registry": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

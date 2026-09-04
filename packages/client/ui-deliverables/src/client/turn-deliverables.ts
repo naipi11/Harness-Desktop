@@ -4,11 +4,11 @@
  * `locations`, never the closing prose.
  */
 import type {
-  ConversationNodeDefinition, ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
-import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+  ConversationNodeDefinition, ConversationTimelineSnapshot, ToolResultNode,
+} from '@harness-desktop/dsh-client-runtime/client'
+import { isAppendSurfaceEvent } from '@harness-desktop/dsh-client-runtime/client'
+import type { MarkdownFileMentions } from '@harness-desktop/dsh-client-ui-primitives'
+import type { TurnTailChatData, TurnTailOwnerProps } from '@harness-desktop/dsh-client-ui-conversation/client'
 
 interface ProducedPath {
   readonly seq: number
@@ -20,7 +20,7 @@ export interface DeliverablesTurnData {
   readonly produced: readonly ProducedPath[]
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module '@harness-desktop/dsh-client-runtime/client' {
   interface ConversationTurnDataMap {
     /** Successful mutation paths accumulated in this Turn. */
     deliverables: DeliverablesTurnData
@@ -80,6 +80,29 @@ export function producedForClosing(
     if (produced.seq > seq || seen.has(produced.path)) continue
     seen.add(produced.path)
     paths.push(produced.path)
+  }
+  return paths
+}
+
+/**
+ * Project all completed-turn deliverables in timeline order.
+ * @param timeline - current Session timeline carrying registered Turn data.
+ * @returns unique produced paths admitted before each closing Assistant.
+ */
+export function deliverablePaths(timeline: ConversationTimelineSnapshot): readonly string[] {
+  const paths: string[] = []
+  const seen = new Set<string>()
+  for (const turnNumber of timeline.turnOrder) {
+    const turn = timeline.turns.get(turnNumber)
+    if (turn === undefined || turn.status !== 'closed') continue
+    const tail: Readonly<TurnTailChatData> | undefined = turn.data.get('turn-tail')
+    const closingSeq = tail?.closing?.finalNode.seq
+    if (closingSeq === undefined) continue
+    for (const path of producedForClosing(turn.data.get('deliverables'), closingSeq)) {
+      if (seen.has(path)) continue
+      seen.add(path)
+      paths.push(path)
+    }
   }
   return paths
 }

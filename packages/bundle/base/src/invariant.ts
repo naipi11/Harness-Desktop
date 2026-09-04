@@ -1,12 +1,12 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-base`.
- * @module @deepseek-ai/dsh-base/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-base`.
+ * @module @harness-desktop/dsh-base/invariant
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-base'
+const PACKAGE_NAME = '@harness-desktop/dsh-base'
 
 /** Cordis companion plugin name. */
 export const name = 'base-bundle-invariant'

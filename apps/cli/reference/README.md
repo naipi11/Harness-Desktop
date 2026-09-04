@@ -1,84 +1,65 @@
-# `dsh` CLI behavior reference
+# `harness` CLI behavior reference
 
 English | [中文](README.zh.md)
 
-This reference defines the profile, web-alias, plugin-management, and config-dump command modes. Argv is parsed once through [`src/args.ts`](../src/args.ts), and [`src/bin.ts`](../src/bin.ts) dynamically imports only the selected runner.
+This reference defines the public product grammar shared by `harness` and `dsh`. [`src/args.ts`](../src/args.ts) parses argv once, and [`src/main.ts`](../src/main.ts) dispatches the resulting mode to explicit Runtime, browser, and terminal dependencies.
 
-## Profile boot
+## Grammar
 
-`dsh --profile <name>` boots the profile at `$DSH_HOME/profiles/<name>`. The effective tree is composed over an empty root by applying, in order: each bundle patch named in the profile manifest's `dsh.profile.bundles` list, the profile's own `cordis.patch.yml`, the home-level `$DSH_HOME/cordis.patch.yml` (machine-local preferences shared by every profile, so it outranks the per-profile layer), and each `--patch <path>` overlay in argv order. Later layers win per row; a patch replaces the targeted row's complete `config` value rather than deep-merging keys, and may insert new rows. A parse, schema, resolution, or plugin boot failure is reported and exits nonzero. SIGINT and SIGTERM dispose the mounted root before exit.
+| Mode | Syntax | Result |
+|---|---|---|
+| Interactive | `harness [task]` | Open a terminal, optionally admitting one initial task. |
+| Run | `harness run <task> [--json]` | Execute exactly one task through the terminal protocol. |
+| Web | `harness web [options]` | Open, retain, inspect, or release the Runtime Dashboard. |
+| Desktop | `harness desktop` | Select Desktop mode with no arguments. |
 
-Bundle names resolve from the dsh installation first, then from the profile directory. In-box bundles (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`) therefore always come from the same installation as the running `dsh`; out-of-tree bundles come from the profile's pnpm-managed `node_modules`. A bare plugin `name` in any patch row resolves through the profile directory's Node parent-walk, which reaches the maintained installation fallback `$DSH_HOME/profiles/node_modules` (one symlink per package the installation's app and bundles depend on, healed on every launch).
+`dsh` accepts the same syntax and reports its own command name in help and corrections. `-h`/`--help` and `-V`/`--version` are product options. Unknown options and arguments from another mode are usage errors.
 
-The `web` and `headless` profiles auto-initialize from shipped templates on first use (`web`: base + web-app; `headless`: base + headless). Any other missing profile fails loud with a hint to run `dsh plugin --profile <name> add <package>`.
+The public parser has no profile, plugin-management, headless-profile, patch, or config-dump mode. In particular, any `--profile` form is rejected before dispatch. The former profile-era commands are not compatibility syntax.
 
-### App arguments
+### Interactive
 
-The launcher's flags come first and end at the first token it does not recognize; everything from there on is handed to the booted profile verbatim through `ctx.cmdlineArgs`, where any injected app plugin may parse it ([`dsh-cmdline`](../../../packages/boot/cmdline/README.md)). `dsh --profile web --port 8080` therefore reaches the web app's `--port`, `dsh --profile web --help` prints that app's help and boots nothing, and `dsh --help` (no profile to hand it to) prints the launcher's own. `-V`/`--version` prints the launcher's version when it appears before the app-argument boundary.
+No arguments opens an interactive terminal. One positional argument is admitted as the initial task. More than one positional argument or any product option not owned by this mode is rejected. The invoking directory is the workspace sent to the shared Runtime.
 
-A composition mounts once. An ordinary plugin injects `cmdlineArgs`, parses this app's arguments, and provides what it resolved as a service; each row configured from flags injects that service, and Loader waits for it before evaluating the row's config (`port: !!js ctx.webStartup.port ?? 3080`). A flag therefore beats the value written beside it. This precedence requires the row to retain that expression; a user patch that replaces the whole `config` with literals removes the runtime read. Help and rejected arguments request exit — nonzero for a rejection, 0 for help — without activating rows that depend on the provider's service. A live `cordis.patch.yml` edit re-evaluates expressions against services that are still up, so it cannot reset a served port.
+### Run
 
-Launcher flags must come before app arguments, and the launcher's parser consumes one `--`: an app argument that must arrive as a literal `--` needs `-- --`. A first app argument equal to `web` or `plugin` selects that subcommand instead. `ctx.cmdlineArgs.get()` is a shared immutable read: multiple plugins may parse the same snapshot, while a profile with no reader ignores its app arguments.
+`run` requires exactly one task. `--json` may appear once and selects newline-delimited protocol output; without it, the CLI renders the terminal event stream. The CLI closes its terminal and base Runtime attachments after the operation settles.
 
-The shipped apps own these command lines:
-
-| Profile | Arguments |
-|---|---|
-| `web` | `--host`, `--port`, repeatable `--trusted-host` |
-| `headless` | the task text, as the positional argument |
-
-A one-shot task (`dsh --profile headless "run the tests"`) creates one fresh persisted Agent through the core registry, submits the task, waits for quiescence, and flushes the Session before deriving the last non-empty assistant text and final `turn/end` reason from its durable interval. It prints the text on stdout and exits 0 for `completed`, else 1. An invocation with no task is a usage error from that app. The shipped headless profile mounts no ApiProxy, Host, HTTP server, Web runtime, or browser client; a successful run writes nothing to stderr and opens no listening port.
-
-Inspect the composed tree without booting it:
+### Web
 
 ```sh
-dsh --profile web --dump-default-config
-dsh --profile web --patch ./extra.yml --dump-config
+harness web
+harness web --open
+harness web --no-open
+harness web --background --no-open
+harness web --status
+harness web --stop
 ```
 
-`--dump-default-config` prints only the bundle layers; `--dump-config` adds the profile's `cordis.patch.yml`, the home-level `$DSH_HOME/cordis.patch.yml`, and `--patch` overlays. Both print comments naming the file that supplied each row and every overlay that changed it; `!!js` expressions remain unevaluated, and unmatched patch targets are reported on stderr. A dump never runs app command-line providers, so it shows the composed tree before any app argument is resolved and rejects an invocation that carries app arguments.
+An open operation starts or attaches to the shared local Runtime. Browser dispatch is enabled by default; `--open` states that default and `--no-open` suppresses it. `--daemon` and `--background` are equivalent requests for the Runtime-owned named `web` lease and may be combined with either browser choice. They do not create a detached per-command Web child, PID record, or child log.
 
-## Plugin management
+For a browser open, the Runtime mints a one-time handoff and returns a clean loopback Dashboard origin plus its expiry. The CLI writes the handoff only into the POST body of an owner-only temporary HTML document. The dispatched local file URL contains neither the handoff nor the Runtime access token.
 
-`dsh plugin --profile <name> <args...>` initializes the profile when missing (shipped template, or `@deepseek-ai/dsh-base` alone for other names), then forwards `<args...>` to `pnpm` with the profile directory as working directory — `add`, `remove`, `why`, `update`, and every other pnpm verb work unchanged; pnpm must be on PATH. Relative path specs (`.`, `../plugin`, and their `file:`/`link:` forms) are anchored to the invoking directory first, so `add .` from a plugin checkout installs that checkout, not the profile. After every successful run, `dsh.profile.bundles` is reconciled against the installed state: each dependency resolving to a package whose manifest declares `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` joins the layer stack (so an `update` that gains the declaration activates it), a bundle-less dependency stays plain with a one-time warning, and a removed dependency leaves the stack.
+The Runtime client API exposes no handoff-exchange settlement to the CLI. While the CLI remains alive, dispatch failure removes the document immediately and handoff expiry removes it through the same memoized operation. On natural CLI exit before expiry, ownership transfers to a detached helper launched through plain Node with only the document path and expiry. The parent detaches only after an exact IPC ready message confirms validation and a referenced expiry timer; pre-ready error, exit, disconnect, or timeout re-refs the parent timer. The helper receives no inherited Node loader/eval arguments, handoff, access token, or inherited environment, and removes the document at the original expiry.
 
-```sh
-dsh plugin --profile tui add github:deepseek-harness/turtle-ui
-dsh plugin --profile tui remove turtle-ui
-dsh --profile tui
-```
+`--status` connects only to an existing Runtime and prints its Runtime identity, Dashboard origin, and named Web lease state. A missing Runtime produces a nonzero result without creating `$HARNESS_HOME`. `--stop` also requires an existing Runtime and idempotently releases only the named Web lease. It does not terminate the Runtime, close other clients, or cancel active work. `--status` and `--stop` cannot be combined with a background-lease option and never open a browser.
 
-Git-hosted plugins that ship sources build during install through their `prepare` script, which pnpm ≥10 blocks until the consumer allows it: the first `add` fails with pnpm's `allowBuilds` hint (and a dsh pointer at the profile's `pnpm-workspace.yaml`); copy the printed key there and re-run. Installing a built tarball or a local checkout needs no allowance.
+### Desktop
 
-## Web alias
+`desktop` accepts no arguments and selects the Desktop product mode. It does not create terminal or Web Runtime attachments.
 
-`dsh web` is a hardcoded alias for `--profile web`; the flags after it belong to the web app, whose ordinary bundle provider parses them. `--host` and `--port` override the composed values of the rows that carry them, and repeatable `--trusted-host` contributes invocation authorities through `ctx.webRuntime.trustedHosts` (a deployment expression concatenates its own authorities). The client-plugin HMR receiver is always mounted and stays idle until a separate `pnpm run dev:web` watcher rebuilds client bundles.
+## Runtime behavior
 
-```sh
-dsh web
-dsh web --patch ./extra.cordis.yml
-dsh web --dump-config
-dsh web --help
-```
+The CLI resolves the local Runtime through `HARNESS_HOME`. Interactive, run, and Web invocations attach as clients; the Runtime owns its endpoint, sessions, background lease, and active operations. Releasing one CLI attachment never grants it ownership over unrelated clients or work.
 
-The production Web runner needs built package and frontend artifacts (`pnpm run build`). It serves `http://127.0.0.1:3080` by default. The CLI intentionally does not support `--host 0.0.0.0` yet and exits with a usage error; `--trusted-host` adds named authorities accepted by the `/api` browser-trust fence.
-
-Process shutdown gives the plugin tree up to five seconds to dispose. The first `SIGINT`/`SIGTERM` starts that graceful drain — `SIGTERM` is a supervisor's ordinary stop request and exits 0 on every surface, `SIGINT` reports 130; a second signal forces immediate exit. If one-shot normal completion is already stuck in disposal, the first `Ctrl+C` is the escalation and exits immediately instead of being swallowed.
-
-All modes treat the invoking directory as the default workspace root, load applicable `AGENTS.md` or `CLAUDE.md` instructions with a 65,536-byte render budget, and use an in-memory SQLite session content index. Every profile boot watches valid edits of both `cordis.patch.yml` layers (profile and home) and reapplies them transactionally; a one-shot surface exits through its bounded shutdown, which disposes the watchers.
-
-New sessions default to the `workspace-write` permission preset. Bash and filesystem mutations are restricted to the session workspace and platform temporary roots; reads, network access, and process visibility are not confined. `DSH_PERMISSION_MODE` changes the process fallback. Stored General-settings permissions affect later Web sessions, not an already-open one.
-
-`DSH_TOOLS_MODE` selects `native`, `code`, or `both` for the process; another value fails at boot. The shipped `minimal` agent preset keeps that deployment presentation, fixes the complete system prompt to `You are a helpful software engineer assistant.`, and composes only persistent `bash` plus `str_replace_editor`. Select 极简模式 when creating a Web session; every other prompt section and model-facing plugin remains absent from that agent while the shared browser, workspace, persistence, sandbox, and permission host stays in place.
-
-## Shared deployment behavior
-
-The base bundle mounts the native DeepSeek adapter, settings and credential providers, stable `web_search`, and disabled session telemetry. Provider credentials resolve from the inherited environment, `$DSH_HOME/.credentials.yaml`, the invoking directory's `.env`, then `$DSH_HOME/.env`; the managed document is never materialized into `process.env`, while both `.env` files are ordinary launch environment layers. Search uses `DEEPSEEK_API_KEY` and accepts `DEEPSEEK_SEARCH_BASE_URL`; `web_fetch` is disabled unless a patch layer inserts a provider and enables it.
-
-Session telemetry stays local by default. `DSH_TELEMETRY_MODE=FULL` streams every projected session event as OTLP/HTTP logs, while `DSH_TELEMETRY_MODE=FEEDBACK_ONLY` uploads a session-log suffix only when feedback is recorded. `DSH_TELEMETRY_OTLP_URL` selects another collector, and any non-empty `DSH_TELEMETRY_DISABLED` remains an authoritative hard opt-out. The shipped base has no telemetry redaction rule, so explicitly enabled exports can contain message text, tool arguments and results, and workspace paths; the [default-off Agent Note](../../../.agents/notes/implemented/feature/2026-08-10-telemetry-default-off.md) owns that deployment decision.
-
-Install external plugin bundles through `dsh plugin --profile <name> add <package-or-git-spec>`. The installed package owns its dependencies and contributes its declared `cordis.patch.yml` layer. The CLI also ships `@deepseek-ai/dsh-mcp-client` as a dependency for patch layers, but no MCP server is enabled by default because each server command is trusted executable code outside the agent sandbox.
+Product-grammar failures exit 2 with a corrective syntax line. A Web operation that cannot find or reach its required Runtime uses the Runtime-unavailable exit path; other local Web failures use the generic local-failure path. Diagnostics are normalized and never reflect a handoff, endpoint token, or raw private cause.
 
 ## Source execution
 
-From the repository root, run `pnpm run build` separately after a fresh checkout and whenever artifacts need updating, then use `pnpm dsh <args...>`. The `package.json` script launches `apps/cli/src/bin.ts` with `node --import tsx/esm` without building and forwards every argument. Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend or client-plugin bundles fail at startup with an instruction to run `pnpm run build`. The launcher does not check freshness, so existing stale bundles can run older browser code until rebuilt. The process inherits the launch environment; set `NODE_USE_ENV_PROXY=1` when a supporting Node version must honor `HTTP_PROXY` and `HTTPS_PROXY`. The installed form launches the built `apps/cli/lib/bin.js` without rebuilding the repository.
+The repository scripts launch source through `node --import tsx/esm` and preserve that launcher for Runtime process starts. Installed commands run the built bins under plain Node. The detached browser-cleanup helper is a standalone `.mjs` file and deliberately inherits neither source loader arguments nor eval code.
+
+```sh
+pnpm run build
+pnpm harness run "check the workspace" --json
+node apps/cli/lib/bin.js run "check the workspace" --json
+```

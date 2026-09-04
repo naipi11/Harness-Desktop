@@ -3,7 +3,7 @@
  * profile's patch layers through the include plugin's patch algorithm without
  * booting or evaluating `!!js`, with one source layer per bundle, the
  * profile's own patch file, and each `--patch` overlay.
- * @module @deepseek-ai/dsh/dump-config
+ * @module @harness-desktop/cli/dump-config
  */
 
 import { existsSync } from 'node:fs'
@@ -13,7 +13,8 @@ import {
   loadOverlayPatches,
   renderConfigDump,
   type ConfigDumpLayer,
-} from '@deepseek-ai/dsh-app-boot'
+} from '@harness-desktop/dsh-app-boot'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
 import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
 
 const NAME = 'dsh'
@@ -28,7 +29,8 @@ const NAME = 'dsh'
  * @param patches - `--patch` overlay paths, in argv order.
  */
 export function runDumpConfig(profile: string, defaultOnly: boolean, patches: readonly string[]): void {
-  const loaded = prepareProfile(profile, !defaultOnly)
+  const harnessHome = createLocalRuntimePlugin().home
+  const loaded = prepareProfile(profile, harnessHome, !defaultOnly)
   const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
     label: layer.packageName,
     patches: layer.patches,
@@ -37,7 +39,7 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
     if (existsSync(loaded.patchPath)) {
       layers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
-    const homePatchFile = homePatchPath()
+    const homePatchFile = homePatchPath(harnessHome)
     const homePatches = loadOptionalPatches(NAME, homePatchFile)
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })

@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-shell-env`.
- * @module @deepseek-ai/dsh-shell-env/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-shell-env`.
+ * @module @harness-desktop/dsh-shell-env/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-shell-env'
+const PACKAGE_NAME = '@harness-desktop/dsh-shell-env'
 
 /** Cordis companion plugin name. */
 export const name = 'shell-env-invariant'

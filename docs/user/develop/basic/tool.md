@@ -1,16 +1,16 @@
-# Build a tool
+# Internal tool format reference
 
 English | [中文](tool.zh.md)
 
-This tutorial adds a `greet` tool to the Web UI. Complete [Your first plugin](./) first and keep its `scratch-plugin` directory.
+This is an internal tool format reference, not a runnable public Web tutorial. It extends the scratch plugin from [the internal plugin format reference](./); the product CLI cannot load that overlay.
 
 ## Create the tool plugin
 
 Replace `scratch-plugin/src/my-plugin.ts` with:
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { Context } from '@harness-desktop/cordis'
+import { defineTool } from '@harness-desktop/dsh-tools'
 
 export const name = 'greet-tool'
 export const inject = ['tools']
@@ -37,13 +37,13 @@ export function apply(ctx: Context) {
 
 ## Run and call the tool
 
-Restart the development command if it is not running:
+The scratch `greet` file is a format example only. The generic tool acceptance command is:
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"
 ```
 
-Open `http://127.0.0.1:3080` and ask: `Use the greet tool to greet Ada.` The model can call `greet` and receives `Hello, Ada!` as the tool result.
+That acceptance test verifies tool registration, schemas, and model-facing prompt assembly. It does not load this scratch `greet` implementation or promise a public Web endpoint.
 
 ## Next steps
 

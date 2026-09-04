@@ -1,47 +1,83 @@
-# `@deepseek-ai/dsh`
+# `@harness-desktop/cli`
 
 English | [中文](README.zh.md)
 
-The `dsh` command is the product launcher for profiles: ordered stacks of plugin-bundle patch layers under the user's own overrides. [`src/args.ts`](src/args.ts) owns the command grammar, and [`src/bin.ts`](src/bin.ts) loads only the selected runner. Invalid commands, options from another mode, configuration errors, and boot failures exit nonzero.
+`harness` is the Harness Desktop product client. `dsh` is a compatible command name with the same grammar and data. [`src/args.ts`](src/args.ts) owns the public command grammar, and [`src/main.ts`](src/main.ts) dispatches both names to the shared local Runtime.
 
-## Entry modes
+## Quick start
+
+```sh
+harness
+harness "fix the tests"
+harness run "fix the tests" --json
+harness web
+harness web --background --no-open
+harness web --status
+harness web --stop
+harness desktop
+harness update
+```
+
+## Product commands
 
 | Command | Purpose |
 |---|---|
-| `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
-| `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
-| `dsh web` | Alias of `--profile web`. |
-| `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `harness [task]` | Open an interactive terminal, optionally with one initial task. |
+| `harness run <task> [--json]` | Run exactly one task; `--json` emits JSONL protocol records. |
+| `harness web [options]` | Open, retain, inspect, or release the shared Runtime Dashboard. |
+| `harness desktop` | Select Desktop mode; no arguments are accepted. |
+| `harness update` | Print the npm update command for npm installs, or verify and atomically switch a configured standalone archive. It does not create a Runtime or Web lease. |
+| `dsh <args...>` | Use the same product grammar through the compatible command name. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The former public profile, plugin-management, headless-profile, patch, and config-dump commands are not part of this product grammar. `--profile` is rejected explicitly. Use `run` for a one-shot task and `web` for the Dashboard.
 
-## App arguments
+## Update
 
-The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). Launcher flags therefore come first, and the first token the launcher does not recognize starts the app's arguments:
+`harness update` and `dsh update` accept no arguments and choose behavior only from the resolved installation layout:
 
-```sh
-dsh --profile web --port 8080       # --port belongs to the web app
-dsh --profile tui --resume <id>     # example, assuming the tui profile is installed; --resume belongs to the terminal app
-dsh --profile headless "run the tests"
-dsh --profile web --help            # the web app's flags, not the launcher's
-dsh --help                          # the launcher's own help
-```
+| Installed form | Behavior |
+|---|---|
+| npm | Only a resolved `node_modules/@harness-desktop/cli` layout qualifies. The command prints `npm update -g @harness-desktop/cli` and exits successfully without running npm or loading a candidate. |
+| Standalone archive | A resolved entry at `payload/current/cli/package/lib/<entry>` under the fixed launcher root qualifies. Windows releases use ZIP; macOS and Linux releases use tar.gz to preserve executable modes. Every release bundle embeds audited public trust, an exact candidate source, and a rollback source keyed to its current version. |
+| Source or another layout | The installation is unsupported; the command prints `CLI update failed.` to stderr and exits `1`. |
+
+The source tree does not supply production trust or a release source. A standalone bundle whose embedded public policy is absent or invalid reports `unconfigured-update-source`, performs no candidate I/O or filesystem mutation, and exits `1`. A verified candidate whose version is not newer prints `No update available.` and exits `0` with code `version-not-newer`.
+
+With an embedded public policy, `update` uses the shared signed-manifest policy to select the newer stable archive for its host—ZIP on Windows and tar.gz on macOS and Linux—and verify a rollback manifest for the exact installed version, platform, and architecture. It verifies both manifests and the configured exact HTTPS origin, then downloads the candidate and checks its archive digest, exact member set, and executable paths before extracting a private `.harness-candidate-<uuid>` directory. The fixed launcher, its recovery entry, public policy, lock, and phase journal remain outside the replaceable `payload/current` tree. Before each payload rename, the updater synchronizes a private temporary journal file, atomically publishes it, and synchronizes its parent directory where the platform supports that operation. The current payload moves only to deterministic `payload/retained`; a later launcher conservatively restores it after any incomplete phase and rejects malformed, escaping, linked, or ambiguous recovery paths.
+
+A healthy candidate becomes `payload/current`. The retained payload is removed only after successful cleanup; a cleanup failure leaves the candidate live, retains the deterministic rollback payload, and reports `applied-with-cleanup-failure`. A failed health check moves the candidate aside, restores the retained payload, and reports `rolled-back` only after cleanup succeeds. The candidate's bundled Node and `cli/package/lib/bin.js --help` process tree is the health lifecycle unit: success requires leader exit with no surviving descendants, while failure terminates and waits for the tree before rollback. On Windows, an external system PowerShell worker assumes the exact lock identity, waits for the update command to exit, performs the journaled payload switch, and applies the same captured-tree rule; `restart-scheduled` does not launch a new interactive CLI. A dead exact lock owner or bounded expiry permits validated recovery, while a malformed lock fails closed. A failed restore reports `transaction-failed` instead of claiming rollback. The transaction never reads, creates, or modifies `HARNESS_HOME`, and never creates a Runtime or Web lease.
+
+The current standalone settlements are:
+
+| Settlement | Visible output | Exit code |
+|---|---|---|
+| `up-to-date` (`version-not-newer`) | `No update available.` on stdout | `0` |
+| `applied` | `CLI update applied.` on stdout | `0` |
+| `applied-with-cleanup-failure` | `CLI update applied, but cleanup failed.` on stderr | `1` |
+| `restart-scheduled` | `CLI update scheduled; it completes after this command exits.` on stdout | `0` |
+| `rolled-back` | `CLI update rolled back.` on stderr | `1` |
+| `failed` (`candidate-rejected`, `transaction-failed`, `unconfigured-update-source`, or `unsupported-installation`) | `CLI update unavailable [unconfigured-update-source]. Install a current standalone release.` for an absent policy; otherwise `CLI update failed.` on stderr | `1` |
+
+The root [release artifact matrix](../../README.md#desktop-app) owns the packaged platform and native-CI evidence boundary. Passing local checks does not configure production update trust or authorize signing, notarization, publication, upload, or GitHub Release creation.
 
 ## Profiles
 
-A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml` (the user's own patch layer).
+Profile records remain a legacy/internal app-boot format used by embedders and test fixtures. The shared product Runtime does not load them. This heading preserves existing documentation links; it does not restore a public profile command.
 
-The tree composes over an empty root:
-- each bundle's patch in `dsh.profile.bundles` order
-- then the profile's `cordis.patch.yml`, then the home-level `$DSH_HOME/cordis.patch.yml`
-- then `--patch` overlays
+## Shared Runtime and Web
 
-Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
+Interactive, run, and Web modes attach to one local Runtime selected through `HARNESS_HOME`; the invoking directory is the terminal workspace. Closing a CLI attachment does not terminate unrelated clients or active work.
 
-Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
+`harness web` starts or attaches to the Runtime and opens the Dashboard by default. `--no-open` suppresses browser dispatch. `--daemon` and `--background` are equivalent requests for the Runtime-owned named `web` lease, not detached per-command Web-child launches. `--status` inspects an existing Runtime without starting one. `--stop` idempotently releases only the named Web lease and preserves the Runtime, other clients, and active work.
 
-The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.
+Browser opening uses an owner-only temporary HTML document whose POST body contains a one-time handoff; the dispatched local file URL contains neither that handoff nor the Runtime access token. The Runtime client API does not report exchange settlement to the CLI, so a live parent removes the document on dispatch failure or handoff expiry. If the CLI exits first, it transfers the path and existing expiry—not credentials—to a detached plain-Node cleanup helper. The [CLI behavior reference](reference/README.md) owns the complete command and lifecycle details.
 
 ## Development
 
-Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+Source execution preserves the `node --import tsx/esm` launcher used by `pnpm harness`; built execution uses `apps/cli/lib/bin.js`. Build package, Web, and Desktop artifacts before testing the installed path:
+
+```sh
+pnpm run build
+pnpm harness web --status
+node apps/cli/lib/bin.js web --status
+```

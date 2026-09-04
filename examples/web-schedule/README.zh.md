@@ -1,11 +1,12 @@
-# 仅限 Session 内的 Schedule
+# 内部 Session-local Schedule 参考
 
 [English](README.md) | 中文
 
-此 overlay 让一个 `dsh web` 进程显式启用 Schedule 提醒，同时不改变交付的默认 Web 组合：
+这是内部组装参考，不是可运行的公开 overlay 教程。下列无密钥 Schedule 验收与配置门禁会验证底层行为和已检入 overlay；公开 CLI 无法选择它：
 
 ```sh
-dsh web --patch examples/web-schedule/cordis.yml
+pnpm exec vitest run packages/schedule/schedule/tests/tools.spec.ts packages/schedule/schedule/tests/plugin.spec.ts
+pnpm run verify-cordis-config
 ```
 
 当前 overlay 支持使用正整数 `after_seconds`、绝对时间 `at` 目标，或至少 300 秒的固定速率 `every_seconds` 间隔创建提醒。模型通过 `schedule_create`、`schedule_list` 和 `schedule_delete` 管理它们；每个结果都会把交付标为 `session-local`。

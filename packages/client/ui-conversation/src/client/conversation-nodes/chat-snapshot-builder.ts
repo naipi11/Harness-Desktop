@@ -1,10 +1,10 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 import type {
   ChatConversationViewNode, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot,
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot,
   ConversationViewBuilder, ConversationViewDefinition, LegacyConversationSlice,
   PartialAssistant, RunningToolCall,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@harness-desktop/dsh-client-runtime/client'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 

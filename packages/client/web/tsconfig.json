@@ -36,6 +36,9 @@
       "path": "../runtime"
     },
     {
+      "path": "../ui-deliverables"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ],

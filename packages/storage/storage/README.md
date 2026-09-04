@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-storage
+# @harness-desktop/dsh-storage
 
 English | [中文](README.zh.md)
 

@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, CallId, type Message } from '@deepseek-ai/dsh-llm'
-import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
-import { Session, SessionId, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
-import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
-import AgentRegistry, { agentEvents, Inbox, type Agent, type PreStepDecision } from '@deepseek-ai/dsh-agent'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
-import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
-import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
+import { Context } from '@harness-desktop/cordis'
+import { createUserMessage, CallId, type Message } from '@harness-desktop/dsh-llm'
+import { createScope, type Scope } from '@harness-desktop/dsh-scope'
+import { Session, SessionId, type SessionEvent, type UserMessage } from '@harness-desktop/dsh-session'
+import SystemPrompt, { renderPrompt } from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime, { defineContentToolFixture } from '@harness-desktop/dsh-tools'
+import AgentRegistry, { agentEvents, Inbox, type Agent, type PreStepDecision } from '@harness-desktop/dsh-agent'
+import SkillRegistry from '@harness-desktop/dsh-skill'
+import * as SkillFileSystem from '@harness-desktop/dsh-skill-filesystem'
+import * as toolSkill from '@harness-desktop/dsh-tool-skill'
 
 const testToolSignal = new AbortController().signal
 
@@ -31,7 +31,7 @@ async function setup(home: string, config: toolSkill.Config = {}): Promise<Conte
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SkillRegistry)
-  await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+  await ctx.plugin(SkillFileSystem, { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
   await ctx.plugin(toolSkill, config)
   return ctx
 }
@@ -157,6 +157,24 @@ async function mintAgentScope(ctx: Context, subject: string | Agent): Promise<{ 
 }
 
 describe('dsh-tool-skill', () => {
+  it('registers user-invocation support only for the Agents its scope serves', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SkillRegistry)
+    const served = await mintAgentScope(ctx, '/workspace/served')
+    const unserved = agentForCwd('/workspace/unserved')
+    const consumer = await served.scope.ctx.plugin(toolSkill)
+
+    expect(ctx.skills.hasUserInvocationConsumer(served.agent)).toBe(true)
+    expect(ctx.skills.hasUserInvocationConsumer(unserved)).toBe(false)
+
+    await consumer.dispose()
+    expect(ctx.skills.hasUserInvocationConsumer(served.agent)).toBe(false)
+    await served.scope.dispose()
+  })
+
   it('registers the skill tool schema and removes it on dispose', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
@@ -164,7 +182,7 @@ describe('dsh-tool-skill', () => {
     await ctx.plugin(AgentRegistry)
     const home = await tempDir('tool-schema')
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
     ctx.skills.register({ name: 'lifecycle-skill', description: 'Lifecycle', source: 'runtime', content: 'body' })
 
     const fiber = await ctx.plugin(toolSkill)
@@ -752,7 +770,7 @@ describe('dsh-tool-skill', () => {
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, { harnessHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
 
     await expect(ctx.plugin(toolSkill, { catalogDescriptionMaxLength: 2 })).rejects.toThrow('greater than or equal to 3')
   })

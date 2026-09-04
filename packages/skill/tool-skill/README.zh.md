@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-skill
+# @harness-desktop/dsh-tool-skill
 
 [English](README.md) | 中文
 
@@ -30,13 +30,17 @@
 
 工具执行不会添加合成上下文消息。新加载的结果已作为工具结果记录，并在下一个模型步骤可用，无需重复正文。只有目录投影会添加替换摘要。
 
+## 用户显式调用准入
+
+两个 pre-step 监听器都存活后，插件才会通过自身注册 scope 把用户调用消费方挂接到 `ctx.skills`。未限定 scope 的挂载服务所有 Agent，而 preset 挂载只服务 scope 链包含该 preset 的 Agent。宿主 prompt 准入在信任目录命中前会检查这项精确且按 owner 寻址的注册，因此仅有提供方或相邻组合不能在缺少正文加载监听器时把原始斜杠文本送入模型。dispose 时先移除该注册，再拆除监听器，使拆卸期间的准入保持失败时拒绝。
+
 ## 模型体验
 
 ### 会话目录
 
 #### 模型看到的内容
 
-如果存在模型可调用 skill，且可见的正是这个 `skill` 工具，agent 会在第一个请求之前收到下方目录模板，其中包含每个已排序 skill 的一条随数据而定的条目。该目录是一条持久的用户角色消息。后续成员关系、描述或可见性的变化会使用同一个 `<available_skills>` 信封追加完整替换；删除所有 skill 时，会追加一个空信封，并明确指示不得使用旧名称。模板的结尾一句是防止双重加载的规则：用户显式的手势边界（下文的 pre-step 监听器）会把同一份 `renderSkillContent` 输出（共享自 `@deepseek-ai/dsh-skill`）内联注入，目录则告诉模型遵循该块，而不是再经工具重新加载该 skill；替换目录模板的两个分支——包括清空后的目录——都携带同一句话。
+如果存在模型可调用 skill，且可见的正是这个 `skill` 工具，agent 会在第一个请求之前收到下方目录模板，其中包含每个已排序 skill 的一条随数据而定的条目。该目录是一条持久的用户角色消息。后续成员关系、描述或可见性的变化会使用同一个 `<available_skills>` 信封追加完整替换；删除所有 skill 时，会追加一个空信封，并明确指示不得使用旧名称。模板的结尾一句是防止双重加载的规则：用户显式的手势边界（下文的 pre-step 监听器）会把同一份 `renderSkillContent` 输出（共享自 `@harness-desktop/dsh-skill`）内联注入，目录则告诉模型遵循该块，而不是再经工具重新加载该 skill；替换目录模板的两个分支——包括清空后的目录——都携带同一句话。
 
 ##### Skill 目录模板
 
@@ -65,7 +69,7 @@ A user may also invoke a skill directly; its <skill_content> block then appears 
 
 #### 模型看到的内容
 
-模型会看到生成的 [`skill` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-skill)。
+模型会看到生成的 [`skill` schema](../../../docs/tool-catalog.md#harness-desktopdsh-tool-skill)。
 
 #### Token 影响
 

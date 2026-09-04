@@ -1,5 +1,5 @@
 /**
- * Integration tests: the REAL `@deepseek-ai/dsh-pwsh-local` executor plus the
+ * Integration tests: the REAL `@harness-desktop/dsh-pwsh-local` executor plus the
  * `pwsh` tool, exercised through `ctx.tools.execute()` with a real PowerShell
  * process. These verify the world — actual commands run, stdout/stderr come
  * back, exit codes render, timeouts abort, background jobs settle through the
@@ -14,16 +14,16 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
-import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { PwshLocalExecutor, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
-import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { Context } from '@harness-desktop/cordis'
+import { CallId } from '@harness-desktop/dsh-llm'
+import SystemPrompt from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime, { TOOL_ABORTED } from '@harness-desktop/dsh-tools'
+import LocalJobRegistry from '@harness-desktop/dsh-jobs-local'
+import * as ToolTasks from '@harness-desktop/dsh-tool-jobs'
+import LocalSubprocessRuntime from '@harness-desktop/dsh-subprocess-local'
+import { PwshLocalExecutor, resolvePwshPath } from '@harness-desktop/dsh-pwsh-local'
+import * as ToolPwsh from '@harness-desktop/dsh-tool-pwsh'
+import * as BashEnvPlugin from '@harness-desktop/dsh-shell-env'
 
 const testToolSignal = new AbortController().signal
 

@@ -1,8 +1,8 @@
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
-import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-tools'
+import type { Context } from '@harness-desktop/cordis'
+import type {} from '@harness-desktop/dsh-agent'
+import { CompactionId, compactCheckpointSource } from '@harness-desktop/dsh-compaction'
+import { createUserMessage } from '@harness-desktop/dsh-llm'
+import type {} from '@harness-desktop/dsh-tools'
 
 export const name = 'workspace-context-compaction'
 

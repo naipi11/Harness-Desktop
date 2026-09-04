@@ -4,8 +4,8 @@ import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
+import { Context } from '@harness-desktop/cordis'
+import SkillRegistry from '@harness-desktop/dsh-skill'
 
 interface FakeWatcherControl {
   emitter: EventEmitter
@@ -125,7 +125,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(alias, '.dsh'),
+      harnessHome: join(alias, '.dsh'),
       agentsHome: join(alias, '.agents'),
       watch: true,
     })
@@ -145,6 +145,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
+      harnessHome: target,
       includeDefaultRoots: false,
       customSkillDirs: [alias],
       watch: true,
@@ -167,7 +168,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchPollIntervalMs: 10,
@@ -200,7 +201,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchUsePolling: true,
@@ -241,7 +242,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchPollIntervalMs: 10,
@@ -288,7 +289,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchPollIntervalMs: 10,
@@ -316,7 +317,7 @@ describe('skill-filesystem watcher failures', () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {
-      dshHome: join(home, '.dsh'),
+      harnessHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
       watch: true,
       watchPollIntervalMs: 10,
@@ -353,7 +354,7 @@ describe('skill-filesystem watcher failures', () => {
     let provider!: InstanceType<typeof SkillFileSystem.FileSystemSkillProvider>
     const disposeProvider = ctx.skills.registerProvider((control) => {
       provider = new SkillFileSystem.FileSystemSkillProvider(ctx, control, {
-        dshHome: join(home, '.dsh'),
+        harnessHome: join(home, '.dsh'),
         agentsHome: join(home, '.agents'),
         watch: true,
         watchPollIntervalMs: 10,
@@ -390,7 +391,7 @@ describe('skill-filesystem watcher failures', () => {
     let provider!: InstanceType<typeof SkillFileSystem.FileSystemSkillProvider>
     const disposeProvider = ctx.skills.registerProvider((control) => {
       provider = new SkillFileSystem.FileSystemSkillProvider(ctx, control, {
-        dshHome: join(home, '.dsh'),
+        harnessHome: join(home, '.dsh'),
         agentsHome: join(home, '.agents'),
         watch: true,
         watchPollIntervalMs: 10,
@@ -421,7 +422,7 @@ describe('skill-filesystem watcher failures', () => {
     let provider!: InstanceType<typeof SkillFileSystem.FileSystemSkillProvider>
     const disposeProvider = ctx.skills.registerProvider((control) => {
       provider = new SkillFileSystem.FileSystemSkillProvider(ctx, control, {
-        dshHome: join(home, '.dsh'),
+        harnessHome: join(home, '.dsh'),
         agentsHome: join(home, '.agents'),
         watch: true,
         watchPollIntervalMs: 10,

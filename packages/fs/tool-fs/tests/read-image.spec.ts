@@ -9,20 +9,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
-import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
-import type { Config as ToolConfig } from '@deepseek-ai/dsh-tools'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
-import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import { Context } from '@harness-desktop/cordis'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
+import { CodeRuntime } from '@harness-desktop/dsh-code-runtime'
+import type { CodeRunRequest, CodeRunResult } from '@harness-desktop/dsh-code-runtime'
+import { CallId, LlmAdapter, LlmRuntime } from '@harness-desktop/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@harness-desktop/dsh-llm'
+import SystemPrompt from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime, { RUN_CODE_NAME } from '@harness-desktop/dsh-tools'
+import type { Config as ToolConfig } from '@harness-desktop/dsh-tools'
+import LocalFileSystem from '@harness-desktop/dsh-fs-local'
+import * as FsPolicy from '@harness-desktop/dsh-fs-observation-policy'
+import LocalAttachmentStore from '@harness-desktop/dsh-attachment-local'
+import { AttachmentId, AttachmentStore } from '@harness-desktop/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@harness-desktop/dsh-attachment'
+import * as ToolFs from '@harness-desktop/dsh-tool-fs'
 import {
   applyReadImageTool,
   formatImageReadOutput,
@@ -107,7 +108,9 @@ async function setup(options: SetupOptions = {}) {
   await ctx.plugin(LocalFileSystem, { cwd: dir })
   await ctx.plugin(FsPolicy)
   if (options.attachments !== false) {
-    await ctx.plugin(LocalAttachmentStore, { dshHome: home, ...options.storeConfig })
+    await ctx.plugin(LocalAttachmentStore, {
+      harnessHome: createLocalRuntimePlugin({ env: { HARNESS_HOME: home } }), ...options.storeConfig,
+    })
   }
   if (options.llm !== false) {
     await ctx.plugin(LlmRuntime)
@@ -447,7 +450,9 @@ describe('registration surface', () => {
     await ctx.plugin(ToolRuntime, { mode: 'native' })
     await ctx.plugin(LocalFileSystem, { cwd: dir })
     await ctx.plugin(FsPolicy)
-    const attachmentsFiber = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
+    const attachmentsFiber = await ctx.plugin(LocalAttachmentStore, {
+      harnessHome: createLocalRuntimePlugin({ env: { HARNESS_HOME: home } }),
+    })
     const toolFsFiber = await ctx.plugin(ToolFs)
     const names = () => ctx.tools.schemas().map(schema => schema.name).sort()
     expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
@@ -458,7 +463,7 @@ describe('registration surface', () => {
     expect(names()).toEqual(['edit', 'read', 'write'])
 
     // Remounting the store restores the conditional registration.
-    const remounted = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
+    const remounted = await ctx.plugin(LocalAttachmentStore, { harnessHome: createLocalRuntimePlugin({ env: { HARNESS_HOME: home } }) })
     expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
 
     // Disposing the whole plugin withdraws every tool, read_image included.

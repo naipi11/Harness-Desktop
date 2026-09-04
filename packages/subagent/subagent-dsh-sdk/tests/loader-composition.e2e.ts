@@ -9,13 +9,14 @@
  * keyless tier applies (the with-key tier lives in subagent-sdk.e2e.ts).
  */
 
-import { realpathSync } from 'node:fs'
-import { readFile, readdir } from 'node:fs/promises'
+import { existsSync, realpathSync } from 'node:fs'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type SessionEvent } from '@deepseek-ai/dsh-session'
-import { resolveExampleLaunch, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { type SessionEvent } from '@harness-desktop/dsh-session'
+import { resolveExampleLaunch, runLoaderSmoke } from '@harness-desktop/dsh-loader-smoke'
 
 const fixtureDir = new URL('../../../../examples/jsonrpc-agent/tests/fixtures/subagent/subagent-dsh-sdk/', import.meta.url)
 const driver = fileURLToPath(new URL('driver.ts', fixtureDir))
@@ -50,40 +51,51 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
       tsconfigPath: repoTsconfig,
     })
 
+    const homeOwner = await mkdtemp(join(tmpdir(), 'dsh-sdk-subagent-homes-'))
+    const parentHome = join(homeOwner, 'parent')
+    const childHome = join(homeOwner, 'child')
     let events: SessionEvent[] = []
     let childEvents: SessionEvent[] = []
     let workspace = ''
-    const { stderr } = await runLoaderSmoke({
-      label: 'dsh-sdk-subagent cwd composition smoke',
-      tempDirPrefix: 'dsh-sdk-subagent-cwd-e2e-',
-      binScript: driver,
-      libBinScript: driver,
-      configPath,
-      tsconfigPath: repoTsconfig,
-      // Two complete harness runtimes boot in sequence (driver, then the SDK
-      // child); from-source tsx boots under load need more than the default
-      // 30s window.
-      processTimeoutMs: 120_000,
-      env: {
-        DSH_TEST_CHILD_COMMAND: childLaunch.command,
-        DSH_TEST_CHILD_ARGS: JSON.stringify(childLaunch.args),
-        DSH_TEST_CHILD_ENV: JSON.stringify({
-          ...Object.fromEntries(Object.entries(childLaunch.env).filter(([, value]) => value !== undefined)),
-        }),
-      },
-      inspect: async (cwd) => {
-        // The child reports realpaths; canonicalize the temp workspace to match.
-        workspace = realpathSync(cwd)
-        const parentLogs = await jsonlFiles(join(cwd, '.sessions'))
-        expect(parentLogs).toHaveLength(1)
-        events = await sessionEvents(parentLogs[0] as string)
-        // The child runtime persisted its own transcript in ITS cwd — which
-        // must be the parent session's workspace for the inheritance to hold.
-        const childLogs = await jsonlFiles(join(cwd, '.child-sessions'))
-        expect(childLogs).toHaveLength(1)
-        childEvents = await sessionEvents(childLogs[0] as string)
-      },
-    })
+    let stderr = ''
+    try {
+      ({ stderr } = await runLoaderSmoke({
+        label: 'dsh-sdk-subagent cwd composition smoke',
+        tempDirPrefix: 'dsh-sdk-subagent-cwd-e2e-',
+        binScript: driver,
+        libBinScript: driver,
+        configPath,
+        tsconfigPath: repoTsconfig,
+        // Two complete harness runtimes boot in sequence (driver, then the SDK
+        // child); from-source tsx boots under load need more than the default
+        // 30s window.
+        processTimeoutMs: 120_000,
+        env: {
+          HARNESS_HOME: parentHome,
+          DSH_TEST_CHILD_COMMAND: childLaunch.command,
+          DSH_TEST_CHILD_ARGS: JSON.stringify(childLaunch.args),
+          DSH_TEST_CHILD_ENV: JSON.stringify({
+            ...Object.fromEntries(Object.entries(childLaunch.env).filter(([, value]) => value !== undefined)),
+            HARNESS_HOME: childHome,
+          }),
+        },
+        inspect: async (cwd, harnessHome) => {
+          // The child reports realpaths; canonicalize the temp workspace to match.
+          workspace = realpathSync(cwd)
+          expect(harnessHome).toBe(parentHome)
+          expect(existsSync(join(cwd, '.sessions'))).toBe(false)
+          expect(existsSync(join(cwd, '.child-sessions'))).toBe(false)
+          const parentLogs = await jsonlFiles(join(parentHome, 'sessions'))
+          expect(parentLogs).toHaveLength(1)
+          events = await sessionEvents(parentLogs[0] as string)
+          const childLogs = await jsonlFiles(join(childHome, 'sessions'))
+          expect(childLogs).toHaveLength(1)
+          childEvents = await sessionEvents(childLogs[0] as string)
+        },
+      }))
+    } finally {
+      await rm(homeOwner, { recursive: true, force: true })
+    }
     expect(stderr).not.toContain('UNHANDLED')
 
     // The parent's tool result carries the child model's echo of its real

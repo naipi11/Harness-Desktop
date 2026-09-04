@@ -11,6 +11,15 @@ import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './scripts/covera
 // threshold ERRORs name only the file. Absolute path because istanbul-reports
 // require()s custom reporters (which is also why the reporter is CJS).
 const uncoveredLocationsReporter = fileURLToPath(new URL('./scripts/coverage-uncovered-locations.cjs', import.meta.url))
+const productMetadataSource = fileURLToPath(
+  new URL('./packages/boot/app-boot/src/product-metadata.ts', import.meta.url),
+)
+// This built-only package subpath needs an exact source alias on clean checkouts.
+const sourceResolve = () => ({
+  alias: {
+    '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
+  },
+})
 
 // Resolution facade shared by every plugin instance below: tsconfig.base.json
 // has no include, which vite-tsconfig-paths treats as match-all, so its paths
@@ -84,7 +93,15 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
 
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
+  // Runtime-local auth exercises only a disposable loopback WebServer; unlike
+  // credentialed provider e2e suites it is keyless and belongs in the focused
+  // default command required by the Runtime authentication foundation.
+  'packages/host/local-runtime/tests/local-auth.e2e.ts',
+  'packages/host/local-runtime/tests/runtime-*.e2e.ts',
   'apps/*/tests/**/*.spec.ts',
+  'apps/cli/tests/runtime-client.e2e.ts',
+  'apps/cli/tests/interactive-terminal.pty.e2e.ts',
+  'apps/cli/tests/web-runtime.e2e.ts',
   'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',
 ]
@@ -116,6 +133,7 @@ const processBoundTests = [
 
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
+  resolve: sourceResolve(),
   test: {
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
@@ -126,6 +144,7 @@ export default defineConfig({
     projects: [
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: sourceResolve(),
         test: {
           name: 'thread-safe',
           execArgv: vitestExecArgv,
@@ -144,6 +163,7 @@ export default defineConfig({
       },
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
+        resolve: sourceResolve(),
         test: {
           name: 'process-bound',
           execArgv: vitestExecArgv,
@@ -255,6 +275,10 @@ export default defineConfig({
         'packages/host/apiproxy/src/index.ts',
         'packages/host/apiproxy/src/invariant.ts',
         'packages/host/apiproxy/src/api-proxy.ts',
+        // This fixture's declared-bin, sanitized-process, public-mock, and
+        // public-connector glue executes through its built artifact; the lifecycle,
+        // state, and Dashboard-security modules remain covered in-process.
+        'packages/test-support/cross-client-runtime/src/cross-client-defaults.ts',
         // Projection/command round: executor lifecycle branches and the
         // registry's drive tails need the same maturing lanes. TODO(gui):
         // cover and remove with the client test lane above.

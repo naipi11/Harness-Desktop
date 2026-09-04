@@ -6,15 +6,15 @@
  * Plugin lifecycle reads use the optional `ctx.fs` provider, so providerless products
  * mount it as a no-op.
  *
- * @module @deepseek-ai/dsh-agent-instructions
+ * @module @harness-desktop/dsh-agent-instructions
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 import { isDeepStrictEqual } from 'node:util'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
-import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type { Agent, PreStepDecision } from '@harness-desktop/dsh-agent'
+import { createUserMessage } from '@harness-desktop/dsh-llm'
+import type { Session, UserMessage } from '@harness-desktop/dsh-session'
+import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from '@harness-desktop/dsh-tools'
 import { Config, resolveConfig, workspaceBaselineIdentity, type ResolvedConfig } from './config.ts'
 import { findProjectRoot, loadBaselineInstructionSet } from './files.ts'
 import {
@@ -136,7 +136,7 @@ export function apply(ctx: Context, config: Config): void {
       const replacePreviousBaseline = baselinePresent && !keepVisibleBaseline
       const instructions = await loadBaselineInstructionSet({
         cwd,
-        dshHome: resolved.dshHome,
+        harnessHome: resolved.harnessHome,
         projectRootMarkers: resolved.projectRootMarkers,
         maxBytes: resolved.maxBytes,
         maxSourceBytes: resolved.maxSourceBytes,

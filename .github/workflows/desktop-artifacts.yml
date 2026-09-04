@@ -1,0 +1,331 @@
+# Package Harness Desktop installers on native runners. Every invocation stays
+# non-publishing: no registry token, no release environment, and no GitHub
+# Release creation.
+name: Desktop artifacts
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PRIMARY_NODE_VERSION: '24.19.0'
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_DESKTOP_SIGNING_MODE: disabled
+  DSH_UPDATE_SNAPSHOT_ROOT: dist/ci-update-snapshots
+
+jobs:
+  package:
+    name: Package ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            label: windows-nsis
+            desktop-formats: nsis
+            cli-format: zip
+            cli-artifact: dist/cli-standalone/harness-cli-*.zip
+          - os: macos-15
+            label: macos-universal-dmg-zip
+            desktop-formats: dmg-zip-universal
+            cli-format: tar.gz
+            cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
+            cli-architectures: arm64,x64
+          - os: ubuntu-24.04
+            label: linux-appimage-deb
+            desktop-formats: appimage-deb
+            cli-format: tar.gz
+            cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: |
+          store_root="$HOME/.local/share/pnpm/store"
+          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
+          store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
+          echo "path=$store_path" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild Linux node-pty against manylinux 2.28
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        env:
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          set -euo pipefail
+          case "$RUNNER_ARCH" in
+            X64) image=quay.io/pypa/manylinux_2_28_x86_64 ;;
+            ARM64) image=quay.io/pypa/manylinux_2_28_aarch64 ;;
+            *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
+          esac
+          addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
+          addon="$addon_dir/build/Release/pty.node"
+          [ -f "$addon_dir/build/Makefile" ] || {
+            echo "::error::node-pty install did not generate $addon_dir/build/Makefile"
+            exit 1
+          }
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:$PWD" \
+            -v "$RUNNER_TEMP:$RUNNER_TEMP:ro" \
+            -v "$HOME/.cache/node-gyp:$HOME/.cache/node-gyp:ro" \
+            -w "$addon_dir" \
+            "$image" \
+            bash -euxo pipefail -c \
+              'rm -rf build/Release && make -C build -j2 BUILDTYPE=Release'
+          [ -f "$addon" ] || { echo "::error::$addon missing after manylinux rebuild"; exit 1; }
+          readelf --version-info "$addon" | tee node-pty-glibc-versions.txt
+          maximum="$(sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' node-pty-glibc-versions.txt | sort -V | tail -1)"
+          [ -n "$maximum" ] || { echo "::error::No GLIBC requirements found in $addon"; exit 1; }
+          dpkg --compare-versions "$maximum" le 2.28 || {
+            echo "::error::node-pty addon requires GLIBC_$maximum but Linux standalone artifacts require manylinux_2_28"
+            exit 1
+          }
+
+      - name: Verify unused successor version
+        run: pnpm run release:verify-successor-version
+
+      - name: Enable Linux AppImage FUSE runtime and static inspection
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository --yes universe
+          sudo apt-get update
+          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools libnspr4 libnss3 libasound2t64 xvfb
+          test -c /dev/fuse
+          test -x /bin/fusermount3 || test -x /usr/bin/fusermount3
+          test -x "$(command -v unsquashfs)"
+
+      - name: Acquire pinned local Node distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${PRIMARY_NODE_VERSION}"
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Windows-X64) filename="node-v${version}-win-x64.zip" ;;
+            Windows-ARM64) filename="node-v${version}-win-arm64.zip" ;;
+            macOS-X64) filename="node-v${version}-darwin-x64.tar.gz" ;;
+            macOS-ARM64) filename="node-v${version}-darwin-arm64.tar.gz" ;;
+            Linux-X64) filename="node-v${version}-linux-x64.tar.gz" ;;
+            Linux-ARM64) filename="node-v${version}-linux-arm64.tar.gz" ;;
+            *) echo "Unsupported Node runtime target: ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+          runtime_root="${RUNNER_TEMP}/harness-node-runtime"
+          mkdir -p "${runtime_root}"
+          curl --fail --silent --show-error --location \
+            "https://nodejs.org/dist/v${version}/${filename}" \
+            --output "${runtime_root}/${filename}"
+          echo "DSH_NODE_RUNTIME_ROOT=${runtime_root}" >> "${GITHUB_ENV}"
+          echo "DSH_NODE_RUNTIME_FILENAME=${filename}" >> "${GITHUB_ENV}"
+          echo "DSH_NODE_RUNTIME_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Acquire both pinned macOS CLI runtimes
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in arm64 x64; do
+            filename="node-v${PRIMARY_NODE_VERSION}-darwin-${arch}.tar.gz"
+            curl --fail --silent --show-error --location \
+              "https://nodejs.org/dist/v${PRIMARY_NODE_VERSION}/${filename}" \
+              --output "${DSH_NODE_RUNTIME_ROOT}/${filename}"
+          done
+
+      - name: Verify pinned Node distribution checksum
+        id: node-runtime
+        run: pnpm exec tsx scripts/release/verify-node-runtime-archive.ts
+
+      - name: Generate ephemeral public update policy
+        shell: bash
+        env:
+          DSH_UPDATE_POLICY_OUTPUT: ${{ runner.temp }}/harness-update-policy.json
+        run: |
+          pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
+          echo "DSH_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
+          echo "DSH_DESKTOP_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
+
+      - name: Generate product icons
+        run: pnpm run generate:icons
+
+      - name: Verify generated product icons
+        run: pnpm run verify:icons
+
+      - name: Build repository and Desktop app
+        run: pnpm run build
+
+      - name: Package installer
+        id: package
+        run: pnpm --filter @harness-desktop/dsh-desktop run package --publish never
+
+      - name: Inspect native Desktop artifacts
+        id: desktop-artifacts
+        run: pnpm run release:verify-desktop-artifacts
+
+      - name: Test Desktop updater and rollback
+        id: desktop-updater
+        shell: bash
+        run: |
+          tests=(
+            apps/desktop/tests/update-service.spec.ts
+            apps/desktop/tests/update-manifest.spec.ts
+            apps/desktop/tests/native-install.spec.ts
+            apps/desktop/tests/native-transition-gate.spec.ts
+            apps/desktop/tests/native-rollback.spec.ts
+            apps/desktop/tests/native-rollback-launcher.spec.ts
+            apps/desktop/tests/installer-policy-state.spec.ts
+            apps/desktop/tests/release-update-source.spec.ts
+            apps/desktop/tests/self-installation.spec.ts
+            apps/desktop/tests/windows-native-rollback-worker.spec.ts
+            apps/desktop/tests/windows-native-update-supervisor.spec.ts
+          )
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
+          fi
+          exec node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
+
+      - name: Verify packed CLI from an empty offline prefix
+        id: packed-cli
+        env:
+          DSH_REQUIRE_BUILT_CLI_SMOKE: '1'
+        run: pnpm run release:verify-packed-cli
+
+      - name: Restore development workspace after packaged CLI smoke
+        if: ${{ always() }}
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Build standalone CLI archives
+        id: build-cli
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            for arch in arm64 x64; do
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/build-cli-standalone.ts
+            done
+          else
+            node --import tsx/esm scripts/release/build-cli-standalone.ts
+          fi
+
+      - name: Verify standalone CLI archives
+        id: verify-cli
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            for arch in arm64 x64; do
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/verify-cli-standalone.ts
+            done
+          else
+            node --import tsx/esm scripts/release/verify-cli-standalone.ts
+          fi
+
+      - name: Verify update manifests with ephemeral fixtures
+        id: update-manifests
+        run: node node_modules/vitest/vitest.mjs run scripts/release/build-update-manifest.spec.ts scripts/release/create-ephemeral-update-policy.spec.ts scripts/release/verify-update-manifests.spec.ts scripts/release/release-workflow-helpers.spec.ts
+
+      - name: Sign and verify manifests for this row's produced artifacts
+        id: produced-update-manifests
+        run: node --import tsx/esm scripts/release/verify-produced-update-manifests.ts
+
+      - name: Test CLI updater and rollback
+        id: cli-updater
+        run: |
+          node node_modules/vitest/vitest.mjs run apps/cli/tests/update.spec.ts apps/cli/tests/standalone-update-source.spec.ts apps/cli/tests/windows-standalone-update.spec.ts
+          node node_modules/vitest/vitest.mjs run --config vitest.e2e.config.ts apps/cli/tests/update.e2e.ts
+
+      - name: Smoke installed Desktop artifacts
+        id: installed-desktop
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
+          fi
+          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
+
+      - name: Exercise actual installed native update and rollback
+        id: native-update-rollback
+        env:
+          DSH_RUN_NATIVE_UPDATE_E2E: '1'
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
+          fi
+          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
+
+      - name: Upload installed Desktop error contexts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-installed-error-context-${{ matrix.runner }}
+          path: apps/desktop/test-results/**/error-context.md
+          if-no-files-found: ignore
+
+      - name: Write redacted native release evidence
+        id: release-evidence
+        if: ${{ always() }}
+        env:
+          DSH_RELEASE_MATRIX_LABEL: ${{ matrix.label }}
+          DSH_RELEASE_CLI_FORMAT: ${{ matrix.cli-format }}
+          DSH_RELEASE_CHECK_NODE_RUNTIME: ${{ steps.node-runtime.outcome }}
+          DSH_RELEASE_CHECK_DESKTOP_ARTIFACTS: ${{ steps.package.outcome == 'success' && steps.desktop-artifacts.outcome || steps.package.outcome }}
+          DSH_RELEASE_CHECK_DESKTOP_UPDATER: ${{ steps.desktop-updater.outcome }}
+          DSH_RELEASE_CHECK_PACKED_CLI: ${{ steps.packed-cli.outcome }}
+          DSH_RELEASE_CHECK_CLI_ARCHIVES: ${{ steps.build-cli.outcome == 'success' && steps.verify-cli.outcome || steps.build-cli.outcome }}
+          DSH_RELEASE_CHECK_UPDATE_MANIFESTS: ${{ steps.update-manifests.outcome }}
+          DSH_RELEASE_CHECK_PRODUCED_UPDATE_MANIFESTS: ${{ steps.produced-update-manifests.outcome }}
+          DSH_RELEASE_CHECK_CLI_UPDATER: ${{ steps.cli-updater.outcome }}
+          DSH_RELEASE_CHECK_INSTALLED_DESKTOP: ${{ steps.installed-desktop.outcome }}
+          DSH_RELEASE_CHECK_NATIVE_UPDATE_ROLLBACK: ${{ steps.native-update-rollback.outcome }}
+        run: node --import tsx/esm scripts/release/collect-release-evidence.ts
+
+      - name: Upload native release artifacts
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-desktop-${{ matrix.label }}
+          path: |
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload redacted native release evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-release-evidence-${{ matrix.label }}
+          path: |
+            dist/release-logs/release-evidence.json
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/manifests/ready/*.json
+            ${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/bindings.json
+          if-no-files-found: error
+          retention-days: 7

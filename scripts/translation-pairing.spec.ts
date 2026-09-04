@@ -157,10 +157,10 @@ describe('translation pairing switchers', () => {
   it('accepts only the canonical public URL for an absolute switcher', () => {
     const targets = languageSwitcherTargets('python/sdk/README.zh.md')
     const canonical = parseTranslationMarkdown(
-      '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)',
+      '[中文](https://github.com/naipi11/Harness-Desktop/blob/master/python/sdk/README.zh.md)',
     )
     const wrongPath = parseTranslationMarkdown(
-      '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md)',
+      '[中文](https://github.com/naipi11/Harness-Desktop/blob/master/other/README.zh.md)',
     )
 
     expect(linksTo(canonical, targets)).toBe(true)

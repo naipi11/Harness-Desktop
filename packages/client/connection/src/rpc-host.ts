@@ -1,7 +1,7 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { Context, Service } from '@harness-desktop/cordis'
+import type { WebRoute } from '@harness-desktop/dsh-host-webserver'
 import {
   clientRequestSchema,
   RpcId,
@@ -10,10 +10,11 @@ import {
   type RpcErrorDetailsMap,
   type RpcId as RpcIdType,
   type ServerResponse as RpcServerResponse,
-} from '@deepseek-ai/dsh-host-apiproxy/api'
+} from '@harness-desktop/dsh-host-apiproxy/api'
 import { bridge, type FetchHandler } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
+import type { ConnectionAuthentication } from './index.ts'
 import type {
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
@@ -32,7 +33,7 @@ interface ConnectionRpcInterceptor {
   readonly options: ConnectionRpcHandlerOptions
 }
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     /** Host Connection transport and RPC registrations. */
     connection: HostConnectionHandle
@@ -66,14 +67,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Compose one shared-channel Fetch handler from its interceptor and fallback.
    * @param channel - shared channel mounted by Connection.
    * @param fallback - handler for endpoints not claimed by the interceptor.
+   * @param authentication - optional Runtime session validator applied before routing.
    * @returns Fetch handler that selects exactly one target for each request.
    */
   createSharedFetchHandler(
     channel: '/api',
     fallback: FetchHandler,
+    authentication?: ConnectionAuthentication,
   ): FetchHandler {
     return {
       fetch: (request) => {
+        if (authentication !== undefined && !authentication.authorize(request)) {
+          return Promise.resolve(new Response('forbidden', { status: 403 }))
+        }
         const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
         const interceptor = this.interceptors.get(channel)
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {

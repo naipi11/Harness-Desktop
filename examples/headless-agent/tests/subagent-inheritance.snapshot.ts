@@ -6,12 +6,12 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
-import { normalizeSessionLog, scrubRequestHeaders, type NormalizeContext } from '@deepseek-ai/dsh-acp-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { Context } from '@harness-desktop/cordis'
+import { normalizeSessionLog, scrubRequestHeaders, type NormalizeContext } from '@harness-desktop/dsh-acp-snapshot'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@harness-desktop/dsh-loader-smoke'
+import { createUserMessage } from '@harness-desktop/dsh-llm'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type SessionEvent, type SessionHeader } from '@harness-desktop/dsh-session'
+import JsonlSessionPersistence from '@harness-desktop/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = fileURLToPath(new URL('./subagent-inheritance-snapshots/parent-override', import.meta.url))
@@ -70,17 +70,17 @@ describe('parent-only override inheritance snapshot', () => {
         DSH_SNAPSHOT_OVERRIDE: replayOverride,
         DSH_SNAPSHOT_CHILD_FILES: childReplay,
       },
-      prepare: async (runCwd) => {
+      prepare: async (runCwd, harnessHome) => {
         cwd = runCwd
-        await seedReadOnlyParent(join(runCwd, '.sessions'), runCwd)
+        await seedReadOnlyParent(join(harnessHome, 'sessions'), runCwd)
       },
-      inspect: async (runCwd) => {
+      inspect: async (runCwd, harnessHome) => {
         // THE physical fact: the child's write never reached the disk. Under
         // the deployment default (workspace-write) alone it would succeed.
         await expect(readFile(join(runCwd, 'inherited.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 
         // Collect both persisted logs (parent resumed turn + child run).
-        const sessionsDir = join(runCwd, '.sessions')
+        const sessionsDir = join(harnessHome, 'sessions')
         const files = (await readdir(sessionsDir, { recursive: true })).filter(file => file.endsWith('.jsonl'))
         const logs = await Promise.all(files.map(async file => readFile(join(sessionsDir, file), 'utf8')))
         const headerOf = (content: string): Record<string, unknown> =>
@@ -105,7 +105,7 @@ describe('parent-only override inheritance snapshot', () => {
           }
           if (record.type !== 'user/message'
             || record.data?.source?.kind !== 'plugin'
-            || record.data.source.plugin !== '@deepseek-ai/dsh-system-prompt') return []
+            || record.data.source.plugin !== '@harness-desktop/dsh-system-prompt') return []
           return record.data.content?.flatMap(block => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []) ?? []
         })
         const policyContexts = [...runtimeContexts(parent), ...runtimeContexts(child)]

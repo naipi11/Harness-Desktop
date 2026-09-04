@@ -12,11 +12,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { Context } from '@deepseek-ai/cordis'
-import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { Context } from '@harness-desktop/cordis'
+import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import { recordFeedback } from '@harness-desktop/dsh-command-feedback'
+import SessionStore, { SessionId } from '@harness-desktop/dsh-session'
 import OpenTelemetrySessionBackend, { Config, DEFAULT_TELEMETRY_MODE, SessionTelemetryMode } from '../src/index.ts'
 
 interface Capture {
@@ -65,6 +66,13 @@ afterEach(async () => {
   }
 })
 
+/** Build a direct plugin-test context with the same explicitly injected root as an app entrypoint. */
+function rootContext(): Context {
+  const ctx = new Context()
+  ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('harnessHome', tempHome)
+  return ctx
+}
+
 async function mockCollector(
   beforeRespond?: (requestIndex: number) => Promise<void> | void,
 ): Promise<{ url: string; captures: Capture[] }> {
@@ -96,7 +104,7 @@ async function mockCollector(
 }
 
 async function boot(url: string) {
-  const ctx = new Context()
+  const ctx = rootContext()
   await ctx.plugin(SessionStore)
   const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
     mode: SessionTelemetryMode.FULL,
@@ -141,11 +149,11 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
     const resource = first.body.resourceLogs[0]!.resource.attributes
     expect(resource).toContainEqual({ key: 'service.name', value: { stringValue: 'deepseek-harness' } })
-    expect(resource).toContainEqual({ key: 'user.id', value: { stringValue: getOrCreateAnonymousUserId() } })
+    expect(resource).toContainEqual({ key: 'user.id', value: { stringValue: getOrCreateAnonymousUserId(tempHome as HarnessHome) } })
 
     const records = allRecords(captures)
-    const ledger = records.filter(r => r.scope === '@deepseek-ai/dsh-session-telemetry-otel')
-    const ops = records.filter(r => r.scope === '@deepseek-ai/dsh-session-telemetry-otel/ops')
+    const ledger = records.filter(r => r.scope === '@harness-desktop/dsh-session-telemetry-otel')
+    const ops = records.filter(r => r.scope === '@harness-desktop/dsh-session-telemetry-otel/ops')
 
     const start = ledger.find(r => r.record.attributes?.some(a => a.key === 'event.type' && a.value.stringValue === 'turn/start'))
     expect(start).toBeDefined()
@@ -178,7 +186,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
         await gate.promise
       }
     })
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FULL,
@@ -195,7 +203,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
     gate.resolve(true)
     await disposal
 
-    const ops = allRecords(captures).filter(r => r.scope === '@deepseek-ai/dsh-session-telemetry-otel/ops')
+    const ops = allRecords(captures).filter(r => r.scope === '@harness-desktop/dsh-session-telemetry-otel/ops')
     expect(ops).toHaveLength(1)
     expect(ops[0]!.record.attributes).toContainEqual({ key: 'telemetry.op', value: { stringValue: 'shutdown' } })
   })
@@ -209,7 +217,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
         await gate.promise
       }
     })
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FULL,
@@ -235,7 +243,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
   it('passes exporter options beyond url and headers through to the SDK exporter', async () => {
     const { url, captures } = await mockCollector()
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     // `compression` is a documented SDK exporter option; the advertised
     // verbatim passthrough must hand it (and every other field) to the
@@ -272,7 +280,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
   it('replays each session suffix only at the next feedback event', async () => {
     const { url, captures } = await mockCollector()
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FEEDBACK_ONLY,
@@ -307,7 +315,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
   it('ignores direct emits and non-canonical feedback in feedback-only mode', async () => {
     const { url, captures } = await mockCollector()
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
@@ -339,7 +347,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
   it('constructs no disabled transport even when exporter options are present', async () => {
     const { url, captures } = await mockCollector()
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
@@ -371,26 +379,26 @@ describe('OpenTelemetrySessionBackend wire', () => {
   it('discloses the sharing policy for every mode', async () => {
     const { url, captures } = await mockCollector()
 
-    const fullCtx = new Context()
+    const fullCtx = rootContext()
     await fullCtx.plugin(SessionStore)
     const full = await fullCtx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.FULL, exporter: { url } })
     expect(fullCtx.sessionTelemetry.sharing).toBe('full')
     await full.dispose()
 
-    const gatedCtx = new Context()
+    const gatedCtx = rootContext()
     await gatedCtx.plugin(SessionStore)
     const gated = await gatedCtx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.FEEDBACK_ONLY, exporter: { url } })
     expect(gatedCtx.sessionTelemetry.sharing).toBe('feedback-only')
     await gated.dispose()
 
-    const disabledCtx = new Context()
+    const disabledCtx = rootContext()
     await disabledCtx.plugin(SessionStore)
     const disabled = await disabledCtx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.DISABLED })
     expect(disabledCtx.sessionTelemetry.sharing).toBe('disabled')
     await disabled.dispose()
 
     // An omitted mode is DISABLED, so the default also shares nothing.
-    const defaultCtx = new Context()
+    const defaultCtx = rootContext()
     await defaultCtx.plugin(SessionStore)
     const defaulted = await defaultCtx.plugin(OpenTelemetrySessionBackend, {})
     expect(defaultCtx.sessionTelemetry.sharing).toBe('disabled')
@@ -402,7 +410,7 @@ describe('OpenTelemetrySessionBackend wire', () => {
 
   it('defaults direct construction to disabled delivery', async () => {
     const { url, captures } = await mockCollector()
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     new OpenTelemetrySessionBackend(ctx, {
@@ -444,13 +452,13 @@ describe('OpenTelemetrySessionBackend config fails loud', () => {
     [{ mode: SessionTelemetryMode.FULL, exporter: { url: 'http://c/v1/logs' }, shutdownTimeoutMillis: 0 }, /shutdownTimeoutMillis/],
     [{ mode: SessionTelemetryMode.FULL, exporter: { url: 'http://c/v1/logs' }, shutdownTimeoutMillis: Number.POSITIVE_INFINITY }, /shutdownTimeoutMillis/],
   ])('rejects %j at plugin load', async (config, message) => {
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     await expect(ctx.plugin(OpenTelemetrySessionBackend, config as Config)).rejects.toThrow(message)
   })
 
   it('rejects an unknown direct mode before reading transport config', async () => {
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     let exporterRead = false
     const config = {
@@ -466,7 +474,7 @@ describe('OpenTelemetrySessionBackend config fails loud', () => {
   })
 
   it('does not read any transport setting in disabled mode', async () => {
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const transportRead = vi.fn(() => {
       throw new Error('transport config was read')
@@ -496,7 +504,7 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(module) as typeof OpenTelemetrySessionBackend
     expect(unwrapped).toBe(OpenTelemetrySessionBackend)
-    expect(unwrapped.inject).toEqual(['sessions'])
+    expect(unwrapped.inject).toEqual(['sessions', 'harnessHome'])
     expect(typeof unwrapped.Config).toBe('function')
   })
 
@@ -505,7 +513,7 @@ describe('dsh-session-telemetry-otel real-load-path guard', () => {
     const module = await import('../src/index.ts')
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(module) as Parameters<Context['plugin']>[0]
-    const ctx = new Context()
+    const ctx = rootContext()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(unwrapped, { mode: SessionTelemetryMode.FULL, exporter: { url } })
     expect(ctx.sessionTelemetry).toBeInstanceOf(OpenTelemetrySessionBackend)

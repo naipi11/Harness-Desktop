@@ -8,24 +8,30 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import { Context } from '@harness-desktop/cordis'
+import SessionStore from '@harness-desktop/dsh-session'
+import AgentRegistry from '@harness-desktop/dsh-agent'
+import CommandRuntime from '@harness-desktop/dsh-commands'
+import SkillRegistry from '@harness-desktop/dsh-skill'
+import SystemPrompt from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime from '@harness-desktop/dsh-tools'
+import * as ToolSkill from '@harness-desktop/dsh-tool-skill'
+import { createScope } from '@harness-desktop/dsh-scope'
+import { TypertLookupFailure } from '@harness-desktop/dsh-typert-protocol'
+import TypertRegistry from '@harness-desktop/dsh-typert-registry'
+import { createUserMessage, MessageId } from '@harness-desktop/dsh-llm'
+import type { Agent } from '@harness-desktop/dsh-agent'
+import UserQuestionService from '@harness-desktop/dsh-user-questions'
+import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@harness-desktop/dsh-session'
 import {
   PersistenceCoordinator,
   SessionPersistenceRevision,
   type PersistenceBackend,
   type StoredPrefix,
-} from '@deepseek-ai/dsh-session-persistence'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+} from '@harness-desktop/dsh-session-persistence'
+import type { RpcRequest } from '@harness-desktop/dsh-host-apiproxy/api/rpc'
+import { RpcId } from '@harness-desktop/dsh-host-apiproxy/api/rpc'
+import { createApiProxy } from '@harness-desktop/dsh-host-apiproxy'
 
 const sid = (id: string): SessionId => id as SessionId
 
@@ -339,7 +345,7 @@ describe('Remote Agent and Session lookup policy', () => {
       inspect,
       locate: () => undefined,
     } as never)
-    const resumedSession = { id: sessionId, header: meta, events: [] } as unknown as import('@deepseek-ai/dsh-session').Session
+    const resumedSession = { id: sessionId, header: meta, events: [] } as unknown as import('@harness-desktop/dsh-session').Session
     const resumedAgent = { id: sessionId, session: resumedSession, status: 'idle', ctx } as Agent
     const release = Promise.withResolvers<undefined>()
     const resume = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
@@ -727,6 +733,304 @@ describe('degenerate composition (no persistence, no factory)', () => {
 })
 
 describe('sessions.prompt synchronous rejection', () => {
+  it('cancels an in-flight slash command before its side effect or Agent turn', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-command-cancellation'))
+    const followup = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    const entered = Promise.withResolvers<AbortSignal>()
+    const release = Promise.withResolvers<undefined>()
+    let sideEffects = 0
+    ctx.commands.register({
+      name: 'delayed-side-effect',
+      description: 'Wait before applying a side effect.',
+      async handler(invocation) {
+        entered.resolve(invocation.signal)
+        if (!invocation.signal.aborted) {
+          await Promise.race([
+            release.promise,
+            new Promise<undefined>((resolve) => {
+              invocation.signal.addEventListener('abort', () => { resolve(undefined) }, { once: true })
+            }),
+          ])
+        }
+        if (!invocation.signal.aborted) sideEffects += 1
+        return { kind: 'success' as const }
+      },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const owner = new AbortController()
+    const prompting = api.sessions.prompt(request({
+      sessionId: session.id,
+      mode: 'queue',
+      content: [{ type: 'text' as const, text: '/delayed-side-effect' }],
+    }), owner.signal)
+    const commandSignal = await entered.promise
+
+    owner.abort('Dashboard work stopped')
+    try {
+      await expect(Promise.race([
+        prompting,
+        new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 50)),
+      ])).resolves.toMatchObject({
+        result: { ok: false, error: { code: 'cancelled' } },
+      })
+    } finally {
+      release.resolve(undefined)
+      await prompting
+    }
+
+    expect(commandSignal).toBe(owner.signal)
+    expect(sideEffects).toBe(0)
+    expect(followup).not.toHaveBeenCalled()
+    expect(session.events.map(event => event.type)).toEqual(['command/run', 'command/done'])
+  })
+
+  it('dispatches commands without a turn, admits a user skill, and rejects a truly unknown slash name', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-command-result'))
+    const followup = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.commands.register({
+      name: 'no-turn', description: 'Return a deterministic no-turn result.',
+      handler: () => ({ kind: 'success', text: 'command output' }),
+    })
+    ctx.skills.register({
+      name: 'user-skill', description: 'User-only skill.', source: 'runtime', content: 'User-only instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const command = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/no-turn' }],
+    }))
+    expect(command.result).toEqual({ ok: true, value: { accepted: true, command: { kind: 'success', text: 'command output' } } })
+    expect(session.events.map(event => event.type)).toEqual(['command/run', 'command/done'])
+    expect(followup).not.toHaveBeenCalled()
+
+    const skill = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/user-skill' }],
+    }))
+    expect(skill.result).toEqual({ ok: true, value: { accepted: true } })
+    expect(followup).toHaveBeenCalledTimes(1)
+
+    const unmatched = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/missing-command' }],
+    }))
+    expect(unmatched.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /missing-command', details: {} },
+    })
+    expect(followup).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a valid catalog skill when the exact Agent has no user-invocation consumer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(UserQuestionService)
+    const foreignConsumer = createScope(ctx, {})
+    await foreignConsumer.ctx.plugin(ToolSkill)
+    const session = ctx.sessions.create(sid('session-skill-without-consumer'))
+    const followup = vi.fn()
+    ctx.agents.register({
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent)
+    ctx.skills.register({
+      name: 'catalog-only-skill', description: 'Catalog entry without a consumer.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/catalog-only-skill' }],
+    }))
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /catalog-only-skill', details: {} },
+    })
+    expect(followup).not.toHaveBeenCalled()
+    await foreignConsumer.dispose()
+  })
+
+  it('refuses a skill when its exact Agent consumer disappears during asynchronous catalog discovery', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const consumer = await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-skill-consumer-race'))
+    const followup = vi.fn()
+    const agent = {
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.skills.register({
+      name: 'raced-skill', description: 'Skill whose consumer is unloading.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    let catalogStarted!: () => void
+    const started = new Promise<void>((resolve) => { catalogStarted = resolve })
+    let releaseCatalog!: () => void
+    const released = new Promise<void>((resolve) => { releaseCatalog = resolve })
+    ctx.skills.registerProvider(() => ({
+      name: 'delayed-provider',
+      list: async () => {
+        catalogStarted()
+        await released
+        return []
+      },
+      get: () => Promise.resolve(undefined),
+    }))
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const pending = api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/raced-skill' }],
+    }))
+    await started
+    await consumer.dispose()
+    releaseCatalog()
+    const response = await pending
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /raced-skill', details: {} },
+    })
+    expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('revokes skill admission when the exact consumer disposes inside followup', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const consumer = await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-skill-followup-race'))
+    let disposed: Promise<void> | undefined
+    let followed: UserMessage | undefined
+    const remove = vi.fn(() => true)
+    const followup = vi.fn((message: UserMessage) => {
+      followed = message
+      ;(agent.inbox.nextTurn as UserMessage[]).push(message)
+      disposed = consumer.dispose()
+    })
+    const agent = {
+      id: session.id,
+      session,
+      status: 'idle',
+      ctx,
+      options: {},
+      inbox: { nextTurn: [], nextStep: [], remove },
+      followup,
+      steer: vi.fn(),
+    } as unknown as Agent
+    ctx.agents.register(agent)
+    ctx.skills.register({
+      name: 'followup-raced-skill', description: 'Consumer disposal race.', source: 'runtime', content: 'Instructions.',
+      invocation: { modelInvocable: false, userInvocable: true },
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/followup-raced-skill' }],
+    }))
+
+    expect(response.result).toEqual({
+      ok: false,
+      error: { code: 'unknown-command', message: 'unknown command: /followup-raced-skill', details: {} },
+    })
+    expect(followup).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith(followed?.id)
+    await disposed
+  })
+
+  it('does not classify an incomplete skill catalog as an unknown command', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-incomplete-skill-catalog'))
+    const followup = vi.fn()
+    ctx.agents.register({
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent)
+    ctx.skills.registerProvider(() => ({
+      name: 'incomplete-provider',
+      list: () => Promise.resolve({ candidates: [], complete: false }),
+      get: () => Promise.resolve(undefined),
+    }))
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/temporarily-unavailable' }],
+    }))
+    expect(response.result.ok).toBe(false)
+    if (!response.result.ok) expect(response.result.error.code).toBe('internal')
+    expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('admits a user skill when the separate command registry is not composed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolSkill)
+    await ctx.plugin(UserQuestionService)
+    const session = ctx.sessions.create(sid('session-skill-without-commands'))
+    const followup = vi.fn()
+    ctx.agents.register({
+      id: session.id, session, status: 'idle', ctx, followup, steer: vi.fn(),
+    } as unknown as Agent)
+    ctx.skills.register({
+      name: 'independent-skill', description: 'Independent user skill.', source: 'runtime', content: 'Instructions.',
+    })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const response = await api.sessions.prompt(request({
+      sessionId: session.id, mode: 'queue', content: [{ type: 'text' as const, text: '/independent-skill' }],
+    }))
+    expect(response.result).toEqual({ ok: true, value: { accepted: true } })
+    expect(followup).toHaveBeenCalledTimes(1)
+  })
+
   it('maps a synchronous send throw (disposed/invalid input) to agent-busy with the reason attached', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

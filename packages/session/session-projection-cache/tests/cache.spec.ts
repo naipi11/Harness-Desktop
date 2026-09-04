@@ -7,24 +7,24 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { z } from 'zod'
-import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import Storage from '@harness-desktop/dsh-storage'
+import { DomainFacility } from '@harness-desktop/dsh-storage-domain'
+import SessionStore, { SessionId } from '@harness-desktop/dsh-session'
+import type { Session, SessionEvent } from '@harness-desktop/dsh-session'
+import SessionProjectionRegistry from '@harness-desktop/dsh-session-projection'
+import type { ProjectionDefinition } from '@harness-desktop/dsh-session-projection'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import SessionProjectionCache from '../src/index.ts'
 
-declare module '@deepseek-ai/dsh-session-projection/types' {
+declare module '@harness-desktop/dsh-session-projection/types' {
   interface SessionProjectionMap {
     'cache-test/marks': { marks: string[] }
   }
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module '@harness-desktop/dsh-session/types' {
   interface SessionEventMap {
     'cache-test/mark': { marks: string[] }
   }

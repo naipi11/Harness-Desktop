@@ -11,26 +11,26 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
-import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
-import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
-import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
-import type { ShellProcessRead } from '@deepseek-ai/dsh-shell'
+import { CallId } from '@harness-desktop/dsh-llm'
+import SystemPrompt, { renderPrompt } from '@harness-desktop/dsh-system-prompt'
+import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@harness-desktop/dsh-tools'
+import LocalJobRegistry from '@harness-desktop/dsh-jobs-local'
+import * as ToolTasks from '@harness-desktop/dsh-tool-jobs'
+import AgentRegistry from '@harness-desktop/dsh-agent'
+import type { Agent } from '@harness-desktop/dsh-agent'
+import { SessionId } from '@harness-desktop/dsh-session'
+import ApprovalService from '@harness-desktop/dsh-user-approval'
+import type { ApprovalOutcome } from '@harness-desktop/dsh-user-approval'
+import { ShellExecutor } from '@harness-desktop/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@harness-desktop/dsh-shell'
+import SandboxPolicyService from '@harness-desktop/dsh-sandbox-policy'
+import * as ToolPwsh from '@harness-desktop/dsh-tool-pwsh'
+import * as BashEnvPlugin from '@harness-desktop/dsh-shell-env'
+import type { ShellProcessRead } from '@harness-desktop/dsh-shell'
 import { processOutcome } from '../src/background.ts'
 import { renderPwshProcessRead, renderPwshResult } from '../src/render.ts'
 
@@ -127,12 +127,12 @@ function killableProcess(): ShellProcess {
   return proc
 }
 
-async function setup(toolConfig: Partial<ToolPwsh.Config> = {}, dshHome?: string) {
+async function setup(toolConfig: Partial<ToolPwsh.Config> = {}, harnessHome?: string) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(BashEnvPlugin, dshHome === undefined ? {} : { dshHome })
+  await ctx.plugin(BashEnvPlugin, harnessHome === undefined ? {} : { harnessHome })
   await ctx.plugin(FakeBash)
   await ctx.plugin(ToolPwsh, toolConfig)
   const bash = ctx.shell as FakeBash
@@ -140,14 +140,14 @@ async function setup(toolConfig: Partial<ToolPwsh.Config> = {}, dshHome?: string
 }
 
 /** Full harness: the generic job runtime + its controller, then the pwsh tool. */
-async function setupWithTasks(toolConfig: Partial<ToolPwsh.Config> = {}, dshHome?: string) {
+async function setupWithTasks(toolConfig: Partial<ToolPwsh.Config> = {}, harnessHome?: string) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
-  await ctx.plugin(BashEnvPlugin, dshHome === undefined ? {} : { dshHome })
+  await ctx.plugin(BashEnvPlugin, harnessHome === undefined ? {} : { harnessHome })
   await ctx.plugin(FakeBash)
   await ctx.plugin(ToolPwsh, toolConfig)
   const bash = ctx.shell as FakeBash
@@ -351,8 +351,8 @@ describe('argument validation', () => {
 
 describe('execution through the bash seam', () => {
   it('forwards command, session cwd, timeout, and managed DSH_* environment', async () => {
-    const dshHome = mkdtempSync(join(tmpdir(), 'dsh-tool-pwsh-home-'))
-    const { ctx, bash } = await setup({}, dshHome)
+    const harnessHome = mkdtempSync(join(tmpdir(), 'dsh-tool-pwsh-home-'))
+    const { ctx, bash } = await setup({}, harnessHome)
     bash.handler = () => runResult('hi\n')
     const agent = registerFakeAgent(ctx, 'session-1')
     Object.assign(agent.session.header, { cwd: '/sessions/s1' })
@@ -367,7 +367,7 @@ describe('execution through the bash seam', () => {
     expect(request?.workdir).toBe('/sessions/s1')
     expect(request?.timeoutMs).toBe(1234)
     expect(request?.dshEnv).toEqual({
-      DSH_HOME: dshHome,
+      DSH_HOME: harnessHome,
       DSH_SHELL: '1',
       DSH_SESSION_ID: 'session-1',
     })
@@ -744,7 +744,7 @@ describe('background execution through the job runtime', () => {
     const { ctx } = await setup() // no LocalJobRegistry / ToolTasks
     const result = await call(ctx, 'pwsh', { command: 'Start-Sleep -Seconds 60', description: 'test command', run_in_background: true })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
+    expect(text(result)).toContain('background jobs unavailable: load @harness-desktop/dsh-jobs and @harness-desktop/dsh-tool-jobs')
   })
 
   it('a pre-aborted call is skipped before the process starts', async () => {

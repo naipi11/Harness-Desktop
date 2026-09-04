@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@harness-desktop/dsh-loader-smoke'
 
 const configPath = '/tmp/fixture.cordis.yml'
 const tsconfigPath = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
@@ -26,7 +27,7 @@ describe('runLoaderSmoke', () => {
       configPath: string
       args: string[]
       cwd: string
-      dshHome: string
+      harnessHome: string
       agentsHome: string
       marker: string
       input: string
@@ -37,7 +38,7 @@ describe('runLoaderSmoke', () => {
       marker: 'present',
       input: '',
     })
-    expect(canonicalTempPath(output.dshHome)).toBe(canonicalTempPath(join(output.cwd, '.dsh')))
+    expect(canonicalTempPath(output.harnessHome)).toBe(canonicalTempPath(join(output.cwd, '.harness-home')))
     expect(canonicalTempPath(output.agentsHome)).toBe(canonicalTempPath(join(output.cwd, '.agents')))
     expect(result.stderr).toContain('fixture stderr')
     expect(existsSync(output.cwd)).toBe(false)
@@ -46,6 +47,8 @@ describe('runLoaderSmoke', () => {
   it('passes an arbitrary bin argv and inspects world state before cleanup', async () => {
     let inspected = ''
     let marker = ''
+    let preparedHarnessHome = ''
+    let inspectedHarnessHome = ''
     const result = await runLoaderSmoke({
       label: 'argv fixture',
       tempDirPrefix: 'loader-smoke-argv-',
@@ -54,18 +57,66 @@ describe('runLoaderSmoke', () => {
       configPath,
       binArgs: ['--config', configPath, '--output-format', 'json', 'task with spaces'],
       tsconfigPath,
-      prepare: cwd => writeFile(join(cwd, 'marker.txt'), 'prepared'),
-      inspect: async (cwd) => {
+      prepare: (cwd, harnessHome) => {
+        preparedHarnessHome = harnessHome
+        return writeFile(join(cwd, 'marker.txt'), 'prepared')
+      },
+      inspect: async (cwd, harnessHome) => {
         inspected = cwd
+        inspectedHarnessHome = harnessHome
         marker = await readFile(join(cwd, 'marker.txt'), 'utf8')
       },
     })
-    const output = JSON.parse(result.stdout) as { args: string[]; cwd: string }
+    const output = JSON.parse(result.stdout) as { args: string[]; cwd: string; harnessHome: string }
     expect(output.args).toEqual(['--config', configPath, '--output-format', 'json', 'task with spaces'])
     expect(canonicalTempPath(inspected)).toBe(canonicalTempPath(output.cwd))
+    expect(canonicalTempPath(preparedHarnessHome)).toBe(canonicalTempPath(output.harnessHome))
+    expect(canonicalTempPath(inspectedHarnessHome)).toBe(canonicalTempPath(output.harnessHome))
     expect(marker).toBe('prepared')
     expect(existsSync(inspected)).toBe(false)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('uses an environment override as the callback and child Harness home', async () => {
+    const owner = await mkdtemp(join(tmpdir(), 'loader-smoke-home-override-'))
+    const override = `${join(owner, 'nested')}/../effective-home`
+    const expected = join(owner, 'effective-home')
+    let preparedHarnessHome = ''
+    let inspectedHarnessHome = ''
+    try {
+      const result = await runLoaderSmoke({
+        label: 'Harness home override fixture',
+        tempDirPrefix: 'loader-smoke-home-override-cwd-',
+        binScript: fixture('success'),
+        libBinScript: fixture('success'),
+        configPath,
+        tsconfigPath,
+        env: { HARNESS_HOME: override },
+        prepare: (_cwd, harnessHome) => { preparedHarnessHome = harnessHome },
+        inspect: (_cwd, harnessHome) => { inspectedHarnessHome = harnessHome },
+      })
+      const output = JSON.parse(result.stdout) as { harnessHome: string }
+      expect(canonicalTempPath(preparedHarnessHome)).toBe(canonicalTempPath(expected))
+      expect(canonicalTempPath(inspectedHarnessHome)).toBe(canonicalTempPath(expected))
+      expect(canonicalTempPath(output.harnessHome)).toBe(canonicalTempPath(expected))
+    } finally {
+      await rm(owner, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('rejects a relative Harness home before callbacks or child startup', async () => {
+    let prepared = false
+    await expect(runLoaderSmoke({
+      label: 'relative Harness home fixture',
+      tempDirPrefix: 'loader-smoke-relative-home-',
+      binScript: fixture('success'),
+      libBinScript: fixture('success'),
+      configPath,
+      tsconfigPath,
+      env: { HARNESS_HOME: './relative-home' },
+      prepare: () => { prepared = true },
+    })).rejects.toThrow('runLoaderSmoke: env.HARNESS_HOME must be an absolute path')
+    expect(prepared).toBe(false)
+  })
 
   it('rejects a non-zero exit with captured diagnostics', async () => {
     await expect(runLoaderSmoke({

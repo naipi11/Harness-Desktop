@@ -32,14 +32,14 @@
  * decisions (the app-shell assembly is itself a graph entry, the only
  * shell-own module registered with the module system).
  */
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
 import { createRoot, type Root } from 'react-dom/client'
-import * as ModulesClient from '@deepseek-ai/dsh-client-modules/client'
+import * as ModulesClient from '@harness-desktop/dsh-client-modules/client'
 import {
   ClientModuleSystem, parseBootManifest,
   type BootManifest, type ClientModuleSystemOptions, type DshWindow,
-} from '@deepseek-ai/dsh-client-modules/client'
+} from '@harness-desktop/dsh-client-modules/client'
 import * as AppShell from './app-shell.ts'
 import { APP_SHELL_ID } from './app-shell.ts'
 import { AppRoot } from './AppRoot.tsx'
@@ -57,7 +57,7 @@ export type BootSeams = Pick<ClientModuleSystemOptions, 'loadBundle'>
  * does not deduplicate by name, and a second fiber would provide 'modules'
  * twice.
  */
-const MODULES_ID = '@deepseek-ai/dsh-client-modules'
+const MODULES_ID = '@harness-desktop/dsh-client-modules'
 
 /**
  * The web shell kernel: mounts the loading page into a DOM element and runs
@@ -92,9 +92,10 @@ export class AppWebEntry {
    * reject): the loading page stays up and renders the failure report (the
    * fail-loud surface the kernel owns). Rejects only when the boot manifest
    * is missing or malformed — there is nothing to boot against.
-   * @returns resolves once the UI settled or the failure report rendered.
+   * @returns whether the application UI settled; `false` means the failure report rendered.
    */
-  async run(): Promise<void> {
+  async run(): Promise<boolean> {
+    this.el.removeAttribute('data-harness-dashboard-ready')
     this.manifest = parseBootManifest((globalThis as DshWindow).__DSH_BOOT__)
 
     this.modules = new ClientModuleSystem({
@@ -135,15 +136,18 @@ export class AppWebEntry {
     try {
       await this.runPluginBoot(prefetching)
       this.settled.set(true)
+      return true
     } catch (reason) {
       // Stay on the loading page; surface the sweep report (fail loud).
       console.error(reason)
       this.error.set(reason instanceof Error ? reason.message : String(reason))
+      return false
     }
   }
 
   /** Unmount the shell (loading page or settled UI). */
   dispose(): void {
+    this.el.removeAttribute('data-harness-dashboard-ready')
     this.root?.unmount()
   }
 

@@ -62,12 +62,12 @@ describe('gate graph validation', () => {
     'ci-lint-contracts-ready',
     'ci-coverage',
     'ci-snapshot',
-    'ci-artifacts',
     'ci-consumers',
     'ci-windows-blocking',
     'ci-windows-complete',
     'ci-windows-observational',
     'node-compat',
+    'release-smoke',
     'check-all',
     'doc-sync',
   ] as const)('constructs and executes preflight for a valid non-empty %s graph', async (mode) => {
@@ -75,6 +75,34 @@ describe('gate graph validation', () => {
     const execute = vi.fn(async (item: Gate) => resultFor(item))
 
     await expect(runGates(subject, subject.length, execute)).resolves.toHaveLength(subject.length)
+  })
+
+  it('orders the non-publishing release smoke from build through installed Desktop evidence', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('release-smoke'))
+
+    expect(subject.map(item => item.id)).toEqual([
+      'generate-icons',
+      'verify-icons',
+      'build',
+      'desktop-package',
+      'desktop-artifacts',
+      'desktop-updater',
+      'packed-cli',
+      'standalone-build',
+      'standalone-verify',
+      'update-manifests',
+      'cli-updater',
+      'installed-desktop',
+    ])
+    expect(subject.find(item => item.id === 'desktop-package')).toMatchObject({
+      displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
+      needs: ['build'],
+    })
+    expect(subject.find(item => item.id === 'build')?.needs).toEqual(['verify-icons'])
+    expect(subject.find(item => item.id === 'packed-cli')?.env).toEqual({
+      DSH_REQUIRE_BUILT_CLI_SMOKE: '1',
+    })
+    expect(subject.find(item => item.id === 'installed-desktop')?.needs).toEqual(['cli-updater'])
   })
 
   it('keeps the public repository link policy in the documentation gate', () => {
@@ -236,7 +264,7 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 10,
+      workers: 12,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -247,8 +275,10 @@ describe('Node 24 lane ownership', () => {
       'lint-and-duplication',
       'snapshot',
       'web-snapshot',
+      'desktop-cross-client',
       'doc-typecheck',
       'node-next-types',
+      'artifact-test',
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
@@ -257,6 +287,7 @@ describe('Node 24 lane ownership', () => {
     for (const id of [
       'snapshot',
       'web-snapshot',
+      'desktop-cross-client',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
@@ -277,7 +308,14 @@ describe('Node 24 lane ownership', () => {
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
     })
+    expect(subject.find(item => item.id === 'desktop-cross-client')).toMatchObject({
+      displayCommand: 'xvfb-run -a pnpm run desktop:e2e:cross-client',
+      command: 'xvfb-run',
+      args: ['-a', process.execPath, '/private/pnpm.cjs', 'run', 'desktop:e2e:cross-client'],
+      needs: ['built-package-invariants'],
+    })
   })
+
 })
 
 describe('Linux primary graph', () => {

@@ -1,8 +1,8 @@
-# @deepseek-ai/dsh-anonymous-user-id
+# @harness-desktop/dsh-anonymous-user-id
 
 English | [中文](README.zh.md)
 
-Shared anonymous identity for session telemetry, direct feedback acknowledgement, and DeepSeek provider requests. `getOrCreateAnonymousUserId()` returns a random UUID v4 scoped to one harness home, persisted as the bare line `$DSH_HOME/.anonymous-user-id` (`~/.dsh/.anonymous-user-id` when `DSH_HOME` is unset). The OpenTelemetry backend reports it as Resource `user.id`; `/feedback` includes the same value in its acknowledgement; and `dsh-llm-deepseek` sends it as `x-deepseek-harness-user-id`, allowing the receiving systems to correlate records without independently generated identities.
+Shared anonymous identity for session telemetry, direct feedback acknowledgement, and DeepSeek provider requests. `getOrCreateAnonymousUserId()` returns a random UUID v4 scoped to one harness home, persisted as the bare line `$HARNESS_HOME/.anonymous-user-id` (or the platform default when `HARNESS_HOME` is unset). The OpenTelemetry backend reports it as Resource `user.id`; `/feedback` includes the same value in its acknowledgement; and `dsh-llm-deepseek` sends it as `x-deepseek-harness-user-id`, allowing the receiving systems to correlate records without independently generated identities.
 
 The identity is never derived from the hostname, network address, git remote, or another identifying source. Deleting `.anonymous-user-id` resets the identity on the next process launch. Separate harness homes have separate identities.
 
@@ -26,5 +26,5 @@ None; the transport header changes neither tokens nor the model-visible prefix.
 
 - **No recovery after deletion** — loss mints a new anonymous identity by design; recovery would require stable derivation material that weakens anonymity.
 - **Best-effort concurrency** — a reader landing in the narrow interval between a concurrent process's exclusive create and completed write can use a different in-memory UUID for that run; later launches converge on the persisted value.
-- **No cross-home identity** — different `$DSH_HOME` values cannot be correlated.
+- **No cross-home identity** — different `$HARNESS_HOME` values cannot be correlated.
 - **Configured DeepSeek gateways receive the id** — `dsh-llm-deepseek` sends the stable header to its resolved `baseURL`, including deployment overrides, independently of telemetry sharing mode.

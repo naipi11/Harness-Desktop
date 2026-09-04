@@ -8,14 +8,14 @@
  * (and the reverse), the one-shared-state contract of the dual entry.
  * Scope disposal drops the directory (HMR safety).
  */
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { describe, expect, it } from 'vitest'
-import { createScope } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
+import { createScope } from '@harness-desktop/dsh-client-runtime/client'
+import type { SessionId } from '@harness-desktop/dsh-client-runtime/client'
+import { LocaleRuntime } from '@harness-desktop/dsh-client-locale/client'
+import { TestRemote } from '@harness-desktop/dsh-client-test-runtime'
+import type { ModelSelection } from '@harness-desktop/dsh-api-remotes/client'
+import type { CommandContribution, SelectOption } from '@harness-desktop/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { zh } from '../src/client/locales.ts'

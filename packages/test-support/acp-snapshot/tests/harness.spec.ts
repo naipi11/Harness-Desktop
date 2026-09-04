@@ -97,8 +97,7 @@ describe('runScenario', () => {
 
   it('centralizes ACP boot, captures, updates, fail-closed permissions, and shutdown', { timeout: 20_000 }, async () => {
     const { dir, fixtureFile } = await scenario({ permissionProbe: true, echoEnv: true, stderrNote: 'launcher stderr' })
-    const sessionsRoot = await mkdtemp(join(tmpdir(), 'acp-launcher-sessions-'))
-    tempDirs.push(sessionsRoot)
+    const harnessHome = join(dir, '.harness-home')
     const launched = launchAcpTestAgent({
       agent: AGENT,
       cwd: dir,
@@ -106,7 +105,7 @@ describe('runScenario', () => {
       env: {
         DSH_SNAPSHOT: 'replay',
         DSH_SNAPSHOT_FILE: fixtureFile,
-        DSH_SNAPSHOT_SESSIONS_ROOT: sessionsRoot,
+        HARNESS_HOME: harnessHome,
       },
     })
     await launched.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
@@ -120,6 +119,11 @@ describe('runScenario', () => {
     await launched.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
     expect(await failedPredicate).toBe(predicateFailure)
     expect((await nextChunk).sessionUpdate).toBe('agent_message_chunk')
+    const environment = environmentEcho(launched.rawStdout())
+    expect(environment.harnessHome).toBe(harnessHome)
+    expect(environment.sessionsRoot).toBe(join(harnessHome, 'sessions'))
+    expect(environment.legacySessionsRoot).toBeNull()
+    expect(environment.dshHome).toBeNull()
     expect(launched.updates.some(update => update.sessionUpdate === 'agent_message_chunk')).toBe(true)
     expect(launched.rawStdout()).toContain('permission:{\\"outcome\\":\\"cancelled\\"}')
     expect(launched.stderr()).toContain('launcher stderr')
@@ -424,6 +428,9 @@ describe('runScenario', () => {
     )
     expect(result.stderr).toContain('fake bin booted')
     expect(result.rawStdout).toContain('replay.override.json')
+    const environment = environmentEcho(result.rawStdout)
+    expect(environment.sessionsRoot).toBe(join(result.cwd, '.harness-home', 'sessions'))
+    expect(environment.legacySessionsRoot).toBeNull()
     // Child paths ride one env var, joined with the platform delimiter.
     // Parse the fake bin's env-probe chunk rather than substring-matching a
     // JSON-encoded path (the escaping breaks raw-substring compares on Windows).

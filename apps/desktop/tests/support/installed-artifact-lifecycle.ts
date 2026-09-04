@@ -1,0 +1,188 @@
+/** Failure-safe lifecycle helpers shared by native installed-artifact fixtures and unit tests. */
+
+import { access } from 'node:fs/promises'
+
+/** Minimum launched fixture lifecycle needed by installed-artifact acceptance. */
+export interface InstalledArtifactRuntimeFixture {
+  close(options: { readonly preserveRuntimeRoot: true }): Promise<void>
+}
+
+/** Installed artifact operations owned across launch, verification, removal, and cleanup. */
+export interface InstalledArtifactLifecycle<T extends InstalledArtifactRuntimeFixture = InstalledArtifactRuntimeFixture> {
+  readonly name: string
+  readonly sentinelPath: string
+  launch(): Promise<T>
+  remove(): Promise<void>
+  cleanup(): Promise<void>
+}
+
+/**
+ * Exercise one prepared artifact while retaining cleanup ownership across every failure path.
+ * @param artifact - prepared native artifact.
+ * @param verify - authenticated launch and installed-resource assertions.
+ */
+export async function runInstalledArtifactLifecycle<T extends InstalledArtifactRuntimeFixture>(
+  artifact: InstalledArtifactLifecycle<T>,
+  verify: (fixture: T) => Promise<void>,
+): Promise<void> {
+  let fixture: T | undefined
+  let removalAttempted = false
+  let primaryFailure: unknown
+  const cleanupFailures: unknown[] = []
+  try {
+    fixture = await artifact.launch()
+    await verify(fixture)
+    await fixture.close({ preserveRuntimeRoot: true })
+    fixture = undefined
+    removalAttempted = true
+    await artifact.remove()
+    await access(artifact.sentinelPath)
+  } catch (error) {
+    primaryFailure = error
+  } finally {
+    if (fixture !== undefined) {
+      await fixture.close({ preserveRuntimeRoot: true }).catch((error: unknown) => cleanupFailures.push(error))
+    }
+    if (!removalAttempted) await artifact.remove().catch((error: unknown) => cleanupFailures.push(error))
+    await artifact.cleanup().catch((error: unknown) => cleanupFailures.push(error))
+  }
+  if (primaryFailure !== undefined && cleanupFailures.length > 0) {
+    throw new AggregateError([primaryFailure, ...cleanupFailures], `installed desktop artifact: ${artifact.name} lifecycle and cleanup failed`)
+  }
+  if (primaryFailure !== undefined) throw primaryFailure
+  if (cleanupFailures.length === 1) throw cleanupFailures[0]
+  if (cleanupFailures.length > 1) throw new AggregateError(cleanupFailures, `installed desktop artifact: ${artifact.name} cleanup failed`)
+}
+
+type ArtifactRuntime<TArtifact extends InstalledArtifactLifecycle> = Awaited<ReturnType<TArtifact['launch']>>
+
+/**
+ * Exercise a prepared artifact collection and settle every later artifact if one lifecycle fails.
+ * @param artifacts - prepared native artifacts in execution order.
+ * @param verify - authenticated assertions for one artifact and launched fixture.
+ */
+export function runInstalledArtifactCollection<TArtifact extends InstalledArtifactLifecycle>(
+  artifacts: readonly TArtifact[],
+  verify: (artifact: TArtifact, fixture: ArtifactRuntime<TArtifact>) => Promise<void>,
+): Promise<void>
+export async function runInstalledArtifactCollection(
+  artifacts: readonly InstalledArtifactLifecycle[],
+  verify: (artifact: InstalledArtifactLifecycle, fixture: InstalledArtifactRuntimeFixture) => Promise<void>,
+): Promise<void> {
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = artifacts[index]
+    if (artifact === undefined) continue
+    try {
+      await runInstalledArtifactLifecycle(artifact, async fixture => verify(artifact, fixture))
+    } catch (primaryFailure) {
+      const cleanupFailures: unknown[] = []
+      for (const unvisited of artifacts.slice(index + 1)) {
+        await unvisited.remove().catch((error: unknown) => cleanupFailures.push(error))
+        await unvisited.cleanup().catch((error: unknown) => cleanupFailures.push(error))
+      }
+      if (cleanupFailures.length > 0) {
+        throw new AggregateError(
+          [primaryFailure, ...cleanupFailures],
+          'installed desktop artifact: collection lifecycle and cleanup failed',
+        )
+      }
+      throw primaryFailure
+    }
+  }
+}
+
+/**
+ * Settle every temporary root owned by a failed native-artifact preparation.
+ * @param primaryFailure - preparation failure that triggered cleanup.
+ * @param cleanups - independent root-removal operations.
+ * @throws the primary failure, or an aggregate retaining every cleanup failure.
+ */
+export async function cleanupPreparationRoots(
+  primaryFailure: unknown,
+  cleanups: readonly (() => Promise<void>)[],
+): Promise<never> {
+  const cleanupFailures: unknown[] = []
+  for (const cleanup of cleanups) {
+    await cleanup().catch((error: unknown) => cleanupFailures.push(error))
+  }
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(
+      [primaryFailure, ...cleanupFailures],
+      'installed desktop artifact: native preparation and root cleanup failed',
+    )
+  }
+  throw primaryFailure
+}
+
+/** @returns whether native AppImage launch failed specifically because FUSE mounting is unavailable. */
+export function isAppImageFuseUnavailable(error: unknown): boolean {
+  return /(?:FUSE|libfuse|AppImage mount)/iu.test(String(error))
+}
+
+/**
+ * Launch an AppImage natively and use its extracted AppRun only for a FUSE-specific failure.
+ * @param appImage - packaged AppImage path.
+ * @param appRun - extracted squashfs-root/AppRun path.
+ * @param launch - native fixture launcher.
+ * @returns the launched fixture.
+ */
+export async function launchAppImageWithFallback<T>(
+  appImage: string,
+  appRun: string,
+  launch: (path: string) => Promise<T>,
+): Promise<T> {
+  try {
+    return await launch(appImage)
+  } catch (error) {
+    if (!isAppImageFuseUnavailable(error)) throw error
+    process.stderr.write('installed desktop artifact: AppImage FUSE unavailable; using extracted AppRun fallback\n')
+    return await launch(appRun)
+  }
+}
+
+/** Cleanup operations owned after a Windows installer has reported success. */
+export interface WindowsPreparationRollbackDependencies {
+  readonly uninstallerRequired: boolean
+  findUninstaller(): Promise<string | undefined>
+  runUninstaller(path: string): Promise<void>
+  waitForRemoval(): Promise<void>
+  removeRoot(): Promise<void>
+}
+
+/**
+ * Roll back a successful NSIS install whose installed-file validation failed.
+ * @param primaryFailure - validation failure that triggered rollback.
+ * @param dependencies - generated-uninstaller and temporary-root cleanup operations.
+ * @throws the primary failure, or an aggregate retaining every cleanup failure.
+ */
+export async function rollbackWindowsPreparation(
+  primaryFailure: unknown,
+  dependencies: WindowsPreparationRollbackDependencies,
+): Promise<never> {
+  const cleanupFailures: unknown[] = []
+  try {
+    const uninstaller = await dependencies.findUninstaller()
+    if (uninstaller === undefined) {
+      if (dependencies.uninstallerRequired) {
+        cleanupFailures.push(new Error('installed desktop artifact: NSIS uninstaller is missing'))
+      }
+    } else {
+      await dependencies.runUninstaller(uninstaller)
+      await dependencies.waitForRemoval()
+    }
+  } catch (error) {
+    cleanupFailures.push(error)
+  }
+  try {
+    await dependencies.removeRoot()
+  } catch (error) {
+    cleanupFailures.push(error)
+  }
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(
+      [primaryFailure, ...cleanupFailures],
+      'installed desktop artifact: Windows preparation validation and rollback failed',
+    )
+  }
+  throw primaryFailure
+}

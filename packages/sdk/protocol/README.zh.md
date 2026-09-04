@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-sdk-protocol
+# @harness-desktop/dsh-sdk-protocol
 
 [English](README.md) | 中文
 

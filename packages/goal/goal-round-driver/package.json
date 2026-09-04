@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-goal-round-driver",
+  "name": "@harness-desktop/dsh-goal-round-driver",
   "description": "Race-fenced same-session goal-round driver",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/goal/goal-round-driver"
   },
   "type": "module",
@@ -32,23 +32,23 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-goal": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-agent-loop": "workspace:^",
+    "@harness-desktop/dsh-agent-loop-testkit": "workspace:^",
+    "@harness-desktop/dsh-goal": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

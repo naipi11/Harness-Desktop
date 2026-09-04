@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-agent-spine-demo
+# @harness-desktop/dsh-agent-spine-demo
 
 [English](README.md) | 中文
 
@@ -11,31 +11,31 @@
 `apply(ctx, config)` 将以下每个插件挂载为组合包 fiber 的子节点：
 
 ```
-@deepseek-ai/cordis-plugin-timer  timer service (writes nothing to stdout)
-@deepseek-ai/dsh-llm              abstract LLM service + content-block vocabulary
-@deepseek-ai/dsh-session          event-sourced session log + store
-@deepseek-ai/dsh-session-title    log-backed title service + deterministic fallback
-@deepseek-ai/dsh-system-prompt    prompt-section + tool-schema assembly
-@deepseek-ai/dsh-tools            registry + guarded pre/around/post/final-result pipeline
-@deepseek-ai/dsh-skill            skill provider registry
-@deepseek-ai/dsh-skill-filesystem      local filesystem skill provider
-@deepseek-ai/dsh-agent            agent registry + initiator scope + agent/* events
-@deepseek-ai/dsh-goal             optional persisted same-session goal domain
-@deepseek-ai/dsh-tool-goal        optional model-facing goal controls
-@deepseek-ai/dsh-goal-round-driver     optional same-session goal-round driver
-@deepseek-ai/dsh-llm-retry        provider-routed request retry policy
-@deepseek-ai/dsh-jobs-local      generic background-job registry
-@deepseek-ai/dsh-invariants       configurable invariant registry service
-@deepseek-ai/dsh-session/invariant
-@deepseek-ai/dsh-agent/invariant
-@deepseek-ai/dsh-scope/invariant
-@deepseek-ai/dsh-agent-loop/invariant
+@harness-desktop/cordis-plugin-timer  timer service (writes nothing to stdout)
+@harness-desktop/dsh-llm              abstract LLM service + content-block vocabulary
+@harness-desktop/dsh-session          event-sourced session log + store
+@harness-desktop/dsh-session-title    log-backed title service + deterministic fallback
+@harness-desktop/dsh-system-prompt    prompt-section + tool-schema assembly
+@harness-desktop/dsh-tools            registry + guarded pre/around/post/final-result pipeline
+@harness-desktop/dsh-skill            skill provider registry
+@harness-desktop/dsh-skill-filesystem      local filesystem skill provider
+@harness-desktop/dsh-agent            agent registry + initiator scope + agent/* events
+@harness-desktop/dsh-goal             optional persisted same-session goal domain
+@harness-desktop/dsh-tool-goal        optional model-facing goal controls
+@harness-desktop/dsh-goal-round-driver     optional same-session goal-round driver
+@harness-desktop/dsh-llm-retry        provider-routed request retry policy
+@harness-desktop/dsh-jobs-local      generic background-job registry
+@harness-desktop/dsh-invariants       configurable invariant registry service
+@harness-desktop/dsh-session/invariant
+@harness-desktop/dsh-agent/invariant
+@harness-desktop/dsh-scope/invariant
+@harness-desktop/dsh-agent-loop/invariant
                                   package-owned relational checks
-@deepseek-ai/dsh-tool-bash        the model-facing bash schema (unless toolBash=false)
-@deepseek-ai/dsh-agent-instructions  AGENTS.md/CLAUDE.md workspace context loader
-@deepseek-ai/dsh-tool-skill       session-prefix skill catalog + model-facing loader schema
-@deepseek-ai/dsh-tool-jobs       job_output/job_list/job_kill schemas + completion notices
-@deepseek-ai/dsh-agent-loop       THE concrete loop (gets the forwarded `agents`)
+@harness-desktop/dsh-tool-bash        the model-facing bash schema (unless toolBash=false)
+@harness-desktop/dsh-agent-instructions  AGENTS.md/CLAUDE.md workspace context loader
+@harness-desktop/dsh-tool-skill       session-prefix skill catalog + model-facing loader schema
+@harness-desktop/dsh-tool-jobs       job_output/job_list/job_kill schemas + completion notices
+@harness-desktop/dsh-agent-loop       THE concrete loop (gets the forwarded `agents`)
                                   (dsh-system-prompt gets the forwarded `persona`)
 ```
 
@@ -54,14 +54,14 @@
 ## 配置
 
 ```ts
-import type { Config } from '@deepseek-ai/dsh-agent-spine-demo'
-// { agents?, maxParallelToolCalls?, includeHarnessIdentity?, includeRuntimeContext?, persona?, toolOrder?, tools?, dshHome?, sessionTitle?, skills?, workspaceContext, toolBash?, jobs?, toolJobs?, goals?, invariants? }
+import type { Config } from '@harness-desktop/dsh-agent-spine-demo'
+// { agents?, maxParallelToolCalls?, includeHarnessIdentity?, includeRuntimeContext?, persona?, toolOrder?, tools?, harnessHome?, sessionTitle?, skills?, workspaceContext, toolBash?, jobs?, toolJobs?, goals?, invariants? }
 // workspaceContext requires { maxBytes } or false; the other owner schemas supply defaults.
 ```
 
-组合包将每个字段转发给拥有它的子节点。应用包提供预创建的 agent：无头和 JSON-RPC 组合会创建 `main`，ACP 应用则在 `session/new` 按需创建 agent。`includeRuntimeContext: false` 会转发给 `dsh-system-prompt`，为新建会话抑制所有动态上下文快照，但不禁用其策略服务。提示词、工具、标题、skill、工作区上下文、不变式、目标和任务设置沿用其所属包记录的 schema 与默认值；`jobs.maxConcurrentJobsPerOwner` 配置本地 Service Provider，并与面向模型的 `toolJobs` 控制工具相互独立。`pickSpineConfig()` 只复制该组合包拥有的字段，`dshHome` 值冲突会在组合时失败。
+组合包将每个字段转发给拥有它的子节点。应用包提供预创建的 agent：无头和 JSON-RPC 组合会创建 `main`，ACP 应用则在 `session/new` 按需创建 agent。`includeRuntimeContext: false` 会转发给 `dsh-system-prompt`，为新建会话抑制所有动态上下文快照，但不禁用其策略服务。提示词、工具、标题、skill、工作区上下文、不变式、目标和任务设置沿用其所属包记录的 schema 与默认值；`jobs.maxConcurrentJobsPerOwner` 配置本地 Service Provider，并与面向模型的 `toolJobs` 控制工具相互独立。`pickSpineConfig()` 只复制该组合包拥有的字段，并将必需的 `harnessHome` 原样传给 skill、shell 与 agent-instructions writer。
 
-例如，`{ invariants: { enabled: true, package_allowlist: ['^@deepseek-ai/dsh-'], package_blocklist: ['agent-loop$'] } }` 会让包拥有的配套插件保持挂载，但抑制被阻止的拥有者。Blocklist 匹配优先于 allowlist 匹配；正则表达式与生命周期规则见 [`dsh-invariants`](../../runtime-diagnostics/invariants/README.md)。
+例如，`{ invariants: { enabled: true, package_allowlist: ['^@harness-desktop/dsh-'], package_blocklist: ['agent-loop$'] } }` 会让包拥有的配套插件保持挂载，但抑制被阻止的拥有者。Blocklist 匹配优先于 allowlist 匹配；正则表达式与生命周期规则见 [`dsh-invariants`](../../runtime-diagnostics/invariants/README.md)。
 
 ## 为何使用代码组合包，而非共享 YAML include
 

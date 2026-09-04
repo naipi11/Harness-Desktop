@@ -4,25 +4,25 @@
  * through the seam, and every write re-reads the document under a
  * cross-process writer lock before patching it as a comment-preserving
  * leaf-level diff.
- * @module @deepseek-ai/dsh-settings-file
+ * @module @harness-desktop/dsh-settings-file
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import { Context, Service } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
 import { watch as chokidarWatch } from 'chokidar'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { Document, parseDocument } from 'yaml'
-import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { withFileLock, writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
+import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
+import { SettingsProvider, deepEqualJson, type SettingsNamespace } from '@harness-desktop/dsh-settings'
 
 /** Plugin config: file location and hot-reload behavior. */
 export interface Config {
   /** Settings document path; defaults to `settings.yaml` under the harness home. */
   path?: string
-  /** Harness home used when `path` is omitted; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected when `path` is omitted. */
+  harnessHome?: string
   /** Watch the document and hot-publish external edits; defaults to true. */
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
@@ -53,7 +53,7 @@ interface ResolvedSpec {
  * @returns the resolved file location, format, and watch behavior.
  */
 export function resolveSpec(config: Config): ResolvedSpec {
-  const filename = resolve(config.path ?? join(resolveDshHome(config.dshHome), 'settings.yaml'))
+  const filename = resolve(config.path ?? join(requiredHarnessHome(config), 'settings.yaml'))
   const format = FORMATS[extname(filename)]
   if (format === undefined) {
     throw new Error(`settings-file: extension "${extname(filename)}" is not supported (use .yaml, .yml, or .json)`)
@@ -64,6 +64,12 @@ export function resolveSpec(config: Config): ResolvedSpec {
     watch: config.watch ?? true,
     debounceMs: config.debounceMs ?? 100,
   }
+}
+
+/** Return the injected root required by a default settings document path. */
+function requiredHarnessHome(config: Config): string {
+  if (config.harnessHome === undefined) throw new Error('settings-file: harnessHome is required when path is omitted')
+  return config.harnessHome
 }
 
 /** Whether a parsed YAML value is a map for diffing purposes. */
@@ -105,7 +111,7 @@ function isEEXIST(error: unknown): boolean {
 export class FileSettingsProvider extends SettingsProvider {
   static Config: z<Config> = z.object({
     path: z.string(),
-    dshHome: z.string(),
+    harnessHome: z.string(),
     watch: z.boolean().default(true),
     debounceMs: z.number().min(0).default(100),
   })

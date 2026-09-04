@@ -18,17 +18,16 @@
  * agent factory's `setup(agentCtx)` hook is the one supported call site,
  * because only there is the join installed while the agent is still
  * unpublished, so a rejected composition rolls the whole creation back.
- * @module @deepseek-ai/dsh-agent-presets
+ * @module @harness-desktop/dsh-agent-presets
  */
 
 import { stat } from 'node:fs/promises'
-import { Context, Service } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
-import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
+import { Context, Service } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
+import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@harness-desktop/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
-import type {} from '@deepseek-ai/dsh-agent'
-import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import type {} from '@harness-desktop/dsh-agent'
+import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@harness-desktop/dsh-settings'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
@@ -64,9 +63,9 @@ export {
 } from './authoring.ts'
 export { resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetMountError, UnknownPresetError } from './preset.ts'
-export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
+export type { AgentPreset, Config, PresetHomeProvider, PresetRoot, PresetTrust } from './preset.ts'
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     agentPresets: AgentPresets
   }
@@ -84,6 +83,7 @@ export class AgentPresets extends Service {
 
   /** Runtime schema for the preset roster. */
   static Config = z.object({
+    harnessHome: z.object({ home: z.string(), path: z.any() }),
     default: z.string().required(),
     roots: z.array(z.object({
       path: z.string().required(),
@@ -130,9 +130,15 @@ export class AgentPresets extends Service {
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
     this.selfCtx = ctx
-    this.resolvedRoots = config.includeUserRoot
-      ? [...config.roots, { path: dshHomePath(USER_PRESET_DIR), trust: 'user' }]
-      : [...config.roots]
+    if (config.includeUserRoot && config.harnessHome === undefined) {
+      throw new Error('agent-presets: harnessHome is required when includeUserRoot is enabled')
+    }
+    const userRoot = config.includeUserRoot
+      ? config.harnessHome?.path(USER_PRESET_DIR)
+      : undefined
+    this.resolvedRoots = userRoot === undefined
+      ? [...config.roots]
+      : [...config.roots, { path: userRoot, trust: 'user' }]
     // Deliberately not `installSettingsSection`: that helper exists to re-judge
     // what a consumer DERIVED from the source — memoized resolutions,
     // registration-level facts — across attach, detach, and change. Nothing

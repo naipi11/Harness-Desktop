@@ -1,14 +1,14 @@
-# Third-party memory MCP examples
+# Internal third-party memory MCP format references
 
 English | [中文](README.zh.md)
 
-These three **default-off reference configurations** connect one memory system to DSH through [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). Pick one, or copy the same generic MCP row for another server.
+These three **default-off internal app-boot configurations** describe connecting one memory system through [`@harness-desktop/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). This is not a runnable public product tutorial: the product CLI and Runtime do not load these overlays.
 
 These third-party configurations are provided as interoperability examples only. Their inclusion does not imply endorsement, recommendation, partnership, or ongoing support by DeepSeek.
 
 ## What DSH does
 
-DSH parses the selected Cordis overlay, starts a configured stdio command or connects to a configured Streamable HTTP URL, discovers MCP tools, and exposes them as `mcp__<serverName>__<tool>`. DSH does **not** download the server, initialize its database, choose its model or embedding provider, create a cloud account, migrate vendor data, or supervise a separate HTTP service. For stdio, the generic client launches and stops the child with the DSH plugin lifecycle; for HTTP, the upstream service must already be running.
+An internal app-boot fixture can parse a selected Cordis overlay, start a configured stdio command or connect to a configured Streamable HTTP URL, discover MCP tools, and expose them as `mcp__<serverName>__<tool>`. The generic MCP client does **not** download the server, initialize its database, choose its model or embedding provider, create a cloud account, migrate vendor data, or supervise a separate HTTP service.
 
 The stdio bridge deliberately removes ambient variables whose names usually identify credentials and all `DSH_*` variables before launching a child; other ambient variables remain inherited. Each example adds only the baseline override it needs. If an optional upstream feature needs another secret, add that variable to the row's `config.env` instead of putting the secret directly in YAML.
 
@@ -20,17 +20,17 @@ The stdio bridge deliberately removes ambient variables whose names usually iden
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4` (`6dd0a683e198783e30feabf7abaf42f925bd18b1`) | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0` (`ba9e46ced152c37a7cb9e576153c41995873e2fc`) | stdio | Go 1.25.10+ and `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`, or the matching release binary |
 
-## Enable one
+## Configuration validation
 
-Pass one overlay to DSH:
+These overlays are internal format examples. The public CLI and product Runtime do not enable or launch them. Validate only their checked-in configuration references with:
 
 ```sh
-dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
+pnpm run verify-cordis-config
 ```
 
-Replace the filename with `mcp-reference-memory.cordis.yml` or `engram.cordis.yml`. The path may point to a copied file anywhere on disk. No memory server is present in the shipped composition, so omitting `--patch` keeps all three disabled.
+That gate validates the checked-in overlay references and configuration structure; it does not launch a third-party server. No memory server is present in the shipped product composition, so all three remain disabled.
 
-To keep the selection across runs, merge the chosen file's single `insert` patch into a user patch layer — `$DSH_HOME/profiles/<name>/cordis.patch.yml` for one profile, or `$DSH_HOME/cordis.patch.yml` for every profile on the machine. Do not copy over an existing file: it may already contain unrelated user patches.
+The files may serve as inputs to a separately authored legacy/internal app-boot fixture, but this repository provides no public selection or enablement workflow for them.
 
 ## Provider setup
 
@@ -38,7 +38,7 @@ To keep the selection across runs, merge the chosen file's single `insert` patch
 
 ```sh
 npm install --global memorix@1.3.0
-dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
+# Internal app-boot/test overlay: examples/mcp-memory/memorix.cordis.yml
 ```
 
 Memorix works in local heuristic mode without an LLM or embedding service. Configure optional providers in Memorix's own `~/.memorix/config.toml` or project `memorix.toml`. The example keeps Memorix's Git-project identity from the DSH working directory and uses Memorix's own `~/.memorix/data` default. Set `MEMORIX_DATA_DIR` before starting DSH to override it.
@@ -47,7 +47,7 @@ Memorix works in local heuristic mode without an LLM or embedding service. Confi
 
 ```sh
 npm install --global @modelcontextprotocol/server-memory@2026.7.4
-dsh web --patch "$PWD/examples/mcp-memory/mcp-reference-memory.cordis.yml"
+# Internal app-boot/test overlay: examples/mcp-memory/mcp-reference-memory.cordis.yml
 ```
 
 This reference server stores a local knowledge graph and exposes entity, relation, observation, read, search, and open tools. It needs no model or embedding service. The example stores its JSONL at `$HOME/.dsh-mcp-reference-memory.jsonl` instead of the installed npm package directory. Set `MEMORY_FILE_PATH` before starting DSH to override it.
@@ -58,7 +58,7 @@ Search is case-insensitive substring matching over entity names, types, and obse
 
 ```sh
 go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0
-dsh web --patch "$PWD/examples/mcp-memory/engram.cordis.yml"
+# Internal app-boot/test overlay: examples/mcp-memory/engram.cordis.yml
 ```
 
 Engram owns storage and project selection: it uses `~/.engram` by default, detects the Git project from the DSH working directory, and accepts `ENGRAM_DATA_DIR` or `ENGRAM_PROJECT` as ambient overrides.
@@ -88,7 +88,7 @@ Copy the same entry fields and use a unique `id` and `serverName`:
 ```yaml
 - insert:
     - id: memory-my-server
-      name: '@deepseek-ai/dsh-mcp-client'
+      name: '@harness-desktop/dsh-mcp-client'
       config:
         serverName: my-memory
         transport: stdio

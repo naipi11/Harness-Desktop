@@ -7,17 +7,17 @@
  * composing this plugin out of cordis.yml removes both surfaces entirely;
  * the owning view renders an empty chain and inert prose at zero cost.
  */
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { ConnectionHandle } from '@harness-desktop/dsh-client-connection/client'
+import type { ClientContext } from '@harness-desktop/dsh-client-runtime/client'
+import type { ChatFileMentions } from '@harness-desktop/dsh-client-ui-conversation/client'
+import type {} from '@harness-desktop/dsh-client-locale/client'
 import { ProducedFiles } from './ProducedFiles.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
-  deliverablesDefinition, producedFileMentions, selectProducedFiles,
+  deliverablePaths, deliverablesDefinition, producedFileMentions, selectProducedFiles,
 } from './turn-deliverables.ts'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module '@harness-desktop/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Produced-files row copy. */
     'deliverables': DeliverablesKey
@@ -25,7 +25,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export { ProducedFiles, type ProducedFilesProps } from './ProducedFiles.tsx'
-export { producedForClosing } from './turn-deliverables.ts'
+export { deliverablePaths, producedForClosing } from './turn-deliverables.ts'
+
+/** Root Dashboard reader over the deliverables Turn projection. */
+export interface DeliverablesClient {
+  /** @returns produced paths from completed Turns in timeline order. */
+  paths: typeof deliverablePaths
+}
+
+declare module '@harness-desktop/cordis' {
+  interface Context {
+    /** Produced-file projection reader supplied by the deliverables plugin. */
+    deliverables: DeliverablesClient
+  }
+}
 
 /** Required services for the tail-slot registration and its dictionaries. */
 export const inject = ['slots', 'locale', 'conversationEvents', 'connection']
@@ -38,6 +51,7 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   ctx.conversationEvents.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
+  ctx.provide('deliverables', { paths: deliverablePaths })
   ctx.slots.inject(
     'conversation.chat.turnTail',
     () => ctx.slots.register({

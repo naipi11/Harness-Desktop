@@ -4,16 +4,16 @@
  *
  * It also owns the mode-aware launch resolver every example subprocess harness shares
  * ({@link resolveExampleLaunch}): booting an example bin from TypeScript source under `tsx` (the
- * zero-build dev path, resolving `@deepseek-ai/dsh-*` / `@cordisjs/*` through the tsconfig `paths`
+ * zero-build dev path, resolving `@harness-desktop/dsh-*` / `@cordisjs/*` through the tsconfig `paths`
  * map) or from built `lib/` under plain Node (resolving bare packages through real `exports`, as an
  * installed consumer does, while Node type-strips relative example-local TypeScript plugins).
  *
- * @module @deepseek-ai/dsh-loader-smoke
+ * @module @harness-desktop/dsh-loader-smoke
  */
 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { execa } from 'execa'
 
 export {
@@ -139,14 +139,14 @@ export interface LoaderSmokeOptions {
   readonly tsconfigPath: string
   /** Boot from source via tsx (`src`) or built lib via plain Node (`lib`); defaults to the environment's mode. */
   readonly mode?: ExampleMode
-  /** Environment overrides layered over the parent and isolated DSH homes. */
+  /** Environment overrides layered over the parent and isolated DSH homes; a `HARNESS_HOME` override must be absolute. */
   readonly env?: Readonly<NodeJS.ProcessEnv>
   /** Process deadline override for harness tests. */
   readonly processTimeoutMs?: number
-  /** Optional world-state setup run in the isolated cwd before process start. */
-  readonly prepare?: (cwd: string) => Promise<void> | void
-  /** Optional world-state assertion run in the isolated cwd before cleanup. */
-  readonly inspect?: (cwd: string) => Promise<void> | void
+  /** Optional world-state setup run with the isolated cwd and injected Harness home before process start. */
+  readonly prepare?: (cwd: string, harnessHome: string) => Promise<void> | void
+  /** Optional world-state assertion run with the isolated cwd and injected Harness home before cleanup. */
+  readonly inspect?: (cwd: string, harnessHome: string) => Promise<void> | void
   /**
    * Exact process exit code this smoke expects; defaults to `0`. Scenarios
    * pinning a designed failure surface (a one-shot turn ending in an error
@@ -172,17 +172,24 @@ export interface LoaderSmokeResult {
  * @returns captured stdout and stderr after a zero exit.
  */
 export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<LoaderSmokeResult> {
+  const configuredHarnessHome = options.env?.HARNESS_HOME
+  if (configuredHarnessHome !== undefined && !isAbsolute(configuredHarnessHome)) {
+    throw new Error('runLoaderSmoke: env.HARNESS_HOME must be an absolute path')
+  }
   const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
+  const harnessHome = configuredHarnessHome === undefined
+    ? join(cwd, '.harness-home')
+    : resolve(configuredHarnessHome)
   const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
   try {
-    await options.prepare?.(cwd)
+    await options.prepare?.(cwd, harnessHome)
     const launch = resolveExampleLaunch({
       srcBin: options.binScript,
       libBin: options.libBinScript,
       configArgs: options.binArgs ?? [options.configPath],
       ...options.mode !== undefined ? { mode: options.mode } : {},
       tsconfigPath: options.tsconfigPath,
-      env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
+      env: { DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env, HARNESS_HOME: harnessHome },
     })
     // `input: ''` writes nothing and closes stdin — the fixture-visible
     // stdin-close contract. `reject: false` folds spawn errors, the SIGKILL
@@ -204,7 +211,7 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
     if (result.exitCode !== expectedExitCode) {
       throw new Error(`${options.label} exited ${String(result.exitCode)} (expected ${expectedExitCode}). stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
     }
-    await options.inspect?.(cwd)
+    await options.inspect?.(cwd, harnessHome)
     return { stdout: result.stdout, stderr: result.stderr }
   } finally {
     await rm(cwd, { recursive: true, force: true })

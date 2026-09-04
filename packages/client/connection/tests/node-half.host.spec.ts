@@ -2,14 +2,14 @@
 import { EventEmitter, once } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import { PassThrough, Readable } from 'node:stream'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { ApiProxy } from '@harness-desktop/dsh-host-apiproxy/api'
+import type { AttachmentStore } from '@harness-desktop/dsh-attachment'
+import { RpcId, type ClientRequest } from '@harness-desktop/dsh-host-apiproxy/api'
+import type { WebServer, WebRoute, WebUpgradeRoute } from '@harness-desktop/dsh-host-webserver'
 import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
 
 /** Structural webServer fake recording both route registries. */
@@ -90,6 +90,47 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 }
 
 describe('connection node half', () => {
+  it('lets authenticated deployments own a validated unary request around API invocation', async () => {
+    const routes: WebRoute[] = []
+    const ctx = new Context()
+    const order: string[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    ctx.provide('apiProxy', {
+      sessions: {
+        async prompt(request: { rpcId: string }) {
+          order.push('api')
+          return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true } } }
+        },
+      },
+    } as unknown as ApiProxy)
+    const fiber = ctx.plugin({
+      inject: [...inject],
+      apply: (pluginCtx) => {
+        apply(pluginCtx, undefined, {
+          authorize: () => true,
+          async intercept(invocation) {
+            order.push(`before:${invocation.method}:${String(invocation.request.rpcId)}`)
+            const response = await invocation.invoke()
+            order.push(`after:${response.result.ok ? 'ok' : 'error'}`)
+            return response
+          },
+        })
+      },
+    })
+    await fiber.await()
+    const message: ClientRequest = {
+      type: 'client-request', rpcId: RpcId('owned-prompt'), method: 'session.prompt',
+      payload: { sessionId: 'owned-session', mode: 'queue', content: [{ type: 'text', text: 'owned' }] },
+    }
+    const result = fakeResponse()
+
+    await routes[0]!.handler(fakePost({ host: '127.0.0.1:3080' }, `${API_PATH}/session.prompt`, message), result.response)
+
+    expect(result.state.status).toBe(200)
+    expect(order).toEqual(['before:session.prompt:owned-prompt', 'api', 'after:ok'])
+    await fiber.dispose()
+  })
+
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
     const ctx = new Context()
     const routes: WebRoute[] = []

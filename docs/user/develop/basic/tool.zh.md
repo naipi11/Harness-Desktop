@@ -1,16 +1,16 @@
-# 开发一个工具
+# 内部工具格式参考
 
 [English](tool.md) | 中文
 
-本教程会在 Web UI 中添加一个 `greet` 工具。请先完成[第一个插件](./)，并保留其中的 `scratch-plugin` 目录。
+这是内部工具格式参考，不是可运行的公开 Web 教程。它扩展[内部插件格式参考](./)中的 scratch 插件；产品 CLI 无法加载该 overlay。
 
 ## 创建工具插件
 
 将 `scratch-plugin/src/my-plugin.ts` 替换为：
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { Context } from '@harness-desktop/cordis'
+import { defineTool } from '@harness-desktop/dsh-tools'
 
 export const name = 'greet-tool'
 export const inject = ['tools']
@@ -37,13 +37,13 @@ export function apply(ctx: Context) {
 
 ## 运行并调用工具
 
-如果开发命令未在运行，请重新启动：
+scratch `greet` 文件仅是格式示例。通用工具验收命令是：
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+pnpm exec vitest run packages/core/tools/tests/tools.spec.ts -t "registers tools"
 ```
 
-打开 `http://127.0.0.1:3080`，然后输入：`Use the greet tool to greet Ada.` 模型可以调用 `greet`，并收到 `Hello, Ada!` 这一工具结果。
+该验收测试会验证工具注册、schema 与面向模型的提示词组装。它不会加载这个 scratch `greet` 实现，也不承诺公开 Web endpoint。
 
 ## 下一步
 

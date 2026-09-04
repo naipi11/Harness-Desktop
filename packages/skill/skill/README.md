@@ -1,12 +1,12 @@
-# @deepseek-ai/dsh-skill
+# @harness-desktop/dsh-skill
 
 English | [中文](README.zh.md)
 
 Pure agent skill provider registry.
 
-This package owns the `ctx.skills` interface. It does not know whether skills come from local files, embedded plugin data, HTTP, or another backend; providers register those sources with `ctx.skills.registerProvider(...)`. The shipped local implementation is [`@deepseek-ai/dsh-skill-filesystem`](../skill-filesystem).
+This package owns the `ctx.skills` interface. It does not know whether skills come from local files, embedded plugin data, HTTP, or another backend; providers register those sources with `ctx.skills.registerProvider(...)`. The shipped local implementation is [`@harness-desktop/dsh-skill-filesystem`](../skill-filesystem).
 
-The registry is host+per-scope layered over [`@deepseek-ai/dsh-scope`](../../core/scope), the shape the tools registry established: a registration files into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer — and a read merges the global layer with the viewing scope's chain, the nearest layer winning a duplicate name outright while rank decides duplicates only within one layer.
+The registry is host+per-scope layered over [`@harness-desktop/dsh-scope`](../../core/scope), the shape the tools registry established: a registration files into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer — and a read merges the global layer with the viewing scope's chain, the nearest layer winning a duplicate name outright while rank decides duplicates only within one layer.
 
 ## Service: `SkillRegistry` (ctx key: `skills`)
 
@@ -17,6 +17,8 @@ The registry is host+per-scope layered over [`@deepseek-ai/dsh-scope`](../../cor
 - `ctx.skills.list({ cwd?, signal?, scope? })` Borrows the readonly view options, then returns every winning summary for the current workspace, merged across the global layer and the viewing scope's chain and sorted by name. Consumers apply `isModelInvocable(skill)` or `isUserInvocable(skill)` at their own boundary.
 - `ctx.skills.get(name, { cwd?, signal?, scope? })` Uses the same readonly options and winning candidate for discovery and loading, rechecks cancellation after discovery or a cache hit, races provider loading against the signal, validates the loaded definition, then returns it regardless of invocation policy.
 - `ctx.skills.register(skill): () => void` Registers a readonly runtime embedded skill into the calling context's layer, adding the all-invocable policy and `provider: "runtime"` when omitted. Same-name runtime registrations in one layer are first-wins: a duplicate logs a warning and gets a no-op disposer. Successful registrations return the exact Cordis disposer for ordered composite teardown.
+- `ctx.skills.attachUserInvocationConsumer(): () => void` Attaches an effect-scoped pre-step consumer in the calling context's layer. An unscoped registration serves every Agent; a scoped registration serves only that scope and its descendants. The exact disposer detaches only that registration and does not invalidate provider catalogs.
+- `ctx.skills.hasUserInvocationConsumer(scope): boolean` Tests the global layer plus the supplied Agent scope's ancestor chain. A consumer attached in a sibling composition does not satisfy the query.
 
 ### Events
 
@@ -61,7 +63,7 @@ Definitions remain progressively loaded. `get()` asks the winning provider for t
 
 ## Consumer boundary
 
-The registry does not render model guidance or register model-facing tools. [`@deepseek-ai/dsh-tool-skill`](../tool-skill) consumes `ctx.skills` to provide durable session catalogs and the `skill` tool, so providers remain independent of model-facing behavior.
+The registry does not render model guidance or register model-facing tools. [`@harness-desktop/dsh-tool-skill`](../tool-skill) consumes `ctx.skills` to provide durable session catalogs, the `skill` tool, and the user-invocation pre-step listener. That consumer attaches an owner-relative registration only after its listeners are live; Host prompt admission requires the registration for the exact Agent before a catalog match can enter the model. Providers therefore remain independently composable without advertising a path whose consumer is absent.
 
 ## Model Experience
 

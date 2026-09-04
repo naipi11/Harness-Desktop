@@ -5,7 +5,7 @@
  * resumes an Agent.
  */
 
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@harness-desktop/dsh-session/types'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
 /** Skill catalog row (wire projection of the host SkillSummary; provider/source vocabulary stays host-side). */
@@ -23,9 +23,11 @@ export interface SkillEntry {
 /**
  * Skill-domain unary methods (the map key skill.* of RpcMethodMap). Listing
  * is the domain's only RPC: invocation itself is a plain `session.prompt`
- * whose leading `/name` token the host recognizes at the pre-step boundary
- * (`dsh-tool-skill` injects the rendered body there), so every client shares
- * one deterministic path with no dedicated invocation wire.
+ * whose leading `/name` token is admitted after command lookup confirms both
+ * a complete user-invocable catalog entry and an effect-scoped
+ * `dsh-tool-skill` pre-step consumer for that exact Agent. The consumer injects
+ * the rendered body at the pre-step boundary, so every client shares one
+ * deterministic path with no dedicated invocation wire.
  */
 export interface SkillsApi {
   /** Lists the user-invocable skill catalog for the session's project. */

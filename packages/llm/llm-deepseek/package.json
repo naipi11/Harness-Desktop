@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-llm-deepseek",
+  "name": "@harness-desktop/dsh-llm-deepseek",
   "description": "DeepSeek chat-completions adapter for the DeepSeek Harness LLM seam",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/llm/llm-deepseek"
   },
   "type": "module",
@@ -32,27 +32,29 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-anonymous-user-id": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-credentials": "workspace:^",
+    "@harness-desktop/dsh-launch-environment": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
+    "@harness-desktop/dsh-timeout": "workspace:^",
+    "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
     "eventsource-parser": "^3.1.0",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@harness-desktop/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-anonymous-user-id": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-credentials": "workspace:^",
+    "@harness-desktop/dsh-launch-environment": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-settings": "workspace:^",
+    "@harness-desktop/dsh-timeout": "workspace:^",
+    "@harness-desktop/dsh-anonymous-user-id": "workspace:^",
+    "@harness-desktop/dsh-host-local-runtime": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

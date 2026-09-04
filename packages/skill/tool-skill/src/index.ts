@@ -1,16 +1,16 @@
 /**
  * Durable session skill catalog and model-facing `skill` loader tool.
  *
- * @module @deepseek-ai/dsh-tool-skill
+ * @module @harness-desktop/dsh-tool-skill
  */
 
 import { createHash } from 'node:crypto'
-import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { Context } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
+import type { Agent, PreStepDecision } from '@harness-desktop/dsh-agent'
+import { defineTool } from '@harness-desktop/dsh-tools'
+import { createUserMessage } from '@harness-desktop/dsh-llm'
+import type { UserMessage } from '@harness-desktop/dsh-session'
 import {
   escapeText,
   isModelInvocable,
@@ -19,7 +19,7 @@ import {
   renderSkillContent,
   type SkillInvocationSource,
   type SkillSummary,
-} from '@deepseek-ai/dsh-skill'
+} from '@harness-desktop/dsh-skill'
 
 export const name = 'tool-skill'
 export const inject = ['agents', 'tools', 'skills']
@@ -40,7 +40,7 @@ export interface SkillCatalogSource {
   readonly entries: readonly { readonly name: string; readonly description: string }[]
 }
 
-declare module '@deepseek-ai/dsh-llm' {
+declare module '@harness-desktop/dsh-llm' {
   interface MessageSourceMap {
     'skill-catalog': SkillCatalogSource
   }
@@ -69,8 +69,10 @@ export const Config: z<Config> = z.object({
 })
 
 /**
- * Register the model-facing skill loader and its visibility-matched
- * durable session catalog. The catalog is emitted only when the calling agent
+ * Register the model-facing skill loader, its visibility-matched durable
+ * session catalog, and the user-invocation pre-step consumer. The consumer
+ * advertises its effect-scoped availability through `ctx.skills` only after
+ * both listeners are live. The catalog is emitted only when the calling agent
  * resolves this plugin's exact tool registration; a restriction or scoped
  * same-name shadow therefore removes both the schema and its call guidance.
  */
@@ -170,8 +172,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   // listener, so the waterfall hands it the catalog-bearing list to extend.
   // Only `source.kind === 'user'` messages are scanned — external text
   // cannot forge the gesture — and a token naming no user-invocable skill
-  // stays ordinary prose (the command registry is a different closed
-  // namespace, resolved client-side before a line ever becomes a prompt).
+  // stays ordinary prose at this boundary. The command registry is a separate
+  // namespace; Host prompt APIs classify an exact leading slash line before
+  // admission, while direct Agent entry points can reach this listener.
   // This is the only entry point for `disable-model-invocation` skills; the
   // catalog and the `skill` tool below never see them.
   ctx.on('agent/pre-step', async (
@@ -180,13 +183,17 @@ export function apply(ctx: Context, config: Config = {}): void {
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    const names = invokedSkillNames(messages)
-    if (names.length === 0) return decision
+    const gestures = invokedSkillGestures(messages)
+    if (gestures.length === 0) return decision
     signal.throwIfAborted()
     const lookup = { cwd: agent.session.header.cwd, signal, scope: agent }
     const injections: UserMessage[] = []
-    for (const name of names) {
-      const skill = await ctx.skills.get(name, lookup)
+    for (const { message, name } of gestures) {
+      const claim = ctx.skills.claimUserInvocation(agent, message, name)
+      if (claim.kind === 'revoked') return { kind: 'reject' }
+      const skill = claim.kind === 'admitted'
+        ? claim.skill
+        : await ctx.skills.get(name, lookup)
       signal.throwIfAborted()
       // Unknown names and user-disabled skills stay plain prose: the
       // gesture was never a claim this boundary recognizes. The check sits
@@ -249,6 +256,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         : decision.messages.map(message => message.id === existing.message.id ? catalog : message),
     }
   })
+
+  // Register only after both pre-step listeners are live. ApiProxy uses this
+  // scope-owned capability to fail closed before admitting a slash gesture;
+  // reverse teardown detaches it before either listener disappears.
+  ctx.skills.attachUserInvocationConsumer()
 }
 
 function renderCatalogMessage(entries: SkillCatalogSource['entries']): UserMessage {
@@ -415,17 +427,17 @@ const SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g
  * @param messages - the step's claimed batch.
  * @returns candidate skill names, unvalidated against the registry.
  */
-function invokedSkillNames(messages: readonly UserMessage[]): string[] {
-  const names: string[] = []
+function invokedSkillGestures(messages: readonly UserMessage[]): Array<{ readonly message: UserMessage; readonly name: string }> {
+  const gestures: Array<{ readonly message: UserMessage; readonly name: string }> = []
   for (const message of messages) {
     if ((message.source as { kind?: unknown }).kind !== 'user') continue
     for (const block of message.content) {
       if (block.type !== 'text') continue
       for (const match of block.text.matchAll(SKILL_GESTURE)) {
         const name = match[2]
-        if (name !== undefined && !names.includes(name)) names.push(name)
+        if (name !== undefined && !gestures.some(gesture => gesture.name === name)) gestures.push({ message, name })
       }
     }
   }
-  return names
+  return gestures
 }

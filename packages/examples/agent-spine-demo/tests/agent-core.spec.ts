@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { renderPrompt, TOOL_ORDER_REST } from '@deepseek-ai/dsh-system-prompt'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import { renderPrompt, TOOL_ORDER_REST } from '@harness-desktop/dsh-system-prompt'
 import * as agentCore from '../src/index.ts'
-import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import { agentEvents, type Agent } from '@harness-desktop/dsh-agent'
+import { SessionId } from '@harness-desktop/dsh-session'
+import LocalBashExecutor from '@harness-desktop/dsh-bash-local'
+import LocalFileSystem from '@harness-desktop/dsh-fs-local'
+import * as ToolFs from '@harness-desktop/dsh-tool-fs'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import {
   createUserMessage,
@@ -22,16 +22,16 @@ import {
   type Message,
   type ResolvedRetryPolicy,
   type StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
-import * as sessionInvariant from '@deepseek-ai/dsh-session/invariant'
-import * as agentInvariant from '@deepseek-ai/dsh-agent/invariant'
-import * as scopeInvariant from '@deepseek-ai/dsh-scope/invariant'
-import * as agentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
+} from '@harness-desktop/dsh-llm'
+import type { ToolExecution } from '@harness-desktop/dsh-tools'
+import * as sessionInvariant from '@harness-desktop/dsh-session/invariant'
+import * as agentInvariant from '@harness-desktop/dsh-agent/invariant'
+import * as scopeInvariant from '@harness-desktop/dsh-scope/invariant'
+import * as agentLoopInvariant from '@harness-desktop/dsh-agent-loop/invariant'
 
 const testToolSignal = new AbortController().signal
 
-declare module '@deepseek-ai/dsh-jobs' {
+declare module '@harness-desktop/dsh-jobs' {
   interface JobKindMap {
     probe: 'probe'
   }
@@ -53,7 +53,7 @@ async function composePrefix(ctx: Context, cwd: string): Promise<Message[]> {
 }
 
 /**
- * Unit coverage for the @deepseek-ai/dsh-agent-spine-demo bundle: mounting it brings
+ * Unit coverage for the @harness-desktop/dsh-agent-spine-demo bundle: mounting it brings
  * up the whole default spine in one `ctx.plugin`, and the forwarded
  * `agents` config reaches the loop (default `[]`, or a pre-created agent).
  *
@@ -63,9 +63,10 @@ async function composePrefix(ctx: Context, cwd: string): Promise<Message[]> {
  * bin smokes; here we assert the composition + config forwarding.
  */
 async function mount(config: agentCore.Config, withBash = false): Promise<Context> {
-  const oldDshHome = process.env.DSH_HOME
+  const oldHarnessHome = process.env.HARNESS_HOME
   const oldAgentsHome = process.env.DSH_AGENTS_HOME
-  process.env.DSH_HOME = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-home-'))
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-home-'))
+  process.env.HARNESS_HOME = harnessHome
   process.env.DSH_AGENTS_HOME = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-agents-'))
   const ctx = new Context()
   if (withBash) {
@@ -77,16 +78,17 @@ async function mount(config: agentCore.Config, withBash = false): Promise<Contex
     })
   }
   try {
+    config.harnessHome ??= harnessHome
     await ctx.plugin(agentCore, config)
     // The bundle mounts its children inside apply() (not awaited there); let their
     // fibers settle so the spine services and any pre-created agent are ready.
     await new Promise(resolve => setTimeout(resolve, 50))
     return ctx
   } finally {
-    if (oldDshHome === undefined) {
-      delete process.env.DSH_HOME
+    if (oldHarnessHome === undefined) {
+      delete process.env.HARNESS_HOME
     } else {
-      process.env.DSH_HOME = oldDshHome
+      process.env.HARNESS_HOME = oldHarnessHome
     }
     if (oldAgentsHome === undefined) {
       delete process.env.DSH_AGENTS_HOME
@@ -97,17 +99,17 @@ async function mount(config: agentCore.Config, withBash = false): Promise<Contex
 }
 
 async function withIsolatedSkillHomes<T>(run: () => Promise<T>): Promise<T> {
-  const oldDshHome = process.env.DSH_HOME
+  const oldHarnessHome = process.env.HARNESS_HOME
   const oldAgentsHome = process.env.DSH_AGENTS_HOME
-  process.env.DSH_HOME = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-home-'))
+  process.env.HARNESS_HOME = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-home-'))
   process.env.DSH_AGENTS_HOME = await mkdtemp(join(tmpdir(), 'dsh-agent-spine-demo-agents-'))
   try {
     return await run()
   } finally {
-    if (oldDshHome === undefined) {
-      delete process.env.DSH_HOME
+    if (oldHarnessHome === undefined) {
+      delete process.env.HARNESS_HOME
     } else {
-      process.env.DSH_HOME = oldDshHome
+      process.env.HARNESS_HOME = oldHarnessHome
     }
     if (oldAgentsHome === undefined) {
       delete process.env.DSH_AGENTS_HOME
@@ -227,8 +229,8 @@ describe('dsh-agent-spine-demo bundle', () => {
 
     for (const invariants of [
       { enabled: false },
-      { package_allowlist: ['^@deepseek-ai/dsh-agent$'] },
-      { package_blocklist: ['^@deepseek-ai/dsh-session$'] },
+      { package_allowlist: ['^@harness-desktop/dsh-agent$'] },
+      { package_blocklist: ['^@harness-desktop/dsh-session$'] },
     ]) {
       const filtered = await mount({ workspaceContext: false, invariants })
       expect(() => { nestedTurn(filtered) }).not.toThrow()
@@ -326,7 +328,7 @@ describe('dsh-agent-spine-demo bundle', () => {
     // ctx.plugin validates + defaults the bundle config first; a direct apply
     // skips the schema, so the forwarding `?? []` / `?? ''` are what fire.
     const ctx = new Context()
-    agentCore.apply(ctx, { workspaceContext: false })
+    agentCore.apply(ctx, { workspaceContext: false, harnessHome: '/test/harness' })
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(ctx.get('agentLoop')).toBeDefined()
     expect(ctx.get('agents')?.list()).toHaveLength(0)
@@ -338,6 +340,7 @@ describe('dsh-agent-spine-demo bundle', () => {
   it('uses owner defaults for a schema-bypassing empty goal opt-in', async () => {
     const ctx = new Context()
     agentCore.apply(ctx, {
+      harnessHome: '/test/harness',
       workspaceContext: false,
       agents: [{ id: SessionId('defaulted-goal'), provider: 'mock', model: 'mock' }],
       goals: {},
@@ -426,7 +429,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       skills: {
         registry: { collectCacheMaxEntries: 4 },
         filesystem: {
-          dshHome: join(home, '.dsh'),
+          harnessHome: join(home, '.dsh'),
           agentsHome: join(agentsHome, '.agents'),
           customSkillDirs: [custom],
         },
@@ -461,7 +464,7 @@ describe('dsh-agent-spine-demo bundle', () => {
         workspaceContext: false,
         skills: {
           filesystem: {
-            dshHome: join(home, '.dsh'),
+            harnessHome: join(home, '.dsh'),
             agentsHome: join(home, '.agents'),
             watchStabilityThresholdMs: 20,
             watchPollIntervalMs: 10,
@@ -589,14 +592,14 @@ describe('dsh-agent-spine-demo bundle', () => {
     }
   })
 
-  it('shares top-level dshHome between local skills and the managed bash environment', async () => {
+  it('shares top-level harnessHome between local skills and the managed bash environment', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-agent-core-shared-home-'))
     const agentsHome = await mkdtemp(join(tmpdir(), 'dsh-agent-core-shared-agents-'))
     await mkdir(join(home, 'skills'), { recursive: true })
     await writeFile(join(home, 'skills', 'shared-skill.md'), '---\nname: shared-skill\ndescription: Shared home skill\n---\n\nShared body.\n')
 
     const ctx = await mount({
-      dshHome: home,
+      harnessHome: home,
       workspaceContext: false,
       skills: { filesystem: { agentsHome } },
     }, true)
@@ -610,18 +613,17 @@ describe('dsh-agent-spine-demo bundle', () => {
       name: 'bash',
       arguments: { command: 'true' },
     }
-    expect(ctx.shellEnv.collect(execution)).toMatchObject({ DSH_HOME: home, DSH_SHELL: '1' })
+    expect(ctx.shellEnv.collect(execution)).toMatchObject({ HARNESS_HOME: home, DSH_SHELL: '1' })
     await ctx.fiber.dispose()
   })
 
-  it('rejects conflicting global and nested DSH home directories', () => {
-    expect(() => {
-      agentCore.apply(new Context(), {
-        dshHome: '/global-dsh-home',
-        workspaceContext: false,
-        skills: { filesystem: { dshHome: '/nested-dsh-home' } },
-      })
-    }).toThrow('agent-spine-demo: dshHome and skills.filesystem.dshHome must resolve to the same directory')
+  it('overwrites nested writer roots with the injected Harness home', () => {
+    const ctx = new Context()
+    agentCore.apply(ctx, {
+      harnessHome: '/global-harness-home',
+      workspaceContext: false,
+      skills: { filesystem: { harnessHome: '/nested-harness-home' } },
+    })
   })
 
   it('delivers workspace instructions ahead of the first-step skill catalog', async () => {
@@ -738,7 +740,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       persona: 'You are merged.',
       toolOrder: ['zulu'],
       tools: { mode: 'native' as const },
-      dshHome: '/tmp/dsh-home',
+      harnessHome: '/tmp/dsh-home',
       sessionTitle: { fallbackMaxWords: 3, fallbackMaxBytes: 24, maxTitleBytes: 60 },
       workspaceContext: false as const,
       skills: { enabled: false },
@@ -756,7 +758,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       persona: appConfig.persona,
       toolOrder: appConfig.toolOrder,
       tools: appConfig.tools,
-      dshHome: appConfig.dshHome,
+      harnessHome: appConfig.harnessHome,
       sessionTitle: appConfig.sessionTitle,
       workspaceContext: false,
       skills: appConfig.skills,
@@ -772,7 +774,7 @@ describe('dsh-agent-spine-demo bundle', () => {
   it('uses the default skill config when apply is called directly without skills', async () => {
     await withIsolatedSkillHomes(async () => {
       const ctx = new Context()
-      agentCore.apply(ctx, { agents: [], workspaceContext: false })
+      agentCore.apply(ctx, { agents: [], workspaceContext: false, harnessHome: process.env.HARNESS_HOME! })
       await new Promise(resolve => setTimeout(resolve, 50))
       expect(ctx.skills).toBeDefined()
       expect(await ctx.skills.list()).toEqual([])
@@ -800,7 +802,7 @@ describe('dsh-agent-spine-demo bundle', () => {
 
   it('supports direct apply with workspace instructions disabled and no forwarded agents', async () => {
     const ctx = new Context()
-    agentCore.apply(ctx, { workspaceContext: false })
+    agentCore.apply(ctx, { workspaceContext: false, harnessHome: '/test/harness' })
     await new Promise(resolve => setTimeout(resolve, 50))
 
     expect(ctx.get('agents')?.list()).toEqual([])

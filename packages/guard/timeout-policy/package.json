@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
+  "name": "@harness-desktop/dsh-tool-call-timeout-policy",
   "description": "Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/guard/timeout-policy"
   },
   "type": "module",
@@ -32,17 +32,17 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-timeout": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-timeout": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

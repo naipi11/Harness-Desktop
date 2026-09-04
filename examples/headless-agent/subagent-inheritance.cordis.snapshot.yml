@@ -7,39 +7,40 @@
 # delegation bypass.
 
 - id: persistence
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: './.sessions'
+    root: !!js harnessHomePath('sessions')
     compression: none
 
 # file/override/childFiles all default to their DSH_SNAPSHOT_* env vars.
 - id: replay
-  name: '@deepseek-ai/dsh-llm-replay'
+  name: '@harness-desktop/dsh-llm-replay'
 
 # The confining filesystem stack: the wide deployment default lives on the
 # shared policy home; the seeded parent's read-only override must beat it
 # INSIDE the child for the scenario to deny.
 - id: sandbox-policy
-  name: '@deepseek-ai/dsh-sandbox-policy'
+  name: '@harness-desktop/dsh-sandbox-policy'
   config:
     mode: workspace-write
     workspaceRoot: !!js process.cwd()
 
 - id: fs-sandbox
-  name: '@deepseek-ai/dsh-fs-sandbox'
+  name: '@harness-desktop/dsh-fs-sandbox'
 
 - id: fs-observation-policy
-  name: '@deepseek-ai/dsh-fs-observation-policy'
+  name: '@harness-desktop/dsh-fs-observation-policy'
 
 - id: tool-fs
-  name: '@deepseek-ai/dsh-tool-fs'
+  name: '@harness-desktop/dsh-tool-fs'
 
 # This scenario probes filesystem confinement only, so the bash stack is absent:
 # without it the bundle's `toolBash: false` is required, because `tool-bash` would
 # otherwise wait forever for a `bash` executor this tree never mounts.
 - id: agent
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js harnessHome
     agents: []
     workspaceContext: false
     skills:
@@ -49,15 +50,15 @@
     goals: false
 
 - id: subagent
-  name: '@deepseek-ai/dsh-subagent'
+  name: '@harness-desktop/dsh-subagent'
 
 - id: subagent-spawn-in-process
-  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  name: '@harness-desktop/dsh-subagent-spawn-in-process'
   config:
     providerName: spawn
 
 - id: tool-subagent
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: '@harness-desktop/dsh-tool-subagent'
   config:
     provider: spawn
     toolName: subagent

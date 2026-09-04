@@ -4,19 +4,19 @@
   name: './fixture.ts'
 
 - id: subagent
-  name: '@deepseek-ai/dsh-subagent'
+  name: '@harness-desktop/dsh-subagent'
 
 - id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
+  name: '@harness-desktop/dsh-subprocess-local'
 
 - id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
+  name: '@harness-desktop/dsh-subagent-codex'
 
 - id: subagent-claude-code
-  name: '@deepseek-ai/dsh-subagent-claude-code'
+  name: '@harness-desktop/dsh-subagent-claude-code'
 
 - id: tool-subagent-codex
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: '@harness-desktop/dsh-tool-subagent'
   config:
     provider: codex
     toolName: subagent_codex
@@ -24,7 +24,7 @@
     maxDepth: 'provider-managed'
 
 - id: tool-subagent-claude-code
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: '@harness-desktop/dsh-tool-subagent'
   config:
     provider: claude-code
     toolName: subagent_claude_code
@@ -32,8 +32,9 @@
     maxDepth: 'provider-managed'
 
 - id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js harnessHome
     agents:
       - id: main
         provider: mock
@@ -43,9 +44,9 @@
     workspaceContext: false
 
 - id: persistence
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: './.sessions'
+    root: !!js harnessHomePath('sessions')
 
 - id: checkpoint-policy
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+  name: '@harness-desktop/dsh-session-checkpoint-policy'

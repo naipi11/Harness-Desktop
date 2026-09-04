@@ -55,7 +55,7 @@ interface Paste {
 
 /** One package's catalog entry. */
 export interface CatalogEntry {
-  /** npm package name, e.g. `@deepseek-ai/dsh-agent-loop`. */
+  /** npm package name, e.g. `@harness-desktop/dsh-agent-loop`. */
   pkg: string
   /** Repo-relative package dir, e.g. `packages/core/agent-loop`. */
   dir: string
@@ -335,9 +335,11 @@ function lookupPath(world: World, ctx: FileCtx, node: ts.Node, steps: PathStep[]
   const intoMembers = (members: ts.NodeArray<ts.TypeElement>): PathLookup | null => {
     if (!('member' in step)) return null
     for (const m of members) {
-      if (!ts.isPropertySignature(m) || m.name.getText(ctx.sf) !== step.member) continue
+      if ((!ts.isPropertySignature(m) && !ts.isMethodSignature(m)) || m.name.getText(ctx.sf) !== step.member) continue
       if (steps.length === 1) return 'found'
-      return m.type ? lookupPath(world, ctx, m.type, steps.slice(1), seen) : 'unknown'
+      return ts.isPropertySignature(m) && m.type
+        ? lookupPath(world, ctx, m.type, steps.slice(1), seen)
+        : 'unknown'
     }
     return null // not among these members; caller consults heritage/parts
   }

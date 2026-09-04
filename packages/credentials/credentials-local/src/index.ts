@@ -1,12 +1,12 @@
 /**
- * File-backed credentials provider over `$DSH_HOME/.credentials.yaml`, layered
+ * File-backed credentials provider over `$HARNESS_HOME/.credentials.yaml`, layered
  * against the environment by how much each layer is trusted:
  *
  * ```text
  * inherited process environment      (read-only, wins)
- * > $DSH_HOME/.credentials.yaml      (provider-managed, writable)
+ * > $HARNESS_HOME/.credentials.yaml      (provider-managed, writable)
  * > <invocation cwd>/.env            (read-only fallback)
- * > $DSH_HOME/.env                   (read-only fallback)
+ * > $HARNESS_HOME/.env                   (read-only fallback)
  * ```
  *
  * The inherited environment wins because `DEEPSEEK_API_KEY=… dsh`, a CI
@@ -32,21 +32,27 @@
  * as the user's environment layer; a store that doubled as the environment
  * layer would shadow non-secret entries behind its precedence, making them
  * silently unreachable.
- * @module @deepseek-ai/dsh-credentials-local
+ *
+ * The Harness Desktop local Runtime composition no longer mounts this
+ * provider: `$HARNESS_HOME/.credentials.yaml` is a legacy import candidate
+ * only and is never copied into a target home. The package stays intact for
+ * embedders that deliberately choose the file-backed store; its public
+ * behavior is unchanged.
+ * @module @harness-desktop/dsh-credentials-local
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import { Context, Service } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
 import { watch as chokidarWatch } from 'chokidar'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { Document, parseDocument, type YAMLError } from 'yaml'
-import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { CredentialProvider, credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
-import type { LaunchEnvironmentEntry } from '@deepseek-ai/dsh-launch-environment'
+import { withFileLock, writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
+import { canonicalizeWatchPath } from '@harness-desktop/dsh-home-paths'
+import { launchEnvironmentOf } from '@harness-desktop/dsh-launch-environment'
+import { CredentialProvider, credentialRef } from '@harness-desktop/dsh-credentials'
+import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@harness-desktop/dsh-credentials'
+import type { LaunchEnvironmentEntry } from '@harness-desktop/dsh-launch-environment'
 
 /** Basename of the credentials document inside the harness home. */
 export const CREDENTIALS_FILENAME = '.credentials.yaml'
@@ -55,8 +61,8 @@ export const CREDENTIALS_FILENAME = '.credentials.yaml'
 export interface Config {
   /** Credentials document path; defaults to `.credentials.yaml` under the harness home. */
   path?: string
-  /** Harness home used when `path` is omitted; defaults to `$DSH_HOME` or `~/.dsh`. */
-  dshHome?: string
+  /** Absolute Harness home injected when `path` is omitted. */
+  harnessHome?: string
   /** Watch the document and hot-publish external edits; defaults to true. */
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
@@ -78,10 +84,16 @@ interface ResolvedSpec {
  */
 export function resolveSpec(config: Config): ResolvedSpec {
   return {
-    filename: resolve(config.path ?? join(resolveDshHome(config.dshHome), CREDENTIALS_FILENAME)),
+    filename: resolve(config.path ?? join(requiredHarnessHome(config), CREDENTIALS_FILENAME)),
     watch: config.watch ?? true,
     debounceMs: config.debounceMs ?? 100,
   }
+}
+
+/** Return the injected root required by a default credentials document path. */
+function requiredHarnessHome(config: Config): string {
+  if (config.harnessHome === undefined) throw new Error('credentials-local: harnessHome is required when path is omitted')
+  return config.harnessHome
 }
 
 /** Permission bits outside the owner; a credentials document must have none of them. */
@@ -203,14 +215,14 @@ function renderDocument(text: string | undefined, ref: CredentialRef, value: str
   return document.toString()
 }
 
-/** File-backed credentials provider (`$DSH_HOME/.credentials.yaml`). */
+/** File-backed credentials provider (`$HARNESS_HOME/.credentials.yaml`). */
 export class LocalCredentialProvider extends CredentialProvider {
   /* jscpd:ignore-start -- deliberate config-surface and lifecycle symmetry with
      settings-file (prefer symmetry for parallel values); extracting the shared
      shape would couple the two providers' teardown semantics across packages. */
   static Config: z<Config> = z.object({
     path: z.string(),
-    dshHome: z.string(),
+    harnessHome: z.string(),
     watch: z.boolean().default(true),
     debounceMs: z.number().min(0).default(100),
   })

@@ -78,7 +78,7 @@ async function makeConsumer(): Promise<string> {
     await link(dirname(resolved), dep, nm)
   }
   await writeFile(join(dir, 'mock-llm.mjs'), [
-    "import { LlmAdapter } from '@deepseek-ai/dsh-llm'",
+    "import { LlmAdapter } from '@harness-desktop/dsh-llm'",
     'class Mock extends LlmAdapter {',
     '  async * stream() {',
     "    yield { type: 'block-start', index: 0, blockType: 'text' }",
@@ -96,15 +96,17 @@ async function makeConsumer(): Promise<string> {
     '- id: mock-llm',
     '  name: \'./mock-llm.mjs\'',
     '- id: subprocess',
-    '  name: \'@deepseek-ai/dsh-subprocess-local\'',
+    '  name: \'@harness-desktop/dsh-subprocess-local\'',
     '- id: bash',
-    '  name: \'@deepseek-ai/dsh-bash-local\'',
+    '  name: \'@harness-desktop/dsh-bash-local\'',
     '- id: acp-agent',
-    '  name: \'@deepseek-ai/dsh-acp-demo\'',
+    '  name: \'@harness-desktop/dsh-acp-demo\'',
     '  config:',
+    '    harnessHome: !!js harnessHome',
     '    provider: built-acp-mock',
     '    model: built-acp-mock',
     '    persona: \'test agent\'',
+    "    persistenceRoot: !!js harnessHomePath('sessions')",
     '    workspaceContext: false',
     '',
   ].join('\n'))
@@ -138,7 +140,7 @@ describe.skipIf(!existsSync(acpBin))('dsh-acp-demo BUILT bin (node lib/bin.js, n
       cwd: consumer,
       env: {
         ...process.env,
-        DSH_HOME: join(consumer, '.dsh'),
+        HARNESS_HOME: join(consumer, '.harness-home'),
         DSH_AGENTS_HOME: join(consumer, '.agents'),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -179,7 +181,7 @@ describe.skipIf(!existsSync(acpBin))('dsh-acp-demo BUILT bin (node lib/bin.js, n
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'ACP BUILT OK' },
     }])
-    const sessionsRoot = join(sessionCwd, '.sessions')
+    const sessionsRoot = join(consumer, '.harness-home', 'sessions')
     let log: string | undefined
     await expect.poll(async () => {
       log = (await readdir(sessionsRoot, { recursive: true })).find(file => file.endsWith('.jsonl.zstd'))
@@ -218,7 +220,7 @@ async function runBinExpectingExit(configArg: string, cwd: string = tmpdir()): P
   const result = await execa(process.execPath, [acpBin, '--config', configArg], {
     cwd,
     env: {
-      DSH_HOME: join(cwd, '.dsh'),
+      HARNESS_HOME: join(cwd, '.harness-home'),
       DSH_AGENTS_HOME: join(cwd, '.agents'),
     },
     input: '',

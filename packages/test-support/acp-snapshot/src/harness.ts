@@ -13,7 +13,7 @@
  *
  * See .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
  *
- * @module @deepseek-ai/dsh-acp-snapshot/harness
+ * @module @harness-desktop/dsh-acp-snapshot/harness
  */
 
 import { cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
@@ -225,7 +225,8 @@ export function snapshotSpillRoot(
 export async function runScenario(input: InputScript, opts: RunOptions): Promise<RunResult> {
   const cwd = await mkdtemp(join(opts.workspaceParent ?? tmpdir(), 'acp-snap-cwd-'))
   const cwdAliases = [...new Set([realpathSync(cwd), realpathSync.native(cwd)])]
-  const sessionsRoot = await mkdtemp(join(tmpdir(), 'acp-snap-sessions-'))
+  const harnessHome = join(cwd, '.harness-home')
+  const sessionsRoot = join(harnessHome, 'sessions')
   // Fixed path length: spill-policy budgets the preview against the REAL path
   // before stdout normalization, so tmpdir() length differences churn expected outputs.
   // Scenario ownership also matters: replay runs concurrently, and one teardown
@@ -248,9 +249,8 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
       ...opts.env,
       DSH_SNAPSHOT: opts.mode,
       DSH_SNAPSHOT_FILE: opts.fixtureFile,
-      DSH_SNAPSHOT_SESSIONS_ROOT: sessionsRoot,
       DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
-      DSH_HOME: join(cwd, '.dsh'),
+      HARNESS_HOME: harnessHome,
       DSH_AGENTS_HOME: join(cwd, '.agents'),
       ...opts.overrideFile !== undefined ? { DSH_SNAPSHOT_OVERRIDE: opts.overrideFile } : {},
       ...opts.childFiles !== undefined && opts.childFiles.length > 0
@@ -355,7 +355,6 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
   /* v8 ignore next 1 -- launch itself can only throw on a defensive synchronous spawn API failure */
   await cleanup(() => launched?.close('SIGKILL') ?? Promise.resolve())
   await cleanup(() => rm(cwd, { recursive: true, force: true }))
-  await cleanup(() => rm(sessionsRoot, { recursive: true, force: true }))
   await cleanup(() => rm(spillRoot, { recursive: true, force: true }))
 
   const cleanupFailures = cleanupResults

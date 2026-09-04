@@ -72,6 +72,9 @@
       "path": "../../util/home-paths"
     },
     {
+      "path": "../../host/local-runtime"
+    },
+    {
       "path": "../../shell/shell-env"
     },
     {

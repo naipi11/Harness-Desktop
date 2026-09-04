@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-runtime
+# @harness-desktop/dsh-client-runtime
 
 [English](README.md) | 中文
 

@@ -5,25 +5,25 @@
  * and opener wiring, and the plugin registrations' fiber-teardown removal
  * (HMR safety) against the real SlotRegistry.
  */
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ConversationEventRegistry, ConversationNodeAssembler, SlotRegistry,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@harness-desktop/dsh-client-runtime/client'
 import type {
   ConversationEventInput, ConversationLocationDataStore, ConversationMatch, ConversationNodeDefinition,
   ConversationTimelineSnapshot, ConversationTurnDataMap, ConversationViewDefinition,
   ConversationViewNode, ToolResultNode, TurnLocation,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
-import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+} from '@harness-desktop/dsh-client-runtime/client'
+import { apply as applyLocale, inject as localeInject } from '@harness-desktop/dsh-client-locale/client'
+import type { ChatFileMentions, TurnTailOwnerProps } from '@harness-desktop/dsh-client-ui-conversation/client'
+import { makeTranslate, stubSettingsScope } from '@harness-desktop/dsh-client-test-runtime'
 import {
   fitProducedFiles, ProducedFiles, type ProducedFilesProps,
 } from '../src/client/ProducedFiles.tsx'
 import {
-  basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
+  basename, deliverablePaths, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
   type DeliverablesTurnData,
 } from '../src/client/turn-deliverables.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -173,6 +173,22 @@ function deliverablesOf(value: ConversationNodeAssembler, turn = 1): Readonly<De
 }
 
 describe('produced-file Turn data', () => {
+  it('projects artifacts from completed Turn data at each closing Assistant boundary', () => {
+    const first = turnLocation(1, produced([3, 'first.txt'], [5, 'late.txt']))
+    ;(first.data as TestTurnDataStore).set('turn-tail', {
+      seq: 6,
+      closing: { finalNode: { seq: 4 } },
+    } as never)
+    const second = turnLocation(2, produced([8, 'second.txt'], [9, 'first.txt']))
+    ;(second.data as TestTurnDataStore).set('turn-tail', {
+      seq: 10,
+      closing: { finalNode: { seq: 9 } },
+    } as never)
+
+    expect(deliverablePaths({ turnOrder: [1, 2], turns: new Map([[1, first], [2, second]]) }))
+      .toEqual(['first.txt', 'second.txt'])
+  })
+
   it('deduplicates paths in first-seen order and stops at the closing Assistant seq', () => {
     const data = produced(
       [3, 'out/index.html'],
@@ -445,7 +461,7 @@ describe('package shells', () => {
       register: (pkg: string) => { registered.push(pkg); return () => {} },
     } as never)
     const dispose = await applyInvariant(ctx)
-    expect(registered).toEqual(['@deepseek-ai/dsh-client-ui-deliverables'])
+    expect(registered).toEqual(['@harness-desktop/dsh-client-ui-deliverables'])
     expect(dispose).toBeTypeOf('function')
   })
 })

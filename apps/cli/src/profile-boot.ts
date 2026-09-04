@@ -8,15 +8,15 @@
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
  * plugin may read the same immutable snapshot.
- * @module @deepseek-ai/dsh/profile-boot
+ * @module @harness-desktop/cli/profile-boot
  */
 
 import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FiberState, type Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { FiberState, type Context } from '@harness-desktop/cordis'
+import type { PatchOptions } from '@harness-desktop/cordis-plugin-include'
+import type { EntryOptions } from '@harness-desktop/cordis-plugin-loader'
 import {
   boot,
   composeEntries,
@@ -28,26 +28,26 @@ import {
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
   type Profile,
-} from '@deepseek-ai/dsh-app-boot'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+} from '@harness-desktop/dsh-app-boot'
+import { createLocalRuntimePlugin, type HarnessHome, type HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
 
-import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
+import { provideCmdline } from '@harness-desktop/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
 
 /**
- * The home-level user patch layer (`$DSH_HOME/cordis.patch.yml`), applied
+ * The home-level user patch layer (`$HARNESS_HOME/cordis.patch.yml`), applied
  * over every profile's own layer. Resolved per call, not at module load:
- * `$DSH_HOME` may be set by the test or launcher after import.
+ * `$HARNESS_HOME` may be set by the test or launcher after import.
  * @returns the absolute patch-file path.
  */
-export function homePatchPath(): string {
-  return join(resolveDshHome(), PROFILE_PATCH_FILENAME)
+export function homePatchPath(home: HarnessHome): string {
+  return join(home, PROFILE_PATCH_FILENAME)
 }
 
 /** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
@@ -95,9 +95,9 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
-  healProfilesModuleFallback(INSTALL_ANCHOR)
-  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
+export function prepareProfile(name: string, home: HarnessHome, userLayer = true): Profile {
+  healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, home, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
 }
@@ -107,7 +107,7 @@ interface ComposedProfile {
   profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
-  /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
+  /** The home-level user layer (`$HARNESS_HOME/cordis.patch.yml`), applied after the profile's own. */
   homePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
@@ -132,7 +132,7 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * Load `name` and compose its effective patch stack: bundle layers in
  * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
  * platform on its own rows), the profile's user layer, the home-level user
- * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
+ * layer (`$HARNESS_HOME/cordis.patch.yml` — machine-local preferences that apply
  * to every profile, so it outranks the per-profile layer), `--patch` overlays,
  * then the telemetry switch.
  * @param name - the profile name.
@@ -142,9 +142,10 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  home: HarnessHome,
 ): ComposedProfile {
-  const profile = prepareProfile(name)
-  const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const profile = prepareProfile(name, home)
+  const homePatches = loadOptionalPatches(NAME, homePatchPath(home)) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
@@ -205,7 +206,9 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const harnessHomeProvider: HarnessHomeProvider = createLocalRuntimePlugin()
+  const harnessHome = harnessHomeProvider.home
+  const composed = composeProfile(options.profile, options.patchFiles, harnessHome)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -240,7 +243,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   const composeLive = (): PatchOptions[] => structuredClone([
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    ...loadOptionalPatches(NAME, homePatchPath(harnessHome)) ?? [],
     ...composed.overlays,
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
@@ -256,7 +259,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, undefined, harnessHomeProvider)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
@@ -278,9 +281,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       // bare custom profile may not mount either.
       if (ctx.get('hmr') === undefined) {
         if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+          await ctx.loader.create({ name: '@harness-desktop/cordis-plugin-timer' })
         }
-        await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        await ctx.loader.create({ name: '@harness-desktop/cordis-plugin-hmr', config: { root: [] } })
       }
       await watchUserPatches(ctx, {
         binName: NAME,
@@ -289,7 +292,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       })
       await watchUserPatches(ctx, {
         binName: NAME,
-        filename: homePatchPath(),
+        filename: homePatchPath(harnessHome),
         compose: composeLive,
       })
     } catch (error) {

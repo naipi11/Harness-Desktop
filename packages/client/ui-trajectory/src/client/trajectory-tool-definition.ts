@@ -1,9 +1,9 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
   RunningToolCall, ToolCallBlock, ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-tools/types'
+} from '@harness-desktop/dsh-client-runtime/client'
+import type {} from '@harness-desktop/dsh-tools/types'
 import { trajectoryNode } from './trajectory-definition-common.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event

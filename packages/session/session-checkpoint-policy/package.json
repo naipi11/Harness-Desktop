@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-session-checkpoint-policy",
+  "name": "@harness-desktop/dsh-session-checkpoint-policy",
   "description": "Semantic session durability checkpoints before model requests and tool side effects",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/session/session-checkpoint-policy"
   },
   "type": "module",
@@ -32,26 +32,26 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/cordis-plugin-loader": "workspace:^",
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-agent-loop": "workspace:^",
+    "@harness-desktop/dsh-agent-loop-testkit": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-session-persistence-jsonl": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-skill
+# @harness-desktop/dsh-tool-skill
 
 English | [中文](README.zh.md)
 
@@ -30,13 +30,17 @@ An unresolved name reports that the skill is unknown or no longer available. Inv
 
 Tool execution does not add a synthetic context message. Its freshly loaded result is already recorded as the tool result and becomes available to the next model step without duplicating the body. Only the catalog projection adds replacement summaries.
 
+## User-explicit invocation admission
+
+After both pre-step listeners are live, the plugin attaches the user-invocation consumer to `ctx.skills` through its own registration scope. An unscoped mount serves every Agent, while a preset mount serves only Agents whose scope chain includes that preset. Host prompt admission checks that exact owner-relative registration before trusting a catalog match, so providers or a sibling composition cannot cause raw slash text to enter a model without the listener that loads it. Disposal removes the registration before the listeners unwind, keeping admission fail-closed during teardown.
+
 ## Model Experience
 
 ### Session catalog
 
 #### What the model sees
 
-If model-invocable skills exist and this exact `skill` tool is visible, the agent receives the catalog template below as a durable user-role message before the first request, with one data-dependent entry per sorted skill. Later membership, description, or visibility changes append a complete replacement using the same `<available_skills>` envelope; deleting every skill appends an empty envelope with an explicit instruction not to use older names. The template's closing sentence is the rule against double-loading: the user-explicit gesture boundary (the pre-step listener below) injects the same `renderSkillContent` output (shared from `@deepseek-ai/dsh-skill`) inline, and the catalog tells the model to follow that block instead of re-loading the skill through the tool; the replacement-catalog template carries the same sentence in both arms, including the emptied catalog.
+If model-invocable skills exist and this exact `skill` tool is visible, the agent receives the catalog template below as a durable user-role message before the first request, with one data-dependent entry per sorted skill. Later membership, description, or visibility changes append a complete replacement using the same `<available_skills>` envelope; deleting every skill appends an empty envelope with an explicit instruction not to use older names. The template's closing sentence is the rule against double-loading: the user-explicit gesture boundary (the pre-step listener below) injects the same `renderSkillContent` output (shared from `@harness-desktop/dsh-skill`) inline, and the catalog tells the model to follow that block instead of re-loading the skill through the tool; the replacement-catalog template carries the same sentence in both arms, including the emptied catalog.
 
 ##### Skill catalog template
 
@@ -65,7 +69,7 @@ The initial durable catalog is appended after the existing reusable prefix. Dyna
 
 #### What the model sees
 
-The model sees the generated [`skill` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-skill).
+The model sees the generated [`skill` schema](../../../docs/tool-catalog.md#harness-desktopdsh-tool-skill).
 
 #### Token effect
 

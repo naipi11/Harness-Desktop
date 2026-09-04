@@ -25,8 +25,8 @@ import {
   renderPageRegion,
   REGION_BEGIN,
   REGION_END,
-} from '@deepseek-ai/dsh-typert-generator'
-import type { CordisCatalogPolicy } from '@deepseek-ai/dsh-typert-generator'
+} from '@harness-desktop/dsh-typert-generator'
+import type { CordisCatalogPolicy } from '@harness-desktop/dsh-typert-generator'
 import { renderCordisCoreApiPages } from './cordis-core-api.ts'
 import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.ts'
 import {
@@ -111,7 +111,7 @@ export const SERVICE_PAGE: Record<string, string> = {
 /**
  * Context keys declared in `interface Context` merges that the rendering
  * projection cannot see, each with the reason and its documentation owner.
- * The scan that enforces this list reads EVERY `declare module '@deepseek-ai/cordis'`
+ * The scan that enforces this list reads EVERY `declare module '@harness-desktop/cordis'`
  * Context merge under `packages/x/x/src/**` — any depth, not only root
  * `index.ts` files with a same-named service class — so a new service can
  * never silently join this blind spot: it either enters {@link SERVICE_PAGE}
@@ -131,8 +131,10 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
   configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',
+  harnessHome: 'not a service: launcher-provided selected Harness home string — packages/host/local-runtime/README.md owns the Runtime data-root contract',
+  harnessHomeProvider: 'not a service: launcher-provided HarnessHomeProvider value — packages/host/local-runtime/README.md owns the Runtime data-root contract',
   launcherSessionQueryPath: 'not a service: launcher-provided boot-context value (string | undefined) — packages/session-query/session-query-sqlite/README.md owns this launcher contract',
-  dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
+  harnessHomePath: 'not a service: boot-provided root accessor function (typeof harnessHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   appShell: 'client-side interface-typed browser service — packages/client/web/README.md owns the API',
@@ -142,6 +144,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
   conversationEvents: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
   conversationViews: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
+  deliverables: 'client-side completed-Turn produced-file projection — packages/client/ui-deliverables/README.md owns the API',
   layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the API',
   locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
   modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
@@ -188,7 +191,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  * Event names declared in `interface Events` merges that the rendering
  * projection cannot see, each with the reason and its documentation owner.
  * The mirror of {@link SERVICE_WALK_EXEMPTIONS} for events: an independent
- * scan reads EVERY `declare module '@deepseek-ai/cordis'` Events merge under
+ * scan reads EVERY `declare module '@harness-desktop/cordis'` Events merge under
  * `packages/x/x/src/**`, so a declared event either renders onto a subsystems
  * page (via {@link EVENT_SCOPE_PAGE}) or names itself here — never vanishes
  * silently. Keys are full event names rather than scopes, so a scope-level
@@ -243,6 +246,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ResolvedRetryPolicy: 'llm-streaming.md',
   Message: 'llm-streaming.md',
   MessageSource: 'llm-streaming.md',
+  UserSkillInvocationClaim: 'skills.md',
+  UserSkillInvocationLease: 'skills.md',
   MessageFeedbackDeleteRequest: 'feedback.md',
   MessageFeedbackDeleteResult: 'feedback.md',
   MessageFeedbackDeleteValue: 'feedback.md',

@@ -7,9 +7,9 @@ File-backed [credentials](../credentials/README.md) provider: four layers, one h
 | Layer | Source id | Writable | Wins |
 |---|---|---|---|
 | Inherited process environment | `env` | no | always |
-| `$DSH_HOME/.credentials.yaml` document | `file` | yes (`set`/`unset`) | over both `.env` layers |
+| `$HARNESS_HOME/.credentials.yaml` document | `file` | yes (`set`/`unset`) | over both `.env` layers |
 | `<invocation cwd>/.env` | `project-env` | not here | over the user `.env` |
-| `$DSH_HOME/.env` | `user-env` | not here | otherwise |
+| `$HARNESS_HOME/.env` | `user-env` | not here | otherwise |
 
 The launching environment wins because a per-run override (`DEEPSEEK_API_KEY=… dsh`, a CI secret, a container `-e`) is operator intent for this run — and because it cannot be edited from inside, it must be *visibly* read-only: `describe()` reports `source: 'env', writable: false`, and `set`/`unset` reject instead of writing a change the reader would never see.
 
@@ -22,7 +22,7 @@ Under the product CLI, resolution reads the launcher's frozen [environment snaps
 | Field | Default | Meaning |
 |---|---|---|
 | `path` | `<harness home>/.credentials.yaml` | Credentials document location. |
-| `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home used when `path` is omitted. |
+| `harnessHome` | injected absolute path | Harness home used when `path` is omitted. |
 | `watch` | `true` | Hot-publish external edits. |
 | `debounceMs` | `100` | Watcher write-settle window. |
 
@@ -51,7 +51,7 @@ External edits publish `credentials/updated` per changed reference after the sna
 
 ## Security boundary
 
-The document is `0600` under a `0700` directory, which stops other OS users — **not** the model. Tool processes (bash, the filesystem tools) run as the same user, and the shipped `workspace-write` file policy confines mutations rather than reads, so they can read this file exactly like any other file the user owns; no sandbox mode singles it out. What the harness does hold to is narrower: it never hands the model a resolved path to the document, and never loads it into the process environment — unlike `$DSH_HOME/.env`, which is the user's ordinary environment layer (see [app-boot's Harness-home layers](../../boot/app-boot/README.md#profiles)) — so reaching the value takes a deliberate read of a path the agent was not given.
+The document is `0600` under a `0700` directory, which stops other OS users — **not** the model. Tool processes (bash, the filesystem tools) run as the same user, and the shipped `workspace-write` file policy confines mutations rather than reads, so they can read this file exactly like any other file the user owns; no sandbox mode singles it out. What the harness does hold to is narrower: it never hands the model a resolved path to the document, and never loads it into the process environment — unlike `$HARNESS_HOME/.env`, which is the user's ordinary environment layer (see [app-boot's Harness-home layers](../../boot/app-boot/README.md#profiles)) — so reaching the value takes a deliberate read of a path the agent was not given.
 
 That is discretion, not a boundary. A deployment that must keep provider keys away from its own agent cannot get there with file permissions; an OS-keychain provider — a store the model's processes cannot read at all — is the deferred answer and belongs beside this provider as a sibling package.
 

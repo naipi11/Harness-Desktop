@@ -10,8 +10,8 @@
  * (`LlmRuntime.registerAdapter`), not the single-service bash executor.
  *
  * This package owns the Service Definition role of the capability seam. Service Providers
- * (`@deepseek-ai/dsh-subagent-spawn-in-process`, `-fork`, `-acp`) and the model-facing
- * consumer (`@deepseek-ai/dsh-tool-subagent`) are separate packages.
+ * (`@harness-desktop/dsh-subagent-spawn-in-process`, `-fork`, `-acp`) and the model-facing
+ * consumer (`@harness-desktop/dsh-tool-subagent`) are separate packages.
  *
  * Public operations express caller intent: `start` returns one published owned
  * one-shot run, `startContinuable` establishes a durable continuable child, and
@@ -28,16 +28,16 @@
  * serialization and hostile-input validation belong at real process, worker,
  * persistence, and model boundaries.
  *
- * @module @deepseek-ai/dsh-subagent
+ * @module @harness-desktop/dsh-subagent
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import { scopeTarget } from '@deepseek-ai/dsh-scope'
-import type { Scoped } from '@deepseek-ai/dsh-scope'
-import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { Context, Service } from '@harness-desktop/cordis'
+import { scopeTarget } from '@harness-desktop/dsh-scope'
+import type { Scoped } from '@harness-desktop/dsh-scope'
+import { assertObjectJsonSchema } from '@harness-desktop/dsh-tools'
+import type { ContentBlock, MessageId } from '@harness-desktop/dsh-llm'
+import type { Agent } from '@harness-desktop/dsh-agent'
+import type { SessionId } from '@harness-desktop/dsh-session'
 import type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
@@ -126,7 +126,7 @@ export type { SubagentDescendantListEntry, SubagentListEntry } from './list-chil
 export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     subagents: SubagentRuntime
   }

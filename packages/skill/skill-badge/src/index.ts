@@ -1,18 +1,18 @@
 /**
  * Bundled `dsh-badge` skill provider.
  *
- * @module @deepseek-ai/dsh-skill-badge
+ * @module @harness-desktop/dsh-skill-badge
  */
 
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 import {
   BUNDLED_SKILL_RANK,
   type SkillCandidate,
   type SkillDefinition,
   type SkillProvider,
-} from '@deepseek-ai/dsh-skill'
+} from '@harness-desktop/dsh-skill'
 
 const PROVIDER_NAME = 'dsh-badge'
 const SKILL_BODY_URL = new URL('../assets/dsh-badge.md', import.meta.url)
@@ -21,7 +21,7 @@ const RESOURCE_BASE = {
   path: fileURLToPath(new URL('../assets/', import.meta.url)),
 } as const
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
-const DESCRIPTION = 'Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with DeepSeek Harness. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.'
+const DESCRIPTION = 'Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with Harness Desktop. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.'
 const CANDIDATE: SkillCandidate = {
   name: 'dsh-badge',
   description: DESCRIPTION,

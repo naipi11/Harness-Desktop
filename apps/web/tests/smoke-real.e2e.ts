@@ -166,7 +166,7 @@ describe('dsh web keyless CLI smoke', () => {
         env: {
           ...process.env,
           DEEPSEEK_API_KEY: 'keyless-web-no-call',
-          DSH_HOME: join(sessionsDir, '.dsh'),
+          HARNESS_HOME: join(sessionsDir, '.harness-home'),
           DSH_AGENTS_HOME: join(sessionsDir, '.agents'),
           TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json'),
         },
@@ -233,7 +233,7 @@ describe('dsh web keyless CLI smoke', () => {
           ...process.env,
           DEEPSEEK_API_KEY: 'keyless-web-workspace',
           DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
-          DSH_HOME: join(workspace, '.dsh'),
+          HARNESS_HOME: join(workspace, '.harness-home'),
           DSH_AGENTS_HOME: join(workspace, '.agents'),
           TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json'),
         },
@@ -346,7 +346,7 @@ describe('dsh web keyless CLI smoke', () => {
           ...process.env,
           DEEPSEEK_API_KEY: 'keyless-web-retry',
           DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
-          DSH_HOME: join(workspace, '.dsh'),
+          HARNESS_HOME: join(workspace, '.harness-home'),
           TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json'),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -429,7 +429,7 @@ describe('dsh web keyless CLI smoke', () => {
           DEEPSEEK_API_KEY: 'keyless-web-code-mode',
           DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
           DSH_TOOLS_MODE: 'code',
-          DSH_HOME: join(workspace, '.dsh'),
+          HARNESS_HOME: join(workspace, '.harness-home'),
           DSH_AGENTS_HOME: join(workspace, '.agents'),
           TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json'),
         },
@@ -497,7 +497,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
         cwd: sessionsDir,
         env: {
           ...process.env,
-          DSH_HOME: join(sessionsDir, '.dsh'),
+          HARNESS_HOME: join(sessionsDir, '.harness-home'),
           DSH_AGENTS_HOME: join(sessionsDir, '.agents'),
           TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json'),
         },
@@ -533,7 +533,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
 
   it('empty-state first send completes a real model round', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-first-round'))
-    // This scenario spawns its own server against a fresh $DSH_HOME with the
+    // This scenario spawns its own server against a fresh $HARNESS_HOME with the
     // DeepSeek credential inherited from the environment, so no onboarding
     // step mounts and the page is immediately interactive.
     // Fresh world: connect a Workspace so the composer starts live.
@@ -549,7 +549,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     await page.waitForFunction(() => document.body.innerText.length > 50, undefined, { timeout: 15_000 })
     expect(pageErrors).toEqual([])
     await page.waitForFunction(
-      () => document.title !== 'DeepSeek Harness' && document.title.endsWith(' — DeepSeek Harness'),
+      () => document.title !== 'Harness Desktop' && document.title.endsWith(' — Harness Desktop'),
       undefined,
       { timeout: 15_000 },
     )
@@ -561,7 +561,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     if (sessionId === undefined) throw new Error('created Web session was not listed')
     const durableTitle = await waitForProviderTitle(baseUrl, sessionId)
     await page.waitForFunction(
-      expected => document.title === `${expected} — DeepSeek Harness`,
+      expected => document.title === `${expected} — Harness Desktop`,
       durableTitle,
       { timeout: 15_000 },
     )

@@ -1,10 +1,10 @@
-# @deepseek-ai/dsh-tool-bash
+# @harness-desktop/dsh-tool-bash
 
 English | [中文](README.zh.md)
 
-The model-facing `bash` tool registered over the `ctx.shell` executor seam. Foreground execution stays behind that seam; a background process handle is registered with the generic `ctx.jobs` runtime and controlled through `job_output`, `job_list`, and `job_kill` from `@deepseek-ai/dsh-tool-jobs`.
+The model-facing `bash` tool registered over the `ctx.shell` executor seam. Foreground execution stays behind that seam; a background process handle is registered with the generic `ctx.jobs` runtime and controlled through `job_output`, `job_list`, and `job_kill` from `@harness-desktop/dsh-tool-jobs`.
 
-Requires a loaded executor Service Provider (e.g. `@deepseek-ai/dsh-bash-local`) and the [`@deepseek-ai/dsh-shell-env`](../shell-env/README.md) registry; the plugin stays pending until every injected service exists (`inject: ['tools', 'bash', 'systemPrompt', 'bashEnv']`). The tool contract is bash-dialect — mount a bash-parsing executor.
+Requires a loaded executor Service Provider (e.g. `@harness-desktop/dsh-bash-local`) and the [`@harness-desktop/dsh-shell-env`](../shell-env/README.md) registry; the plugin stays pending until every injected service exists (`inject: ['tools', 'bash', 'systemPrompt', 'bashEnv']`). The tool contract is bash-dialect — mount a bash-parsing executor.
 
 The package root exposes only the Cordis plugin contract (`name`, `inject`, `Config`, `apply`); result rendering and background-process adaptation remain package-internal.
 
@@ -28,7 +28,7 @@ The plugin also contributes the `tool:bash` prompt section (order 105): check th
 
 ### Managed shell environment
 
-Every foreground and background model bash call receives a freshly collected trusted `DSH_*` environment through the shared [`dsh-shell-env`](../shell-env/README.md) registry: `DSH_HOME` (the absolute Harness home), `DSH_SHELL=1`, the agent's `DSH_SESSION_ID`, and `DSH_SESSION_JSONL` when the active persistence backend locates one. The registry contract — contributor registration, loud duplicate/undeclared-key failure, the built-in reservations, and the contributor example — lives in that package's README. The snapshot passes through the dedicated `ShellExecRequest.dshEnv` channel; the local executor removes all inherited `DSH_*` before merging it, so nested harnesses and concurrent parent/child agents cannot leak stale identities, and `process.env` is never modified. The tool description teaches the generic `$DSH_*` convention rather than naming persistence-specific variables or adding a permanent system-prompt section.
+Every foreground and background model bash call receives a freshly collected trusted environment through the shared [`dsh-shell-env`](../shell-env/README.md) registry: `HARNESS_HOME` (the absolute Harness home), `DSH_SHELL=1`, the agent's `DSH_SESSION_ID`, and `DSH_SESSION_JSONL` when the active persistence backend locates one. The registry contract — contributor registration, loud duplicate/undeclared-key failure, the built-in reservations, and the contributor example — lives in that package's README. The snapshot passes through the dedicated `ShellExecRequest.dshEnv` channel; the local executor removes inherited `DSH_*` values before merging it, so nested harnesses and concurrent parent/child agents cannot leak stale identities, and `process.env` is never modified. The tool description teaches the generic `$DSH_*` convention rather than naming persistence-specific variables or adding a permanent system-prompt section.
 
 Result text contains stdout, an optional `[stderr]` section, then applicable sandbox-denial, timeout, signal, exit-code, and truncation markers. Timeout is reported independently of final exit status; nonzero exit remains a model-interpreted result rather than `isError`. Truncation links a safe complete spill file or reports it unavailable. Only infrastructure failures such as spawn errors and aborts produce `isError`.
 
@@ -80,7 +80,7 @@ Prefix-stable while the registration scope and prompt text are unchanged. Plugin
 
 #### What the model sees
 
-The model sees the generated [`bash` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash). `run_in_background` appears only when this producer enables it; `sandbox_permissions` and `justification` appear only when the mounted executor advertises sandboxing. Agent-scoped tool restrictions can remove the definition for that agent.
+The model sees the generated [`bash` schema](../../../docs/tool-catalog.md#harness-desktopdsh-tool-bash). `run_in_background` appears only when this producer enables it; `sandbox_permissions` and `justification` appear only when the mounted executor advertises sandboxing. Agent-scoped tool restrictions can remove the definition for that agent.
 
 #### Token effect
 
@@ -122,7 +122,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-Validation and policy failures are normalized as `Error: <message>`. This package's stable messages are `invalid command: expected a non-empty string`, `invalid description: expected a non-empty string`, `invalid timeoutMs: expected a positive number, got <value>`, `invalid escalation: sandbox_permissions requires a justification`, `invalid escalation: justification is only valid together with sandbox_permissions`, `invalid justification: expected a non-empty sentence`, `background execution is disabled for this bash tool`, `background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs`, `sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`, `sandbox escalation to "<mode>" is not strictly wider than this call's current "<mode>" mode`, the approval-availability/rejection/cancellation variants, and `tool call aborted`.
+Validation and policy failures are normalized as `Error: <message>`. This package's stable messages are `invalid command: expected a non-empty string`, `invalid description: expected a non-empty string`, `invalid timeoutMs: expected a positive number, got <value>`, `invalid escalation: sandbox_permissions requires a justification`, `invalid escalation: justification is only valid together with sandbox_permissions`, `invalid justification: expected a non-empty sentence`, `background execution is disabled for this bash tool`, `background jobs unavailable: load @harness-desktop/dsh-jobs and @harness-desktop/dsh-tool-jobs`, `sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`, `sandbox escalation to "<mode>" is not strictly wider than this call's current "<mode>" mode`, the approval-availability/rejection/cancellation variants, and `tool call aborted`.
 
 #### Token effect
 

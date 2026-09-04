@@ -4,18 +4,18 @@
  * else references RequestPayload<'session.*'> / ResponseValue<'session.*'>.
  */
 
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MessageId } from '@harness-desktop/dsh-llm/brand'
+import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@harness-desktop/dsh-attachment'
+import type { ContentBlock } from '@harness-desktop/dsh-llm/types'
+import type { SessionEvent, SessionId } from '@harness-desktop/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
-import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
+import type { SessionProjectionMap } from '@harness-desktop/dsh-session-projection/types'
 import type { RpcId, RpcRequest, RpcResponse } from './rpc.ts'
 import type { ToolEventView } from './events.ts'
 import type { WorkspaceId } from './workspace.ts'
 
-declare module '@deepseek-ai/dsh-session-projection/types' {
+declare module '@harness-desktop/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /**
      * Session-list hints persisted by the projection cache. `blank: false`
@@ -43,7 +43,7 @@ export interface SessionListMetadata {
   lastPromptAt: number | null
 }
 
-declare module '@deepseek-ai/dsh-llm' {
+declare module '@harness-desktop/dsh-llm' {
   interface MessageSourceMap {
     /**
      * The prompt's rpcId is passed through MessageSource into the `user/message` event
@@ -313,14 +313,6 @@ export interface SessionsApi {
   Promise<RpcResponse<{ title: string; seq: number }>>
 
   /**
-   * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
-   * A prompt whose content is exactly one text block starting with '/' is a slash command: the host
-   * executes it through the command registry (mode-agnostic) and it is never sent to the model. A
-   * successful command returns ok with the command slot (its success text, when the command produced
-   * one — carried for future rendering; the state change is the feedback). A usage/state error is an
-   * RPC error with code command-error; an unrecognized name is an RPC error with code unknown-command.
-   */
-  /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`
    * anchors the cut: the boundary is the first `turn/end` at or after it
    * (a message's fork button passes the message seq, so the fork includes
@@ -342,14 +334,18 @@ export interface SessionsApi {
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
-   * `subagent.prompt`.
+   * `subagent.prompt`. Exactly one text block starting with `/` first uses the host command registry;
+   * a recognized command returns its optional success text without a user message or turn. After a
+   * command miss, admission requires both an effect-scoped `dsh-tool-skill` consumer serving the
+   * exact Agent and a user-invocable leading name in its complete skill catalog. With a consumer,
+   * incomplete discovery is `internal`; a missing consumer or complete catalog miss is `unknown-command`.
    */
   prompt(request: RpcRequest<{
     sessionId: SessionId
     mode: 'queue' | 'steer'
     content: PromptContentPart[]
     clientTimeZone?: string
-  }>):
+  }>, signal?: AbortSignal):
   Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
 
   /** Reads one durable image after proving that this session's log references its id. */

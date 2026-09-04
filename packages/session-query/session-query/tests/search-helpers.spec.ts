@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { Context } from '@harness-desktop/cordis'
+import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@harness-desktop/dsh-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION,
   SessionId,
-} from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+} from '@harness-desktop/dsh-session'
+import type { SessionEvent, SessionHeader } from '@harness-desktop/dsh-session'
 import {
   buildSessionEventRecords,
   buildSessionEventSearchDocuments,
@@ -16,7 +16,7 @@ import {
   materializeSessionEventResultFilters,
   materializeSessionResultFilters,
   type SessionQueryErrorCode,
-} from '@deepseek-ai/dsh-session-query'
+} from '@harness-desktop/dsh-session-query'
 import { TestSessionQueryEngine } from './test-service.ts'
 
 const id = SessionId('session')

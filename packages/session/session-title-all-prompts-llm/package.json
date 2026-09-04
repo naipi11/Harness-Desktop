@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-session-title-all-prompts-llm",
+  "name": "@harness-desktop/dsh-session-title-all-prompts-llm",
   "description": "All-user-messages LLM provider plugin for DeepSeek Harness session titles",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/session/session-title-all-prompts-llm"
   },
   "type": "module",
@@ -27,22 +27,22 @@
   "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-title": "workspace:^",
-    "@deepseek-ai/dsh-session-title-llm": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-title": "workspace:^",
+    "@harness-desktop/dsh-session-title-llm": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@harness-desktop/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-title": "workspace:^",
-    "@deepseek-ai/dsh-session-title-llm": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-title": "workspace:^",
+    "@harness-desktop/dsh-session-title-llm": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

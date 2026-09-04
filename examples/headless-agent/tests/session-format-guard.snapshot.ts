@@ -6,17 +6,17 @@
  * @module session-format-guard-snapshot
  */
 
-import { join, dirname } from 'node:path'
+import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { Context } from '@harness-desktop/cordis'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@harness-desktop/dsh-loader-smoke'
 import SessionStore, {
   SESSION_FORMAT_VERSION,
   SessionId,
   type SessionEvent,
   type SessionHeader,
-} from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+} from '@harness-desktop/dsh-session'
+import JsonlSessionPersistence from '@harness-desktop/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'workspace-context-resume-snapshots/offline-edit')
@@ -54,6 +54,7 @@ function closedTurn(): SessionEvent[] {
 describe('session format guard through the assembled app', () => {
   it('refuses to resume a newer-format log, naming the upgrade direction and the raw log path', async () => {
     let sessionPath = ''
+    let sessionRelativePath = ''
     const result = await runLoaderSmoke({
       label: 'newer-format resume refusal',
       tempDirPrefix: 'dsh-format-guard-version-',
@@ -64,8 +65,9 @@ describe('session format guard through the assembled app', () => {
       tsconfigPath,
       env: { DSH_SNAPSHOT_FILE: replayFixture },
       expectedExitCode: 1,
-      prepare: async (runCwd) => {
-        sessionPath = await seedSession(join(runCwd, '.sessions'), runCwd, SESSION_FORMAT_VERSION + 99, closedTurn())
+      prepare: async (runCwd, harnessHome) => {
+        sessionPath = await seedSession(join(harnessHome, 'sessions'), runCwd, SESSION_FORMAT_VERSION + 99, closedTurn())
+        sessionRelativePath = relative(harnessHome, sessionPath)
       },
     })
     expect(result.stderr).toContain(
@@ -74,11 +76,12 @@ describe('session format guard through the assembled app', () => {
     // macOS reports the temp dir via the /private symlink parent; assert the
     // stable path suffix instead of the realpath-dependent prefix.
     expect(result.stderr).toContain('(raw log: ')
-    expect(result.stderr).toContain(sessionPath.slice(sessionPath.indexOf('/.sessions/')))
+    expect(result.stderr).toContain(sessionRelativePath)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('refuses to resume a log with an unknown required event type', async () => {
     let sessionPath = ''
+    let sessionRelativePath = ''
     const result = await runLoaderSmoke({
       label: 'unknown-event resume refusal',
       tempDirPrefix: 'dsh-format-guard-event-',
@@ -89,11 +92,12 @@ describe('session format guard through the assembled app', () => {
       tsconfigPath,
       env: { DSH_SNAPSHOT_FILE: replayFixture },
       expectedExitCode: 1,
-      prepare: async (runCwd) => {
-        sessionPath = await seedSession(join(runCwd, '.sessions'), runCwd, SESSION_FORMAT_VERSION, [
+      prepare: async (runCwd, harnessHome) => {
+        sessionPath = await seedSession(join(harnessHome, 'sessions'), runCwd, SESSION_FORMAT_VERSION, [
           ...closedTurn(),
           { type: 'future/event', seq: 2, time: 3, data: { payload: 1 } } as unknown as SessionEvent,
         ])
+        sessionRelativePath = relative(harnessHome, sessionPath)
       },
     })
     expect(result.stderr).toContain(
@@ -102,6 +106,6 @@ describe('session format guard through the assembled app', () => {
     // macOS reports the temp dir via the /private symlink parent; assert the
     // stable path suffix instead of the realpath-dependent prefix.
     expect(result.stderr).toContain('(raw log: ')
-    expect(result.stderr).toContain(sessionPath.slice(sessionPath.indexOf('/.sessions/')))
+    expect(result.stderr).toContain(sessionRelativePath)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

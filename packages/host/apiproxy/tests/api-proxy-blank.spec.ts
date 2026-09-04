@@ -8,20 +8,20 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import { CommandId } from '@deepseek-ai/dsh-commands/brand'
+import { Context } from '@harness-desktop/cordis'
+import AgentRegistry from '@harness-desktop/dsh-agent'
+import type { Agent } from '@harness-desktop/dsh-agent'
+import SessionStore from '@harness-desktop/dsh-session'
+import type { Session } from '@harness-desktop/dsh-session'
+import UserQuestionService from '@harness-desktop/dsh-user-questions'
+import { CommandId } from '@harness-desktop/dsh-commands/brand'
 // Side-effect type imports: the knob-event SessionEventMap merges.
-import type {} from '@deepseek-ai/dsh-permission-presets'
-import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import type {} from '@deepseek-ai/dsh-user-approval'
-import type { ApiProxy, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import type {} from '@harness-desktop/dsh-permission-presets'
+import type {} from '@harness-desktop/dsh-sandbox-policy'
+import type {} from '@harness-desktop/dsh-user-approval'
+import type { ApiProxy, RpcRequest } from '@harness-desktop/dsh-host-apiproxy/api'
+import { RpcId } from '@harness-desktop/dsh-host-apiproxy/api/rpc'
+import { createApiProxy } from '@harness-desktop/dsh-host-apiproxy'
 
 let nextRpc = 1
 function request<P>(payload: P): RpcRequest<P> {

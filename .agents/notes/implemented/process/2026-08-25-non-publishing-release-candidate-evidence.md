@@ -1,0 +1,33 @@
+# Agent Note: Non-publishing release-candidate evidence
+
+Status: implemented
+
+English | [中文](2026-08-25-non-publishing-release-candidate-evidence.zh.md)
+
+## Problem
+
+The [Desktop artifact matrix](../feature/2026-08-16-desktop-release-config.md) packages without publication, and the [shared signed-update policy](../architecture/2026-08-24-shared-signed-update-policy.md) verifies one consumer target without choosing between compatible formats. Release readiness still needs deterministic signed metadata, proof against the exact local artifact bytes, native-format ownership, and updater rollback checks. Giving pull-request jobs release credentials or dormant publication commands would make evidence collection capable of changing external release state.
+
+## Decision
+
+`scripts/release/build-update-manifest.ts` separates candidate inventory from signing. `inventoryUpdateArtifacts()` receives no signing material, reads and inspects every caller-named artifact, derives its SHA-256 digest and sorted archive members, and admits each target through `verifySignedUpdateManifest()` with an ephemeral in-memory key. Its immutable, nominal validated result contains no artifact path or candidate bytes. Only after that phase succeeds does `writeUpdateManifests()` read the caller's Ed25519 private-key file; `buildUpdateManifests()` accepts only the validated inventory and private-key bytes, so it cannot invoke a candidate inspector or reopen an artifact path. The signer emits one manifest for each channel, consumer, platform, architecture, and format, places exactly one selectable artifact in each manifest, and verifies the production-key result through the shared policy. Every manifest uses `io.github.naipi11.harness-desktop`; Linux AppImage and Deb endpoints remain separate instead of adding a format preference to the shared policy. The writer then reserves a new final output root with one exclusive `mkdir`, writes the complete set to a private inner stage, and renames that stage to `ready`; only paths under `ready/` are complete manifest sets. Losing the root reservation leaves the competing output untouched. A later failure removes only the owned stage and attempts only a non-recursive removal of the reserved root, so other content prevents deletion.
+
+`scripts/release/verify-update-manifests.ts` reads a caller-supplied Ed25519 public-key file and invokes the shared parser and signature verifier before enforcing the release layout: the signed manifest must contain exactly one artifact matching the expected channel, consumer, platform, architecture, and format. It reads the named artifact once and rejects a SHA-256 mismatch before archive parsing or native tool invocation. Path-based inspectors receive a private file containing that exact snapshot, while ZIP inspection consumes the bytes in memory. AppImage inspection validates the type-2 ELF header, slices the embedded SquashFS bytes into a non-executable private file, and passes only that filesystem snapshot to the runner-owned `7z` parser with a minimal environment. `scripts/release/verify-desktop-artifacts.ts` reuses the same AppImage snapshot inspector instead of invoking the candidate's self-extraction command. ZIP and tar inspection is portable; NSIS, DMG, AppImage, and Deb inspection uses the matching native runner. The scripts neither download artifacts nor retain a release location, key, signature, or manifest fixture in the repository.
+
+`.github/workflows/desktop-artifacts.yml` remains credential-free and runs Builder with `--publish never`. Windows owns NSIS and CLI ZIP evidence, macOS owns universal DMG and CLI tar evidence with `lipo` inspection, and Linux owns AppImage, Deb, and CLI tar evidence. Each runner invokes the tested `verify-node-runtime-archive.ts` command to check the repository-pinned filename and SHA-256 before the standalone builder may extract it, then runs Desktop and CLI updater or rollback checks after packaging. The workflow audit requires that exact command in the required order, so an echoed marker is not evidence. The Windows host does not stand in for the macOS or Linux jobs.
+
+`.github/workflows/release-candidates.yml` is manual-dispatch-only. Its `sign-windows`, `notarize-macos`, `sign-update-manifests`, `publish-npm`, and `create-github-release` inputs default to false. The sole job checks out source without persisted credentials, then runs the tested `select-release-candidate-operation.mjs` command, which rejects any count other than one and reports the selected future operation without performing it. The workflow has no permission, release environment, credential, signing, notarization, publication, upload, or GitHub Release step, and its audit requires the exact validator command and input mapping.
+
+## Alternatives considered
+
+**Put every compatible format in one consumer manifest.** Rejected. The shared policy deliberately has no format preference, so two compatible artifacts are ambiguous. Separate target-format manifests keep selection explicit at the configured endpoint.
+
+**Trust a checksum downloaded beside the Node archive.** Rejected. Files from one runtime source share the same trust path. The workflow reads the pinned SHA-256 from the repository and compares it before extraction or use.
+
+**Commit fixture keys or make candidate jobs dormant behind false inputs.** Rejected. Committed signing material is reusable secret state, while dormant external commands still enlarge the workflow's authority. Tests generate temporary keys and artifacts; the candidate workflow validates isolation only.
+
+**Run AppImage self-extraction before or after loading the signing key.** Rejected. The candidate controls its executable behavior, and environment scrubbing does not make that behavior an archive parser. The credential-free phase passes only extracted SquashFS bytes to a fixed parser, while the signing phase has no candidate path.
+
+## Consequences
+
+Release evidence is reproducible and non-publishing: the exact local artifact, target identity, signature, digest, members, rollback version, and native smoke checks must agree before a candidate can advance. A future release implementation must add external operations under a separately reviewed authorization change; this workflow cannot sign, notarize, publish, upload updates, or create a GitHub Release. Native verification still depends on each operating-system runner and does not turn one host's result into cross-platform proof. Linux AppImage inspection requires the runner's full `7z` parser and accepts the type-2 ELF plus SquashFS format produced by the Desktop builder.

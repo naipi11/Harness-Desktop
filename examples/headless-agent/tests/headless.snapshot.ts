@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   normalizeSessionLog,
   normalizeStdout,
@@ -12,12 +12,12 @@ import {
   tokenizeSessionFixtureCwd,
   type HarvestedLog,
   type NormalizeContext,
-} from '@deepseek-ai/dsh-acp-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+} from '@harness-desktop/dsh-acp-snapshot'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@harness-desktop/dsh-loader-smoke'
 import {
   decompressZstdFrame,
   scanZstdFrames,
-} from '@deepseek-ai/dsh-session-persistence-jsonl/src/zstd.ts'
+} from '@harness-desktop/dsh-session-persistence-jsonl/src/zstd.ts'
 import { describe, expect, it } from 'vitest'
 
 const snapshotsDir = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
@@ -50,14 +50,15 @@ const settlementConfigPath = fileURLToPath(new URL('../subagent-settlement.cordi
 const startupFailureConfigPath = fileURLToPath(new URL('./fixtures/startup-activation-error/cordis.yml', import.meta.url))
 const startupFailureExpected = join(snapshotsDir, 'startup-activation-error', 'stderr.expected.txt')
 const binScript = fileURLToPath(new URL('./fixtures/headless-driver.ts', import.meta.url))
-const dshBinScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 const reasoningConfigPath = fileURLToPath(new URL('./fixtures/cli.cordis.yml', import.meta.url))
 const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-defaults.cordis.yml', import.meta.url))
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
+const headlessConfigPath = fileURLToPath(new URL('../cordis.yml', import.meta.url))
 const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.expected.jsonl')
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
 const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
+const preparedHeadlessOverlayArg = join('.harness-home', 'headless-profile.cordis.yml')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 interface JsonObject {
@@ -199,7 +200,8 @@ async function readPersistedLog(file: string): Promise<string> {
   return Buffer.concat(decoded).toString('utf8')
 }
 
-async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions')): Promise<PersistedLog[]> {
+async function persistedLogs(harnessHome: string): Promise<PersistedLog[]> {
+  const root = join(harnessHome, 'sessions')
   const files = (await readdir(root, { recursive: true }))
     .filter(file => file.endsWith('.jsonl') || file.endsWith('.jsonl.zstd'))
   return Promise.all(files.map(async (file) => {
@@ -208,34 +210,40 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
   }))
 }
 
-/** Install the keyless product-CLI adapter into the temporary headless profile. */
-async function prepareCliMockFixture(cwd: string): Promise<void> {
-  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+/** Install the keyless adapter and config under the internal driver's Harness home. */
+async function prepareCliMockFixture(_cwd: string, harnessHome: string): Promise<void> {
+  const fixtureDir = join(harnessHome, 'snapshot-fixtures')
+  const mockPath = join(fixtureDir, 'cli-mock-llm.ts')
   await mkdir(fixtureDir, { recursive: true })
+  const overlay = (await readFile(headlessOverlayPath, 'utf8'))
+    .replace('./snapshot-fixtures/cli-mock-llm.ts', pathToFileURL(mockPath).href)
   await Promise.all([
-    copyFile(cliMockLlmPluginPath, join(fixtureDir, 'cli-mock-llm.ts')),
+    copyFile(cliMockLlmPluginPath, mockPath),
+    writeFile(join(harnessHome, 'headless-profile.cordis.yml'), overlay),
     writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
   ])
 }
 
 describe('headless stream-json snapshots', () => {
-  it('runs one task through the product headless profile command', async () => {
-    const task = 'Prove the product headless profile path with one real tool round trip.'
+  it('runs one task through the internal headless composition', async () => {
+    const task = 'Prove the internal headless composition path with one real tool round trip.'
     const result = await runLoaderSmoke({
-      label: 'product headless profile snapshot',
+      label: 'internal headless composition snapshot',
       tempDirPrefix: 'headless-snapshot-profile-',
-      binScript: dshBinScript,
-      configPath: headlessOverlayPath,
-      binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, task],
+      binScript,
+      libBinScript: binScript,
+      configPath: headlessConfigPath,
+      binArgs: [headlessConfigPath, task],
       tsconfigPath,
       env: {
         DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_HEADLESS_TEST_OVERLAY: preparedHeadlessOverlayArg,
         DSH_TELEMETRY_DISABLED: '1',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: prepareCliMockFixture,
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
@@ -244,33 +252,48 @@ describe('headless stream-json snapshots', () => {
         if (refreshing) await writeFile(headlessSessionExpected, session)
         expect(session).toBe(await readFile(headlessSessionExpected, 'utf8'))
         expect(session).toContain(task)
-        expect(session).toContain('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP')
+        expect(session).toContain('CLI tool round trip complete: Updated todo list: 1 pending, 0 in progress, 0 completed.')
       },
     })
 
-    expect(result.stdout).toBe('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP\n')
     expect(result.stderr).toBe('')
+    expect(parseJsonl(result.stdout).at(-1)).toMatchObject({
+      type: 'result',
+      output: 'CLI tool round trip complete: Updated todo list: 1 pending, 0 in progress, 0 completed.',
+    })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('prints a terminal model failure through the product headless profile command', async () => {
+  it('persists a terminal model failure through the internal headless composition', async () => {
+    let diagnostic = ''
     const result = await runLoaderSmoke({
-      label: 'product headless profile model failure snapshot',
+      label: 'internal headless composition model failure snapshot',
       tempDirPrefix: 'headless-snapshot-profile-failure-',
-      binScript: dshBinScript,
-      configPath: headlessOverlayPath,
-      binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, 'Trigger the keyless model failure.'],
+      binScript,
+      libBinScript: binScript,
+      configPath: headlessConfigPath,
+      binArgs: [headlessConfigPath, 'Trigger the keyless model failure.'],
       tsconfigPath,
-      expectedExitCode: 1,
       env: {
         DSH_CLI_MOCK_FAILURE: '1',
+        DSH_HEADLESS_TEST_OVERLAY: preparedHeadlessOverlayArg,
         DSH_TELEMETRY_DISABLED: '1',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: prepareCliMockFixture,
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const end = records.findLast(record => record.type === 'turn/end')
+        const reason = (end?.data as JsonObject | undefined)?.reason as JsonObject | undefined
+        const failure = (reason?.failure ?? reason?.error) as JsonObject | undefined
+        diagnostic = `dsh: ${String(failure?.code)}: ${String(failure?.message)}\n`
+      },
     })
 
-    expect(result.stdout).toBe('\n')
-    await expect(result.stderr).toMatchFileSnapshot(headlessFailureExpected)
+    expect(result.stderr).toBe('')
+    expect(parseJsonl(result.stdout).at(-1)).toMatchObject({ type: 'result', output: '' })
+    expect(diagnostic).toBe(await readFile(headlessFailureExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('prints the original Loader activation error through the assembled one-shot app', async () => {
@@ -305,8 +328,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const records = parseJsonl(logs[0]?.content ?? '')
         const retries = records.filter(record => record.type === 'llm/retry')
@@ -347,8 +370,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('compaction snapshot did not persist its session')
@@ -594,8 +617,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(3)
         const parents = logs.filter(log => typeof log.header.parentSession !== 'string')
         expect(parents).toHaveLength(1)
@@ -663,8 +686,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const records = parseJsonl(logs[0]?.content ?? '')
         const calls = records.filter(record => record.type === 'tool/call')
@@ -724,8 +747,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(3)
         const parent = logs.find(log => typeof log.header.parentSession !== 'string')
         if (parent === undefined) throw new Error('Ralph snapshot did not persist its parent session')
@@ -804,8 +827,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(2)
         const parent = logs.find(log => typeof log.header.parentSession !== 'string')
         const child = logs.find(log => typeof log.header.parentSession === 'string')
@@ -872,8 +895,8 @@ describe('headless stream-json snapshots', () => {
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: (cwd) => { runCwd = cwd },
-      inspect: async (cwd) => {
-        const logs = await persistedLogs(cwd)
+      inspect: async (_cwd, harnessHome) => {
+        const logs = await persistedLogs(harnessHome)
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('headless PTY snapshot did not persist its session')

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import WebRuntime from '@deepseek-ai/dsh-web'
-import { ExaSearchProvider, EXA_PROVIDER_ID } from '@deepseek-ai/dsh-web-search-exa'
-import * as exaPlugin from '@deepseek-ai/dsh-web-search-exa'
+import { Context } from '@harness-desktop/cordis'
+import WebRuntime from '@harness-desktop/dsh-web'
+import { ExaSearchProvider, EXA_PROVIDER_ID } from '@harness-desktop/dsh-web-search-exa'
+import * as exaPlugin from '@harness-desktop/dsh-web-search-exa'
 import { mapExaResponse, mapExaResult } from '../src/provider.ts'
 
 const options = { apiKey: 'exa-key', baseURL: 'https://api.exa.test', searchType: 'auto' as const, highlightsPerResult: 1 }

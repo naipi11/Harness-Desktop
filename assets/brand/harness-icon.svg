@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Original Harness artwork; no DeepSeek-derived assets. -->
+  <style>
+    :root {
+      --whale-primary: #7166e8;
+      --whale-shadow: #493ca7;
+      --whale-highlight: #f5a8c9;
+      --star: #ffd978;
+      --background: #edf0ff;
+    }
+  </style>
+  <defs>
+    <linearGradient id="whale-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--whale-primary)" />
+      <stop offset="1" stop-color="var(--whale-shadow)" />
+    </linearGradient>
+    <radialGradient id="whale-glow" cx="0.34" cy="0.28" r="0.72">
+      <stop offset="0" stop-color="var(--whale-highlight)" stop-opacity="0.72" />
+      <stop offset="1" stop-color="var(--whale-highlight)" stop-opacity="0" />
+    </radialGradient>
+    <symbol id="whale-silhouette" viewBox="0 0 1024 1024">
+      <path d="M245 348C301 245 441 191 589 221C724 249 814 339 817 454C819 530 779 595 710 635C642 674 543 689 445 675C333 660 248 611 214 541C184 479 195 407 245 348Z" fill="url(#whale-body)" />
+      <path d="M756 332C811 286 870 285 919 319C891 331 871 352 860 381C891 373 921 382 945 407C893 437 836 429 790 390Z" fill="var(--whale-shadow)" />
+      <path d="M484 645C541 648 596 634 642 606C626 680 571 727 500 730C459 731 425 716 405 687C436 685 463 671 484 645Z" fill="var(--whale-shadow)" />
+      <path d="M235 473C280 507 329 519 384 509C452 497 505 455 543 382C564 460 545 525 486 576C428 626 348 635 283 599C236 572 210 530 205 475C217 478 227 477 235 473Z" fill="var(--whale-highlight)" opacity="0.34" />
+      <path d="M312 338C374 270 473 247 566 266C455 274 370 321 310 406C286 440 270 477 261 518C235 454 251 393 312 338Z" fill="url(#whale-glow)" />
+      <circle cx="650" cy="397" r="22" fill="var(--background)" />
+      <circle cx="656" cy="392" r="8" fill="var(--whale-shadow)" />
+      <circle cx="385" cy="420" r="30" fill="var(--whale-highlight)" opacity="0.86" />
+      <circle cx="408" cy="414" r="12" fill="var(--background)" opacity="0.5" />
+      <path d="M638 518C670 537 706 537 737 516C723 553 688 572 655 560C639 554 627 542 619 527Z" fill="var(--background)" opacity="0.92" />
+    </symbol>
+    <symbol id="star-large" viewBox="0 0 100 100">
+      <path d="M50 4L61 37L96 50L61 62L50 96L38 62L4 50L38 37Z" fill="var(--star)" />
+    </symbol>
+    <symbol id="mark-full" viewBox="0 0 1024 1024">
+      <circle cx="512" cy="512" r="474" fill="var(--background)" />
+      <use href="#whale-silhouette" />
+      <use href="#star-large" x="128" y="214" width="104" height="104" />
+      <use href="#star-large" x="102" y="335" width="68" height="68" />
+      <use href="#star-large" x="174" y="134" width="48" height="48" />
+    </symbol>
+    <symbol id="mark-compact" viewBox="0 0 1024 1024">
+      <circle cx="512" cy="512" r="488" fill="var(--background)" />
+      <use href="#whale-silhouette" x="-62" y="-34" width="1138" height="1138" />
+      <use href="#star-large" x="100" y="190" width="148" height="148" />
+    </symbol>
+    <symbol id="theme-light" viewBox="0 0 1024 1024">
+      <use href="#mark-full" />
+    </symbol>
+    <symbol id="theme-dark" viewBox="0 0 1024 1024" style="--background: #211d46; --whale-primary: #9187ff; --whale-shadow: #6558c7; --whale-highlight: #ffb4d2; --star: #ffe296">
+      <use href="#mark-full" />
+    </symbol>
+  </defs>
+  <use id="source-preview" href="#mark-full" />
+</svg>

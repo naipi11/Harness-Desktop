@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-schema-form`.
- * @module @deepseek-ai/dsh-client-schema-form/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-client-schema-form`.
+ * @module @harness-desktop/dsh-client-schema-form/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-schema-form'
+const PACKAGE_NAME = '@harness-desktop/dsh-client-schema-form'
 
 /** Cordis companion plugin name. */
 export const name = 'client-schema-form-invariant'

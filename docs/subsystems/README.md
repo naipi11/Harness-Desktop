@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 One page per subsystem of the DeepSeek Harness: what it is, the data structures it moves, and — where a `ctx` service or event scope backs it — a generated **Cordis API** section carrying its service and event reference. The folder complements [architecture.md](../architecture.md), which describes *behavior* across subsystems (the service map, the session/turn/step lifecycle, the event taxonomy); each page here is the reference for one subsystem's vocabulary and wiring.
 
+The host-level [local Runtime package](../../packages/host/local-runtime/README.md) composes these subsystems under one `HARNESS_HOME` owner; it is a package contract rather than another generated Cordis subsystem page. The [product topology decision](../../.agents/notes/implemented/architecture/2026-08-15-harness-desktop-product-topology.md) owns why terminal, Web, and Desktop layers share that process.
+
 | Page | Owns |
 |---|---|
 | [core.md](core.md) | how `packages/core` controls the agent loop: the package-by-package loop description, agent creation and ownership (`AgentHandle`), the `Agent` handle's delivery/cancellation/interception contracts, and the repo-wide type patterns (`…Map → derived-union`, branded ids) |

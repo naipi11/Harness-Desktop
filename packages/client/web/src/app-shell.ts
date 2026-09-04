@@ -3,12 +3,12 @@
  * graph and shell registry; there is no npm package behind it.
  */
 import type { ReactNode } from 'react'
-import type { Context } from '@deepseek-ai/cordis'
-import { createSlotRenderer } from '@deepseek-ai/dsh-client-web-react'
+import type { Context } from '@harness-desktop/cordis'
+import { createSlotRenderer } from '@harness-desktop/dsh-client-web-react'
 import { buildRenderApp } from './app.tsx'
 
 /** Shell-owned pseudo entry id under which the host graph mounts this plugin. */
-export const APP_SHELL_ID = '@deepseek-ai/dsh-client-app-shell'
+export const APP_SHELL_ID = '@harness-desktop/dsh-client-app-shell'
 
 /** The assembled-UI face AppRoot renders once the boot settles. */
 export interface AppShellService {
@@ -16,7 +16,7 @@ export interface AppShellService {
   renderApp: () => ReactNode
 }
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     /** The shell assembly face, provided by the app-shell entry once its inject set is active. */
     appShell: AppShellService
@@ -27,7 +27,7 @@ declare module '@deepseek-ai/cordis' {
 export const name = 'app-shell'
 
 /** Services required before shell assembly. */
-export const inject = ['slots', 'sessions', 'layout']
+export const inject = ['slots', 'sessions', 'workspaces', 'layout']
 
 /** Installs the React renderer and exposes the assembled application.
  * @param ctx - Plugin context.

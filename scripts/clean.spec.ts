@@ -1,9 +1,28 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RepositoryCleaner } from './clean.ts'
+
+const fsCalls = vi.hoisted(() => ({
+  rm: vi.fn(),
+  unlink: vi.fn(),
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      fsCalls.rm(...args)
+      return actual.rm(...args)
+    },
+    unlink: async (...args: Parameters<typeof actual.unlink>) => {
+      fsCalls.unlink(...args)
+      return actual.unlink(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 
@@ -29,6 +48,8 @@ function addProject(root: string, path: string, outDir = 'lib/types'): void {
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  fsCalls.rm.mockClear()
+  fsCalls.unlink.mockClear()
 })
 
 describe('RepositoryCleaner', () => {
@@ -89,5 +110,31 @@ describe('RepositoryCleaner', () => {
     await expect(new RepositoryCleaner(root).clean()).rejects.toThrow('outside repository')
 
     expect(existsSync(join(externalProject, 'lib/types/index.js'))).toBe(true)
+  })
+
+  it('unlinks a link-shaped output without deleting its external target', async () => {
+    const root = fixture()
+    const externalOutput = fixture()
+    write(join(root, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: { noEmit: true },
+      files: ['src/index.ts'],
+    }))
+    write(join(root, 'src/index.ts'), 'export {}\n')
+    write(join(externalOutput, 'sentinel.txt'), 'preserve me\n')
+    mkdirSync(join(root, 'apps/desktop'), { recursive: true })
+    symlinkSync(
+      externalOutput,
+      join(root, 'apps/desktop/out'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+
+    const link = join(root, 'apps/desktop/out')
+
+    await new RepositoryCleaner(root).clean()
+
+    expect(fsCalls.unlink).toHaveBeenCalledWith(link)
+    expect(fsCalls.rm).not.toHaveBeenCalledWith(link, expect.anything())
+    expect(existsSync(link)).toBe(false)
+    expect(existsSync(join(externalOutput, 'sentinel.txt'))).toBe(true)
   })
 })

@@ -1,18 +1,18 @@
-# @deepseek-ai/dsh-acp-demo
+# @harness-desktop/dsh-acp-demo
 
 English | [中文](README.zh.md)
 
-ACP automation server app: the default agent spine, client-created agents through [`@deepseek-ai/dsh-acp`](../../acp/acp/README.md), JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin. Programmatic clients create fresh sessions; this package mounts no human UI.
+ACP automation server app: the default agent spine, client-created agents through [`@harness-desktop/dsh-acp`](../../acp/acp/README.md), JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin. Programmatic clients create fresh sessions; this package mounts no human UI.
 
 ## Composition
 
 | Plugin | Role |
 |---|---|
-| `@deepseek-ai/dsh-agent-spine-demo` | Providerless agent spine with no pre-created agents; `session/new` creates each agent. |
-| `@deepseek-ai/dsh-session-persistence-jsonl` | Durable session logs used by checkpointing, observability, and snapshot replay. |
-| `@deepseek-ai/dsh-session-checkpoint-policy` | Durability barriers before model calls and top-level tool effects, plus completed-step checkpoints. |
-| `@deepseek-ai/dsh-session-query-sqlite` | Derived exact/FTS session-query service, opened before the ACP transport so leaf consumers are ready for the first model request. |
-| `@deepseek-ai/dsh-acp` | Automation-only ACP transport over stdin/stdout. |
+| `@harness-desktop/dsh-agent-spine-demo` | Providerless agent spine with no pre-created agents; `session/new` creates each agent. |
+| `@harness-desktop/dsh-session-persistence-jsonl` | Durable session logs used by checkpointing, observability, and snapshot replay. |
+| `@harness-desktop/dsh-session-checkpoint-policy` | Durability barriers before model calls and top-level tool effects, plus completed-step checkpoints. |
+| `@harness-desktop/dsh-session-query-sqlite` | Derived exact/FTS session-query service, opened before the ACP transport so leaf consumers are ready for the first model request. |
+| `@harness-desktop/dsh-acp` | Automation-only ACP transport over stdin/stdout. |
 
 The app does not install commands, user interaction, session navigation, configuration pickers, or a stdout logger. It owns these plugins through one ordered effect so the query service is ready before ACP accepts work and ACP sessions quiesce before checkpointing and persistence detach. Leaf configurations supply LLM, executor, sandbox, approval, filesystem, and model-facing tool plugins.
 
@@ -26,7 +26,7 @@ The app does not install commands, user interaction, session navigation, configu
 | `persona` | — | Deployment persona template for `dsh-system-prompt`. |
 | `toolOrder` | lexicographic | Explicit model-facing tool order for `dsh-system-prompt`. |
 | `tools` | `{ mode: 'native' }` | Native, Code Mode, or combined model tool transport. |
-| `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home shared by bash and local skill discovery. |
+| `harnessHome` | injected absolute path | Harness home shared by bash and local skill discovery. |
 | `sessionTitle` | spine example limits | Durable fallback-title limits; titles remain off the ACP wire. |
 | `persistenceRoot` | `./.sessions` | JSONL backend root and parent directory of the derived `session-query.db` index. |
 | `packChunks` | `true` | Pack consecutive delta-chunk events in storage. |

@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-workflow-worker-thread",
+  "name": "@harness-desktop/dsh-workflow-worker-thread",
   "description": "worker-thread workflow engine: executes model-written orchestration scripts off the host event loop, bridging agent() calls back to ctx.subagents",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/workflow/workflow-worker-thread"
   },
   "type": "module",
@@ -37,33 +37,33 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-workflow": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-brand": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-subagent": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/dsh-workflow": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@harness-desktop/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-spawn-in-process": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-workflow": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-agent-loop": "workspace:^",
+    "@harness-desktop/dsh-agent-loop-testkit": "workspace:^",
+    "@harness-desktop/dsh-brand": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-subagent": "workspace:^",
+    "@harness-desktop/dsh-subagent-spawn-in-process": "workspace:^",
+    "@harness-desktop/dsh-system-prompt": "workspace:^",
+    "@harness-desktop/dsh-tools": "workspace:^",
+    "@harness-desktop/dsh-workflow": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "tsx": "^4.19.2"
   }
 }

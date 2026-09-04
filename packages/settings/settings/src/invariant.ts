@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-settings`.
- * @module @deepseek-ai/dsh-settings/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-settings`.
+ * @module @harness-desktop/dsh-settings/invariant
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantFailure, InvariantInstaller } from '@harness-desktop/dsh-invariants'
 import { deepEqualJson } from './index.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-settings'
+const PACKAGE_NAME = '@harness-desktop/dsh-settings'
 
 /** Cordis companion plugin name. */
 export const name = 'settings-invariant'

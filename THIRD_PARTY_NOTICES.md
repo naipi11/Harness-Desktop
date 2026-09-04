@@ -11,19 +11,19 @@ The complete npm transitive closure, including the Landlock launcher workspace, 
 
 ## Vendored source (`vendor/`)
 
-The Cordis framework and its foundation libraries are source-vendored into this repository rather than consumed from npm, and republished under the `@deepseek-ai` scope. All are MIT-licensed; each directory preserves its upstream `LICENSE` file. Exact upstream commits and local modifications are recorded in [`vendor/README.md`](vendor/README.md).
+The Cordis framework and its foundation libraries are source-vendored into this repository rather than consumed from npm, and republished under the `@harness-desktop` scope. All are MIT-licensed; each directory preserves its upstream `LICENSE` file. Exact upstream commits and local modifications are recorded in [`vendor/README.md`](vendor/README.md).
 
 | Package | Upstream name | Upstream | License |
 | --- | --- | --- | --- |
-| `@deepseek-ai/cosmokit` | `cosmokit` | [github.com/deepseek-harness/cosmokit](https://github.com/deepseek-harness/cosmokit) | MIT |
-| `@deepseek-ai/schemastery` | `schemastery` | [github.com/deepseek-harness/schemastery](https://github.com/deepseek-harness/schemastery) | MIT |
-| `@deepseek-ai/cordis` | `cordis` | [github.com/cordiverse/cordis](https://github.com/cordiverse/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-loader` | `@cordisjs/plugin-loader` | [github.com/cordiverse/cordis](https://github.com/cordiverse/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-include` | `@cordisjs/plugin-include` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-group` | `@cordisjs/plugin-group` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-timer` | `@cordisjs/plugin-timer` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
-| `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
+| `@harness-desktop/cosmokit` | `cosmokit` | [github.com/deepseek-harness/cosmokit](https://github.com/deepseek-harness/cosmokit) | MIT |
+| `@harness-desktop/schemastery` | `schemastery` | [github.com/deepseek-harness/schemastery](https://github.com/deepseek-harness/schemastery) | MIT |
+| `@harness-desktop/cordis` | `cordis` | [github.com/cordiverse/cordis](https://github.com/cordiverse/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-loader` | `@cordisjs/plugin-loader` | [github.com/cordiverse/cordis](https://github.com/cordiverse/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-include` | `@cordisjs/plugin-include` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-group` | `@cordisjs/plugin-group` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-timer` | `@cordisjs/plugin-timer` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
+| `@harness-desktop/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 
 ## Runtime npm dependencies
 
@@ -59,6 +59,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
+| [`ink`](https://github.com/vadimdemedes/ink) | MIT |
 | [`js-yaml`](https://github.com/nodeca/js-yaml) | MIT |
 | [`katex`](https://github.com/KaTeX/KaTeX) | MIT |
 | [`koffi`](https://github.com/Koromix/koffi) | MIT |
@@ -77,11 +78,13 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`node-addon-require-builtin`](https://www.npmjs.com/package/node-addon-require-builtin) | MIT |
 | [`node-pty`](https://github.com/microsoft/node-pty) | MIT |
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
+| [`proper-lockfile`](https://github.com/moxystudio/node-proper-lockfile) | MIT |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
 | [`supports-color`](https://github.com/chalk/supports-color) | MIT |
+| [`tar`](https://github.com/isaacs/node-tar) | BlueOak-1.0.0 |
 | [`tsx`](https://github.com/privatenumber/tsx) | MIT |
 | [`turndown`](https://github.com/mixmark-io/turndown) | MIT |
 | [`typescript`](https://github.com/microsoft/TypeScript) | Apache-2.0 |
@@ -120,9 +123,12 @@ External packages **directly declared** only by repository tooling, test infrast
 | Package | License |
 | --- | --- |
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
+| [`@electron/asar`](https://github.com/electron/asar) | MIT |
+| [`@fiahfy/icns`](https://github.com/fiahfy/icns) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@openai/codex`](https://github.com/openai/codex) | Apache-2.0 |
+| [`@playwright/test`](https://github.com/microsoft/playwright) | Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |
 | [`@testing-library/dom`](https://github.com/testing-library/dom-testing-library) | MIT |
 | [`@testing-library/react`](https://github.com/testing-library/react-testing-library) | MIT |
@@ -139,10 +145,14 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`@vitejs/plugin-react`](https://github.com/vitejs/vite-plugin-react) | MIT |
 | [`@vitest/coverage-v8`](https://github.com/vitest-dev/vitest) | MIT |
 | [`@yarnpkg/cli-dist`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
+| [`7zip-bin`](https://github.com/develar/7zip-bin) | MIT |
 | [`cytoscape`](https://github.com/cytoscape/cytoscape.js) | MIT |
 | [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
 | [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
 | [`debug`](https://github.com/debug-js/debug) | MIT |
+| [`electron`](https://github.com/electron/electron) | MIT |
+| [`electron-builder`](https://github.com/electron-userland/electron-builder) | MIT |
+| [`electron-vite`](https://github.com/alex8088/electron-vite) | MIT |
 | [`esbuild`](https://github.com/evanw/esbuild) | MIT |
 | [`eslint-plugin-sonarjs`](https://github.com/SonarSource/SonarJS) | LGPL-3.0-only |
 | [`execa`](https://github.com/sindresorhus/execa) | MIT |
@@ -157,6 +167,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
 | [`oxlint-tsgolint`](https://github.com/oxc-project/tsgolint) | MIT |
 | [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
+| [`png-to-ico`](https://github.com/steambap/png-to-ico) | MIT |
 | [`publint`](https://github.com/publint/publint) | MIT |
 | [`smol-toml`](https://github.com/squirrelchat/smol-toml) | BSD-3-Clause |
 | [`spdx-expression-parse`](https://github.com/jslicense/spdx-expression-parse.js) | MIT |
@@ -189,4 +200,4 @@ Direct dependencies of the `pyproject.toml` manifests, plus `uv` as the developm
 
 ## First-party native packages
 
-`@deepseek-ai/node-addon-landlock-run` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.
+`@harness-desktop/node-addon-landlock-run` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.

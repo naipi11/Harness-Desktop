@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-acp-demo`.
- * @module @deepseek-ai/dsh-acp-demo/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-acp-demo`.
+ * @module @harness-desktop/dsh-acp-demo/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-acp-demo'
+const PACKAGE_NAME = '@harness-desktop/dsh-acp-demo'
 
 /** Cordis companion plugin name. */
 export const name = 'acp-demo-invariant'

@@ -9,13 +9,14 @@
  * capture mode and an outer shutdown deadline: the SDK's export timeout does
  * not bound its preceding `forceFlush()` wait.
  *
- * @module @deepseek-ai/dsh-session-telemetry-otel
+ * @module @harness-desktop/dsh-session-telemetry-otel
  */
 
 import { createRequire } from 'node:module'
-import z from '@deepseek-ai/schemastery'
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-command-feedback'
+import z from '@harness-desktop/schemastery'
+import type { Context } from '@harness-desktop/cordis'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import type {} from '@harness-desktop/dsh-command-feedback'
 import {
   SessionTelemetryBackend,
   SessionTelemetryCoordinator,
@@ -23,9 +24,9 @@ import {
   type SessionTelemetryRecord,
   type SessionTelemetrySeverity,
   type SessionTelemetrySharingStatus,
-} from '@deepseek-ai/dsh-session-telemetry'
-import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
-import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+} from '@harness-desktop/dsh-session-telemetry'
+import { APP_IDENTITY } from '@harness-desktop/dsh-llm'
+import { getOrCreateAnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
 import {
   BatchLogRecordProcessor,
   LoggerProvider,
@@ -145,7 +146,7 @@ const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumbe
  * SDK state and listens only to warn when recorded feedback stays local.
  */
 export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
-  static inject = ['sessions']
+  static inject = ['sessions', 'harnessHome']
   static Config = Config
 
   private readonly directEmit: SessionTelemetrySink['emit']
@@ -171,6 +172,8 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     if (url === undefined || url.length === 0) {
       throw new Error('session-telemetry-otel: exporter.url is required (the full OTLP logs endpoint)')
     }
+    const harnessHome = (ctx as unknown as { harnessHome?: HarnessHome }).harnessHome
+    if (harnessHome === undefined) throw new Error('session-telemetry-otel: harnessHome must be injected before telemetry starts')
     let parsed: URL
     try {
       parsed = new URL(url)
@@ -201,7 +204,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
         // OTel semconv's standard user attribute, carried once per export
         // batch on the Resource rather than per record: the collector
         // aggregates by Resource, and the id is process-stable anyway.
-        'user.id': getOrCreateAnonymousUserId(),
+        'user.id': getOrCreateAnonymousUserId(harnessHome),
       }),
       processors: [
         new BatchLogRecordProcessor({
@@ -216,8 +219,8 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
         }),
       ],
     })
-    const ledger = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel', version)
-    const ops = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel/ops', version)
+    const ledger = this.provider.getLogger('@harness-desktop/dsh-session-telemetry-otel', version)
+    const ops = this.provider.getLogger('@harness-desktop/dsh-session-telemetry-otel/ops', version)
     const enqueue: SessionTelemetrySink['emit'] = (record) => {
       const logger: Logger = record.channel === 'ops' ? ops : ledger
       logger.emit({

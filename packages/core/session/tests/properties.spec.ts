@@ -9,9 +9,9 @@
 
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEventMap, SessionEventType, SurfaceIntent } from '@deepseek-ai/dsh-session'
+import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@harness-desktop/dsh-llm'
+import { Session, SessionId } from '@harness-desktop/dsh-session'
+import type { SessionEventMap, SessionEventType, SurfaceIntent } from '@harness-desktop/dsh-session'
 
 // Each arbitrary supplies its own surface intent; `build` must not synthesize
 // one or the property would fail to exercise malformed fixture choices.

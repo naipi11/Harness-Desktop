@@ -5,9 +5,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebServer, WebRoute } from '@harness-desktop/dsh-host-webserver'
 import { ClientModuleRegistry } from '../src/index.ts'
 
 let root: string | undefined
@@ -38,13 +38,17 @@ function writePackage(
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
-function constructWithRoute(packageNames: string[]): { service: ClientModuleRegistry; route: WebRoute } {
+function constructWithRoute(
+  packageNames: string[],
+  disabledNames: ReadonlySet<string> = new Set(),
+): { service: ClientModuleRegistry; route: WebRoute } {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
     *entries() {
       for (const packageName of packageNames) {
-        yield { options: { name: packageName }, fiber: {}, disabled: false }
+        const disabled = disabledNames.has(packageName)
+        yield { options: { name: packageName }, fiber: disabled ? undefined : {}, disabled }
       }
     },
   })
@@ -69,6 +73,82 @@ function construct(packageNames: string[]): ClientModuleRegistry {
 }
 
 describe('client bundle activation', () => {
+  it('retains the package identity of a built file-URL Host entry', () => {
+    const packageName = '@fixture/built-file-entry'
+    const clientPath = writePackage(packageName)
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    writeFileSync(hostPath, 'module.exports = {}\n')
+
+    expect(construct([pathToFileURL(hostPath).href]).graph().entries.map(entry => entry.id))
+      .toEqual([packageName])
+  })
+
+  it('keeps one package row while another built file entry for that package is disabled', () => {
+    const packageName = '@fixture/built-file-aliases'
+    const clientPath = writePackage(packageName)
+    const firstHostPath = join(dirname(clientPath), 'index.js')
+    const secondHostPath = join(dirname(clientPath), 'secondary.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    writeFileSync(firstHostPath, 'module.exports = {}\n')
+    writeFileSync(secondHostPath, 'module.exports = {}\n')
+    const firstEntry = pathToFileURL(firstHostPath).href
+    const secondEntry = pathToFileURL(secondHostPath).href
+
+    const { service } = constructWithRoute([firstEntry, secondEntry], new Set([secondEntry]))
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
+  it('ignores an anonymous built package without a Web client declaration', () => {
+    const clientPath = writePackage('@fixture/anonymous-non-client', { name: undefined })
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(hostPath, 'module.exports = {}\n')
+
+    expect(construct([pathToFileURL(hostPath).href]).graph().entries).toEqual([])
+  })
+
+  it('ignores an unresolvable built file entry', () => {
+    writePackage('@fixture/file-entry-anchor', { name: undefined })
+    const missingEntry = pathToFileURL(join(root!, 'missing-package', 'lib', 'index.js')).href
+
+    expect(construct([missingEntry]).graph().entries).toEqual([])
+  })
+
+  it('reports an unrelated malformed built package only on its own dirty pass', () => {
+    const goodName = '@fixture/good-built-entry'
+    const goodClient = writePackage(goodName)
+    const goodHost = join(dirname(goodClient), 'index.js')
+    mkdirSync(dirname(goodClient), { recursive: true })
+    writeFileSync(goodClient, 'module.exports = {}\n')
+    writeFileSync(goodHost, 'module.exports = {}\n')
+
+    const badClient = writePackage('@fixture/malformed-built-entry')
+    const badHost = join(dirname(badClient), 'index.js')
+    mkdirSync(dirname(badClient), { recursive: true })
+    writeFileSync(badHost, 'module.exports = {}\n')
+    writeFileSync(join(dirname(badClient), '..', 'package.json'), '{')
+
+    expect(() => construct([pathToFileURL(badHost).href, pathToFileURL(goodHost).href]))
+      .toThrow('client-modules: 1 client package failed to compose:')
+  })
+
+  it('includes an explicitly client-only package while its Host entry is disabled', () => {
+    const packageName = '@fixture/client-only-disabled-host'
+    const clientPath = writePackage(packageName, {
+      dsh: { client: { platform: 'web', includeWhenDisabled: true } },
+    })
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+
+    const { service } = constructWithRoute([packageName], new Set([packageName]))
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
   it('allows sibling dsh roles', () => {
     const currentName = '@fixture/current-client-field'
     const clientPath = writePackage(currentName, {

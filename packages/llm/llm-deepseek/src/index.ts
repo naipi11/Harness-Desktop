@@ -8,18 +8,19 @@
  * anything, while an in-flight stream keeps the facts it started with. The
  * one registration-captured fact — the retry policy — re-registers the route
  * in place when it changes.
- * @module @deepseek-ai/dsh-llm-deepseek
+ * @module @harness-desktop/dsh-llm-deepseek
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import type { Context } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
+import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@harness-desktop/dsh-llm'
+import type { RetryPolicyConfig } from '@harness-desktop/dsh-llm'
+import { credentialRef } from '@harness-desktop/dsh-credentials'
+import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
+import { deepEqualJson, installSettingsSection, settingsNamespace } from '@harness-desktop/dsh-settings'
+import { MAX_TIMER_DELAY_MS } from '@harness-desktop/dsh-timeout'
+import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
 import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
@@ -39,7 +40,7 @@ export type { RequestDefaults } from './serialize.ts'
 export type * from './types.ts'
 
 export const name = 'llm-deepseek'
-export const inject = ['llm']
+export const inject = ['llm', 'harnessHome']
 
 const NS = settingsNamespace('llm-deepseek')
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
@@ -246,7 +247,11 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   let userId: AnonymousUserId | undefined
-  const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
+  const resolveUserId = (): AnonymousUserId => {
+    const harnessHome = (ctx as unknown as { harnessHome?: HarnessHome }).harnessHome
+    if (harnessHome === undefined) throw new Error('llm-deepseek: harnessHome must be injected before provider requests')
+    return userId ??= getOrCreateAnonymousUserId(harnessHome)
+  }
   const adapter = new DeepSeekAdapter({ options, resolveApiKey, resolveUserId })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },

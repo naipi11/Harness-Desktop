@@ -24,6 +24,9 @@
       "path": "../../util/home-paths"
     },
     {
+      "path": "../../host/local-runtime"
+    },
+    {
       "path": "../../core/tools"
     },
     {

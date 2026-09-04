@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-token-meter
+# @harness-desktop/dsh-token-meter
 
 English | [中文](README.zh.md)
 
@@ -46,8 +46,8 @@ The [Agent Note](../../../.agents/notes/implemented/architecture/2026-07-29-proj
 ## Composition
 
 ```yaml
-- name: '@deepseek-ai/dsh-token-meter'
-- name: '@deepseek-ai/dsh-compaction-basic'
+- name: '@harness-desktop/dsh-token-meter'
+- name: '@harness-desktop/dsh-compaction-basic'
 ```
 
 Both plugins have usable defaults. The meter remains independent of model routing and optional compaction. A deployment configures capacity on its LLM adapter and compaction policy on `dsh-compaction-basic`.

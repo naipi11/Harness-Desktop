@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-tool-bash`.
- * @module @deepseek-ai/dsh-tool-bash/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-tool-bash`.
+ * @module @harness-desktop/dsh-tool-bash/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-tool-bash'
+const PACKAGE_NAME = '@harness-desktop/dsh-tool-bash'
 
 /** Cordis companion plugin name. */
 export const name = 'tool-bash-invariant'

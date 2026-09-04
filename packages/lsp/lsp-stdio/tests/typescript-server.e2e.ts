@@ -9,11 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import Lsp, { type LspQueryRequest, type LspQueryResult } from '@deepseek-ai/dsh-lsp'
-import * as LspLocal from '@deepseek-ai/dsh-lsp-stdio'
+import { Context } from '@harness-desktop/cordis'
+import LocalSubprocessRuntime from '@harness-desktop/dsh-subprocess-local'
+import LocalFileSystem from '@harness-desktop/dsh-fs-local'
+import Lsp, { type LspQueryRequest, type LspQueryResult } from '@harness-desktop/dsh-lsp'
+import * as LspLocal from '@harness-desktop/dsh-lsp-stdio'
 
 // The server binary is a dev dependency of this package; resolve its pnpm-hoisted .bin path.
 const serverBin = join(

@@ -9,7 +9,7 @@
  * the same AST walk as docs/cordis-catalog, so this data and the rendered
  * docs cannot diverge.
  *
- * @module @deepseek-ai/dsh-tool-cordis/api-catalog
+ * @module @harness-desktop/dsh-tool-cordis/api-catalog
  */
 
 /* jscpd:ignore-start */
@@ -212,7 +212,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'agents',
     summary: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain.',
-    description: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain. Agent *creation* is provided by whichever plugin implements the AgentFactory (`@deepseek-ai/dsh-agent-loop`), registered via setFactory.\n\nInitiator methods provide same-process causal attribution only. Ambient presence is neither liveness proof nor authorization; subjects and owners remain explicit, as does identity at worker, process, persistence, and wire boundaries. Returned Promise boundaries drain during teardown, except a nested lineage that starts an owning-fiber unload is excluded from its own drain.',
+    description: 'Agent service (`ctx.agents`): tracks live agents and carries the initiating Agent through one process-local asynchronous driver chain. Agent *creation* is provided by whichever plugin implements the AgentFactory (`@harness-desktop/dsh-agent-loop`), registered via setFactory.\n\nInitiator methods provide same-process causal attribution only. Ambient presence is neither liveness proof nor authorization; subjects and owners remain explicit, as does identity at worker, process, persistence, and wire boundaries. Returned Promise boundaries drain during teardown, except a nested lineage that starts an owning-fiber unload is excluded from its own drain.',
     methods: [
       {
         signature: 'currentInitiator(): Agent | undefined',
@@ -1487,7 +1487,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'skills',
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
-    description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
+    description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. The same layers track user-invocation consumers independently from provider discovery. The service exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
@@ -1500,6 +1500,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register a borrowed readonly runtime skill into the calling context\'s layer. Project entries outrank runtime entries, which outrank user entries, within one layer. Same-name runtime entries in one layer are first-wins; a duplicate logs a warning and receives a no-op disposer so it cannot remove the winner.',
         parameters: [{ name: 'skill', description: 'the skill definition input; omitted invocation and provider fields receive defaults.' }],
         returns: 'the exact Cordis effect disposer, preserving composite teardown order and invalidating caches.',
+      },
+      {
+        signature: 'attachUserInvocationConsumer(): () => void',
+        description: 'Attach an effect-scoped consumer that injects user-invoked skill bodies at the Agent pre-step. An unscoped registration serves every Agent; one made through an Agent composition serves only that scope and its descendants.',
+        parameters: [],
+        returns: 'the exact Cordis effect disposer that detaches this consumer.',
+      },
+      {
+        signature: 'hasUserInvocationConsumer(scope: ScopeKey): boolean',
+        description: 'Test whether an attached pre-step consumer serves one Agent scope. This checks the global layer plus that scope\'s ancestor chain; a consumer in a sibling Agent composition does not satisfy the query.',
+        parameters: [{ name: 'scope', description: 'Agent scope whose user-invocation path is being admitted.' }],
+        returns: 'whether a reachable user-invocation consumer is attached.',
+      },
+      {
+        signature: 'async acquireUserInvocation( name: string, options: SkillViewOptions & { readonly scope: ScopeKey }, ): Promise<UserSkillInvocationLease | undefined>',
+        description: 'Load one user-invocable definition under the exact reachable consumer generation.',
+        parameters: [{ name: 'name', description: 'catalog-confirmed skill name.' }, { name: 'options', description: 'exact Agent scope plus cwd/cancellation lookup fields.' }],
+        returns: 'a one-shot admission lease, or undefined when the definition or consumer changed.',
+      },
+      {
+        signature: 'claimUserInvocation(scope: ScopeKey, message: object, name: string): UserSkillInvocationClaim',
+        description: 'Claim the exact Host-bound definition for one pre-step gesture.',
+        parameters: [{ name: 'scope', description: 'Agent proposing the step.' }, { name: 'message', description: 'claimed user message object.' }, { name: 'name', description: 'gesture name found in that message.' }],
+        returns: 'captured definition, explicit revocation, or no Host admission for direct Agent input.',
       },
       {
         signature: 'async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>',
@@ -2179,7 +2203,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/created\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
     summary: 'A fully configured agent and live session were published.',
     description: 'A fully configured agent and live session were published. Setup is composition-only; `agent/session-start` is the first startup-driving extension point. Synchronous listener failure vetoes publication, while returned-promise rejection is reported. Detach requested during dispatch waits until every creation listener has observed the stable entry.',
-    parameters: [{ name: 'payload', description: '.agent - the newly registered agent with its live session and completed setup. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.agent - the newly registered agent with its live session and completed setup. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/disposed',
@@ -2187,7 +2211,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/disposed\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
     summary: 'An agent left the registry; AgentLoop emits this after driver quiescence and scoped-registration unwind, but before session detachment.',
     description: 'An agent left the registry; AgentLoop emits this after driver quiescence and scoped-registration unwind, but before session detachment. Custom registry users own their driver-ordering contract.',
-    parameters: [{ name: 'payload', description: '.agent - the exact agent removed from the registry. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.agent - the exact agent removed from the registry. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/error',
@@ -2195,7 +2219,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; error: unknown }): void',
     summary: 'A step or turn errored.',
     description: 'A step or turn errored. The machine reports a failure here even when the error has no in-turn position for a durable record.',
-    parameters: [{ name: 'payload', description: '.error - the failure, verbatim. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.error - the failure, verbatim. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/inbox/claimed',
@@ -2203,7 +2227,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/inbox/claimed\'(this: Scoped<Agent>, payload: { agent: Agent; message: UserMessage; turn: number }): void',
     summary: 'One message left the inbox inside its open turn.',
     description: 'One message left the inbox inside its open turn. If the proposed step is rejected, the claimed message ends here: it is neither discarded nor re-emitted as a user/message, and the turn closes without a step.',
-    parameters: [{ name: 'payload', description: '.turn - the owning turn. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.turn - the owning turn. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/inbox/discarded',
@@ -2211,7 +2235,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/inbox/discarded\'(this: Scoped<Agent>, payload: { agent: Agent; message: UserMessage }): void',
     summary: 'One message was discarded from the live inbox.',
     description: 'One message was discarded from the live inbox.',
-    parameters: [{ name: 'payload', description: '.message - the discarded message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.message - the discarded message. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/inbox/inserted',
@@ -2219,7 +2243,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/inbox/inserted\'(this: Scoped<Agent>, payload: { agent: Agent; message: UserMessage }): void',
     summary: 'One message entered the live inbox.',
     description: 'One message entered the live inbox.',
-    parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/pre-step',
@@ -2227,7 +2251,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/pre-step\'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>',
     summary: 'Reject a proposed step or replace the messages that enter it.',
     description: 'Reject a proposed step or replace the messages that enter it. Calling `next()` preserves the current messages.',
-    parameters: [{ name: 'payload', description: '.signal - the current turn\'s cancellation signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s cancellation signal. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/request',
@@ -2235,7 +2259,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/request\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>',
     summary: 'Replace the frozen call configuration.',
     description: 'Replace the frozen call configuration. `await next()` yields the config the machine would use (agent options on the first request, the logged header afterwards); return a replacement to switch. Model-visible content must use logged channels; this waterfall cannot mutate messages.',
-    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/request-error',
@@ -2243,7 +2267,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
-    parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/session-start',
@@ -2251,7 +2275,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/session-start\'(this: Scoped<Agent>, payload: { agent: Agent; source: SessionStartSource }): void',
     summary: 'The session lifecycle began, once before the first turn.',
     description: 'The session lifecycle began, once before the first turn. Use `agent.inject()` to seed model-facing context. This is a notification, not a veto; disposal requested by a lifecycle owner is rechecked before the driver starts.',
-    parameters: [{ name: 'payload', description: '.source - why the session started (fresh startup, resume, …). Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.source - why the session started (fresh startup, resume, …). Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/status',
@@ -2259,7 +2283,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/status\'(this: Scoped<Agent>, payload: { agent: Agent; status: AgentStatus }): void',
     summary: 'Agent status changed (`idle` ⇄ `running`).',
     description: 'Agent status changed (`idle` ⇄ `running`). A waking delivery enters `running` synchronously after reserving cancellation; `idle` means no driver remains scheduled or active.',
-    parameters: [{ name: 'payload', description: '.status - the status just entered (the transition\'s destination). Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.status - the status just entered (the transition\'s destination). Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/turn-stopping',
@@ -2267,14 +2291,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/turn-stopping\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; signal: AbortSignal }): Promise<void> | void',
     summary: 'The turn is about to close: the model owes no response (no live tool calls, no fresh steering).',
     description: 'The turn is about to close: the model owes no response (no live tool calls, no fresh steering). Awaited before the boundary commits — a listener that objects steers (`agent.steer(...)`) and the machine re-reads its inbox: fresh steering runs another step, none closes the turn. Data decides, so listener order cannot change the outcome. The inverse control (stop a tool loop early) is data too: a tool result carrying `concludesTurn` ends the turn at its step. The conclusion never short-circuits already-submitted next-step work: same-step `additionalContexts` or racing steering still runs, and the turn closes only when that inbox drains.',
-    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'approval/request',
     mode: 'waterfall',
     signature: '\'approval/request\'(this: Scoped<ApprovalService>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome>',
     summary: 'Ask composed answerers for one decision.',
-    description: 'Ask composed answerers for one decision. Return an outcome to claim the request or call `next()`; failure yields the fail-closed default. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.',
+    description: 'Ask composed answerers for one decision. Return an outcome to claim the request or call `next()`; failure yields the fail-closed default. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.',
     parameters: [{ name: 'req', description: 'the pending decision (agent, tool identity, reason, signal).' }],
   },
   {
@@ -2376,9 +2400,9 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'goal/changed',
     mode: 'emit',
-    signature: '\'goal/changed\'(this: import(\'@deepseek-ai/dsh-scope\').Scoped<Agent>, payload: { agent: Agent; change: GoalChanged }): void',
+    signature: '\'goal/changed\'(this: import(\'@harness-desktop/dsh-scope\').Scoped<Agent>, payload: { agent: Agent; change: GoalChanged }): void',
     summary: 'Goal mutation accepted by one live agent.',
-    description: 'Goal mutation accepted by one live agent. The matching `goal/change` session event has already committed. Listener failures are contained. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.',
+    description: 'Goal mutation accepted by one live agent. The matching `goal/change` session event has already committed. Listener failures are contained. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent.',
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
@@ -2410,7 +2434,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'emit',
     signature: '\'session/created\'(this: Scoped<Session>, session: Session): void',
     summary: 'Creation announcement during session publication.',
-    description: 'Creation announcement during session publication. A synchronous throw vetoes and rolls back with a paired disposal; detach requested during dispatch is deferred. A returned-promise rejection is logged but cannot retroactively veto this synchronous boundary. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only sessions entered through that agent\'s context.',
+    description: 'Creation announcement during session publication. A synchronous throw vetoes and rolls back with a paired disposal; detach requested during dispatch is deferred. A returned-promise rejection is logged but cannot retroactively veto this synchronous boundary. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only sessions entered through that agent\'s context.',
     parameters: [{ name: 'session', description: 'the session just entered and announced.' }],
   },
   {
@@ -2418,7 +2442,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'emit',
     signature: '\'session/disposed\'(this: Scoped<Session>, session: Session): void',
     summary: 'Emitted once when an announced session leaves the store, including publication rollback, but never for an entry whose creation announcement did not begin.',
-    description: 'Emitted once when an announced session leaves the store, including publication rollback, but never for an entry whose creation announcement did not begin. Listener failures are logged and contained. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the owner scope.',
+    description: 'Emitted once when an announced session leaves the store, including publication rollback, but never for an entry whose creation announcement did not begin. Listener failures are logged and contained. Scope-filtered dispatch (`@harness-desktop/dsh-scope`) reuses the owner scope.',
     parameters: [{ name: 'session', description: 'the session that is no longer live in the store.' }],
   },
   {
@@ -2426,7 +2450,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'emit',
     signature: '\'session/event\'(this: Scoped<Session>, session: Session, event: SessionEvent): void',
     summary: 'Post-commit, fire-and-forget append feed.',
-    description: 'Post-commit, fire-and-forget append feed. The listener snapshot resolves before the log push, but callbacks run after it; observer failures are logged and contained without making the committed append fail. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only events from sessions entered through that agent\'s context.',
+    description: 'Post-commit, fire-and-forget append feed. The listener snapshot resolves before the log push, but callbacks run after it; observer failures are logged and contained without making the committed append fail. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only events from sessions entered through that agent\'s context.',
     parameters: [{ name: 'session', description: 'the session whose log grew.' }, { name: 'event', description: 'the appended event, exactly as recorded.' }],
   },
   {
@@ -2434,7 +2458,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'parallel',
     signature: '\'session/flush\'(this: Scoped<Session>, session: Session): Promise<void> | void',
     summary: 'Awaited parallel durability checkpoint: every listener runs and the caller awaits all of them, with no waterfall veto.',
-    description: 'Awaited parallel durability checkpoint: every listener runs and the caller awaits all of them, with no waterfall veto. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the session\'s owner scope.',
+    description: 'Awaited parallel durability checkpoint: every listener runs and the caller awaits all of them, with no waterfall veto. Scope-filtered dispatch (`@harness-desktop/dsh-scope`) reuses the session\'s owner scope.',
     parameters: [{ name: 'session', description: 'the session whose buffered events must reach durable storage.' }],
   },
   {
@@ -2498,7 +2522,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'waterfall',
     signature: '\'system-prompt/assemble\'(this: Scoped<SystemPrompt>, assembly: PromptAssembly, context: AssembleContext, next: () => Promise<PromptAssembly>): Promise<PromptAssembly>',
     summary: 'Expert waterfall over the assembled sections, contexts, tools, and variables.',
-    description: 'Expert waterfall over the assembled sections, contexts, tools, and variables. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): scoped listeners receive only that scope\'s assemblies. The returned value is authoritative. A supplied signal controls only this explicit assembly request and must not be retained to control later turns. A registered complete section is restored after this waterfall, so listeners cannot add to or replace that scope\'s system prompt.',
+    description: 'Expert waterfall over the assembled sections, contexts, tools, and variables. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): scoped listeners receive only that scope\'s assemblies. The returned value is authoritative. A supplied signal controls only this explicit assembly request and must not be retained to control later turns. A registered complete section is restored after this waterfall, so listeners cannot add to or replace that scope\'s system prompt.',
     parameters: [{ name: 'assembly', description: 'the mutable assembly built from registered providers.' }, { name: 'context', description: 'the caller\'s per-assembly context.' }],
   },
   {
@@ -2522,7 +2546,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'waterfall',
     signature: '\'tools/code-dispatch-log\'(this: Scoped<ToolRuntime>, dispatch: CodeDispatchLog, next: () => Promise<ContentBlock[]>): Promise<ContentBlock[]>',
     summary: 'Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` sub-dispatch outcome before the bridge appends its `tool/code-dispatch` event.',
-    description: 'Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` sub-dispatch outcome before the bridge appends its `tool/code-dispatch` event. `next()` keeps the content unchanged; a listener may return replacement blocks (e.g. the spill policy\'s preview + locator for an oversized text result). Only the logged copy is affected — the program already received the complete value, and the model sees neither. A throwing listener is contained: the bridge falls back to logging the original settled content. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent\'s dispatches.',
+    description: 'Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` sub-dispatch outcome before the bridge appends its `tool/code-dispatch` event. `next()` keeps the content unchanged; a listener may return replacement blocks (e.g. the spill policy\'s preview + locator for an oversized text result). Only the logged copy is affected — the program already received the complete value, and the model sees neither. A throwing listener is contained: the bridge falls back to logging the original settled content. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent\'s dispatches.',
     parameters: [{ name: 'dispatch', description: 'the parent execution, sub-call identity, and the settled content to log.' }],
   },
   {
@@ -2530,7 +2554,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'waterfall',
     signature: '\'tools/execute\'(this: Scoped<ToolRuntime>, exec: ToolDispatchExecution, next: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult>',
     summary: 'Around-dispatch waterfall for timeout, retry, or metrics.',
-    description: 'Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a normalized result; wrappers may change only `exec.signal`, while call identity remains immutable. The registry re-fuses the original caller signal before the body, so replacement cannot detach caller cancellation; wrappers must still restore their signal and reach quiescence. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
+    description: 'Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a normalized result; wrappers may change only `exec.signal`, while call identity remains immutable. The registry re-fuses the original caller signal before the body, so replacement cannot detach caller cancellation; wrappers must still restore their signal and reach quiescence. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
     parameters: [{ name: 'exec', description: 'the allowed call about to dispatch (name, parsed arguments, caller agent, signal).' }],
   },
   {
@@ -2538,7 +2562,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'waterfall',
     signature: '\'tools/post-execute\'(this: Scoped<ToolRuntime>, exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>',
     summary: 'Accept, replace, enrich, or block a normalized dispatch result.',
-    description: 'Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts it unchanged; thrown tools still reach this waterfall as errors. Async listeners must observe `exec.signal`; after they settle, caller cancellation replaces only a successful accepted outcome with the code selected by whether the tool body was invoked. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
+    description: 'Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts it unchanged; thrown tools still reach this waterfall as errors. Async listeners must observe `exec.signal`; after they settle, caller cancellation replaces only a successful accepted outcome with the code selected by whether the tool body was invoked. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
     parameters: [{ name: 'exec', description: 'the call that just ran (name, parsed arguments, caller agent).' }, { name: 'result', description: 'the dispatch outcome a listener may accept, replace, or block.' }],
   },
   {
@@ -2546,7 +2570,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'waterfall',
     signature: '\'tools/pre-execute\'(this: Scoped<ToolRuntime>, exec: ToolExecution, next: () => Promise<PreToolDecision>): Promise<PreToolDecision>',
     summary: 'Allow, deny, or ask before dispatch.',
-    description: 'Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approval support turns `ask` into denial. Async gates must observe `exec.signal`; the registry rechecks cancellation after they settle but never abandons their promise. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
+    description: 'Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approval support turns `ask` into denial. Async gates must observe `exec.signal`; the registry rechecks cancellation after they settle but never abandons their promise. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): agent-scoped listeners receive only that agent\'s calls.',
     parameters: [{ name: 'exec', description: 'the pending call (name, parsed arguments, caller agent).' }],
   },
   {
@@ -2554,7 +2578,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     mode: 'emit',
     signature: '\'tools/result\'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined',
     summary: 'Observe the frozen, lossless-JSON final outcome.',
-    description: 'Observe the frozen, lossless-JSON final outcome. Listener failures are contained. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.',
+    description: 'Observe the frozen, lossless-JSON final outcome. Listener failures are contained. Scope-filtered dispatch (`@harness-desktop/dsh-scope`): keyed by `exec.agent`.',
     parameters: [{ name: 'exec', description: 'the execution object that traversed the pipeline.' }, { name: 'result', description: 'a deep-frozen snapshot of the final returned result.' }],
   },
   {
@@ -3798,10 +3822,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
-    name: 'SessionId',
-    declaration: 'export type SessionId = Branded<\'SessionId\'>;',
-  },
-  {
     name: 'SessionInspection',
     declaration: 'export interface SessionInspection {\n    readonly meta: SessionHeader;\n    readonly events: readonly SessionEvent[];\n}',
   },
@@ -4528,6 +4548,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserQuestionProvider',
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
+  },
+  {
+    name: 'UserSkillInvocationClaim',
+    declaration: 'export type UserSkillInvocationClaim = {\n    readonly kind: \'admitted\';\n    readonly skill: SkillDefinition;\n} | {\n    readonly kind: \'revoked\';\n} | {\n    readonly kind: \'none\';\n};',
+  },
+  {
+    name: 'UserSkillInvocationLease',
+    declaration: 'export interface UserSkillInvocationLease {\n    bind(message: object): boolean;\n    isValid(): boolean;\n    release(): void;\n}',
   },
   {
     name: 'WebBootEntry',

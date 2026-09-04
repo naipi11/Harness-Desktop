@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-fs-e2b",
+  "name": "@harness-desktop/dsh-fs-e2b",
   "description": "E2B filesystem implementation for DeepSeek Harness",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/e2b/fs-e2b"
   },
   "type": "module",
@@ -32,15 +32,15 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-e2b": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-e2b": "workspace:^",
+    "@harness-desktop/dsh-fs": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-e2b": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-e2b": "workspace:^",
+    "@harness-desktop/dsh-fs": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

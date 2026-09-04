@@ -1,8 +1,8 @@
-import { Context, Service } from '@deepseek-ai/cordis'
-import type { Fiber } from '@deepseek-ai/cordis'
+import { Context, Service } from '@harness-desktop/cordis'
+import type { Fiber } from '@harness-desktop/cordis'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@harness-desktop/dsh-client-connection/client'
 import type {
   InvocationDescriptor,
   RemoteResult,
@@ -10,12 +10,12 @@ import type {
   TypertContext,
   TypertRemoteScopeApi,
   TypertRemoteNamespace,
-} from '@deepseek-ai/dsh-typert-protocol'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+} from '@harness-desktop/dsh-typert-protocol'
+import TypertRegistry from '@harness-desktop/dsh-typert-registry'
 import type { ClientRemote } from '../src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Events {
     /**
      * Test-only forwarded Host event.
@@ -35,7 +35,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-typert-protocol' {
+declare module '@harness-desktop/dsh-typert-protocol' {
   interface TypertRemoteEventSelection extends Record<'fixture/changed' | 'fixture/idle', true> {}
 
   interface TypertContextMap {

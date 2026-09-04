@@ -12,24 +12,47 @@ it('ships install metadata with the built web application', async () => {
   const manifest: unknown = JSON.parse(await readFile(join(DIST_ROOT, 'manifest.webmanifest'), 'utf8'))
   expect(manifest).toEqual({
     id: '/',
-    name: 'DeepSeek Harness',
-    short_name: 'DSH',
+    name: 'Harness Desktop',
+    short_name: 'harness',
     start_url: '/',
     scope: '/',
     display: 'fullscreen',
-    icons: [{
-      src: '/favicon.svg',
-      sizes: 'any',
-      type: 'image/svg+xml',
-      purpose: 'any',
-    }],
+    icons: [
+      {
+        src: '/icons/harness-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/icons/harness-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/icons/harness-maskable-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
+    ],
   })
 })
 
-it('ships a favicon that switches to a light mark under dark color scheme', async () => {
+it('ships generated PWA icons and light and dark favicon artwork', async () => {
+  for (const path of [
+    'icons/harness-192.png',
+    'icons/harness-512.png',
+    'icons/harness-maskable-512.png',
+  ]) {
+    expect((await readFile(join(DIST_ROOT, path))).byteLength, path).toBeGreaterThan(0)
+  }
+
   const favicon = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
-  // The light fill must live inside the dark-scheme media query, so the icon
-  // stays black in light mode and only turns white under a dark scheme.
-  expect(favicon).toMatch(/@media \(prefers-color-scheme: dark\)\s*{\s*path\s*{[^}]*fill:\s*#fff/i)
-  expect(favicon).toContain('fill="#000"')
+  expect(favicon).toContain('Generated from assets/brand/harness-icon.svg')
+  expect(favicon).toMatch(/@media\s*\(prefers-color-scheme:\s*light\)/)
+  expect(favicon).toMatch(/@media\s*\(prefers-color-scheme:\s*dark\)/)
+  expect(favicon).toContain('href="#theme-light"')
+  expect(favicon).toContain('href="#theme-dark"')
 })

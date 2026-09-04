@@ -20,12 +20,12 @@
  * time stays uncounted in every time figure — matching the window, which
  * renders it as an untimed interrupted node.
  *
- * @module @deepseek-ai/dsh-session-stats/projection
+ * @module @harness-desktop/dsh-session-stats/projection
  */
 
 import { z } from 'zod'
-import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { isTokenDelta } from '@harness-desktop/dsh-llm/message'
+import type { ProjectionDefinition } from '@harness-desktop/dsh-session-projection'
 
 /** Accumulated whole-log figures (the view is exactly these totals). */
 interface SessionStatsTotals {

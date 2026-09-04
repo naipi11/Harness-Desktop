@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-subagent-fork-in-process",
+  "name": "@harness-desktop/dsh-subagent-fork-in-process",
   "description": "In-process fork subagent backend: runs a child agent seeded with a prefix of the parent's log",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/subagent/subagent-fork-in-process"
   },
   "type": "module",
@@ -32,27 +32,27 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-subagent": "workspace:^",
+    "@harness-desktop/dsh-subagent-in-process-driver": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@harness-desktop/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
-    "@deepseek-ai/dsh-subagent-spawn-in-process": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/cordis-plugin-loader": "workspace:^",
+    "@harness-desktop/dsh-agent": "workspace:^",
+    "@harness-desktop/dsh-agent-loop": "workspace:^",
+    "@harness-desktop/dsh-agent-loop-testkit": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-subagent": "workspace:^",
+    "@harness-desktop/dsh-subagent-in-process-driver": "workspace:^",
+    "@harness-desktop/dsh-subagent-spawn-in-process": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

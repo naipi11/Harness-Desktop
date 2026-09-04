@@ -1,15 +1,15 @@
 /**
  * Semantic durability checkpoints for model requests, top-level tool dispatch,
  * and completed agent steps.
- * @module @deepseek-ai/dsh-session-checkpoint-policy
+ * @module @harness-desktop/dsh-session-checkpoint-policy
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { Context } from '@harness-desktop/cordis'
+import type { Session } from '@harness-desktop/dsh-session'
+import type { StreamChunk } from '@harness-desktop/dsh-llm'
+import { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecutionResult } from '@harness-desktop/dsh-tools'
+import type { PreStepDecision } from '@harness-desktop/dsh-agent'
+import type {} from '@harness-desktop/dsh-session-persistence'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'session-checkpoint-policy'

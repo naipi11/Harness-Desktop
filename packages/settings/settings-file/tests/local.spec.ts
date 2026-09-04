@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import { Context } from '@harness-desktop/cordis'
+import z from '@harness-desktop/schemastery'
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { writeFileAtomic } from '@harness-desktop/dsh-atomic-write'
+import { settingsNamespace } from '@harness-desktop/dsh-settings'
 import { FileSettingsProvider, resolveSpec } from '../src/index.ts'
 
 interface ThemeConfig {
@@ -102,7 +102,7 @@ describe('boot and reads', () => {
 
   it('defaults the file location under the configured harness home', async () => {
     const dir = await tempDir()
-    const ctx = await boot({ dshHome: dir, watch: false })
+    const ctx = await boot({ harnessHome: dir, watch: false })
     expect(ctx.settings.documentPath).toBe(join(dir, 'settings.yaml'))
     const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
     await scope.update({ theme: 'light' })

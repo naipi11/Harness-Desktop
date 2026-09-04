@@ -246,7 +246,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.skills` — `SkillRegistry`
 
-Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context's scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.
+Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context's scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. The same layers track user-invocation consumers independently from provider discovery. The service exposes sorted invocation-neutral summaries and loads full skill bodies on demand.
 
 ```ts cordis-catalog
 /**
@@ -272,6 +272,40 @@ registerProvider(create: (control: SkillProviderControl) => SkillProvider): () =
  * @returns the exact Cordis effect disposer, preserving composite teardown order and invalidating caches.
  */
 register(skill: SkillRegistration): () => void
+
+/**
+ * Attach an effect-scoped consumer that injects user-invoked skill bodies at
+ * the Agent pre-step. An unscoped registration serves every Agent; one made
+ * through an Agent composition serves only that scope and its descendants.
+ * @returns the exact Cordis effect disposer that detaches this consumer.
+ */
+attachUserInvocationConsumer(): () => void
+
+/**
+ * Test whether an attached pre-step consumer serves one Agent scope. This
+ * checks the global layer plus that scope's ancestor chain; a consumer in a
+ * sibling Agent composition does not satisfy the query.
+ * @param scope - Agent scope whose user-invocation path is being admitted.
+ * @returns whether a reachable user-invocation consumer is attached.
+ */
+hasUserInvocationConsumer(scope: ScopeKey): boolean
+
+/**
+ * Load one user-invocable definition under the exact reachable consumer generation.
+ * @param name - catalog-confirmed skill name.
+ * @param options - exact Agent scope plus cwd/cancellation lookup fields.
+ * @returns a one-shot admission lease, or undefined when the definition or consumer changed.
+ */
+async acquireUserInvocation( name: string, options: SkillViewOptions & { readonly scope: ScopeKey }, ): Promise<UserSkillInvocationLease | undefined>
+
+/**
+ * Claim the exact Host-bound definition for one pre-step gesture.
+ * @param scope - Agent proposing the step.
+ * @param message - claimed user message object.
+ * @param name - gesture name found in that message.
+ * @returns captured definition, explicit revocation, or no Host admission for direct Agent input.
+ */
+claimUserInvocation(scope: ScopeKey, message: object, name: string): UserSkillInvocationClaim
 
 /**
  * List invocation-neutral skill summaries for a workspace. Consumers apply
@@ -304,7 +338,9 @@ async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined>
 ```
 
-Source: [`packages/skill/skill/src/index.ts:357`](../../packages/skill/skill/src/index.ts)
+Types: [ScopeKey](scope.md)
+
+Source: [`packages/skill/skill/src/index.ts:396`](../../packages/skill/skill/src/index.ts)
 
 <a id="skills-events"></a>
 
@@ -327,5 +363,5 @@ A skill provider, runtime contribution, or provider-backed catalog may have chan
 'skills/change'(): void
 ```
 
-Source: [`packages/skill/skill/src/index.ts:297`](../../packages/skill/skill/src/index.ts)
+Source: [`packages/skill/skill/src/index.ts:319`](../../packages/skill/skill/src/index.ts)
 <!-- END GENERATED cordis-surface -->

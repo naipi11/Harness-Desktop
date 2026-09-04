@@ -2,10 +2,10 @@
  * Per-harness-home anonymous user id shared by telemetry and feedback.
  *
  * The id is a random UUID persisted as a bare line in `.anonymous-user-id` inside the
- * harness home resolved by {@link resolveDshHome} (`$DSH_HOME` > `~/.dsh`),
+ * harness home injected by its application entrypoint,
  * and never derived from the hostname, network address, git remote, or any
  * other identifying source. It is scoped to the harness home, not the
- * machine: every process sharing one `$DSH_HOME` reports the same id, and
+ * machine: every process sharing one `$HARNESS_HOME` reports the same id, and
  * deleting the file mints a fresh identity on the next launch.
  *
  * Reads and writes are synchronous so boot-time and command consumers can
@@ -13,14 +13,14 @@
  * touches the disk once, and a file deleted mid-run keeps the process's id
  * until the next launch.
  *
- * @module @deepseek-ai/dsh-anonymous-user-id
+ * @module @harness-desktop/dsh-anonymous-user-id
  */
 
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Branded } from '@deepseek-ai/dsh-brand'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { Branded } from '@harness-desktop/dsh-brand'
+import type { HarnessHome } from '@harness-desktop/dsh-host-local-runtime'
 
 /** A harness-home-scoped anonymous user id (random UUID v4). */
 export type AnonymousUserId = Branded<'AnonymousUserId'>
@@ -32,8 +32,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 /** Ambient hooks for locating and generating the id; every field has a default. */
 export interface AnonymousUserIdOptions {
-  /** Environment consulted for `DSH_HOME`; defaults to `process.env`. */
-  env?: NodeJS.ProcessEnv
   /** UUID generator; defaults to `crypto.randomUUID` (test hook). */
   randomUUID?: () => string
 }
@@ -62,11 +60,12 @@ function readPersistedId(file: string): AnonymousUserId | undefined {
  * run; the next launch converges on the persisted one.) Persistence is
  * best-effort — a write failure (read-only home) still returns a usable id
  * for the current run so feedback and telemetry are never blocked.
- * @param options - home-location and UUID-generation seams.
+ * @param home - the application entrypoint's already-resolved writable root.
+ * @param options - UUID-generation seam.
  * @returns the stable per-harness-home anonymous user id.
  */
-export function getOrCreateAnonymousUserId(options: AnonymousUserIdOptions = {}): AnonymousUserId {
-  const file = join(resolveDshHome(undefined, options.env ?? process.env), ANONYMOUS_USER_ID_FILE_NAME)
+export function getOrCreateAnonymousUserId(home: HarnessHome, options: AnonymousUserIdOptions = {}): AnonymousUserId {
+  const file = join(home, ANONYMOUS_USER_ID_FILE_NAME)
   const cached = memo.get(file)
   if (cached !== undefined) return cached
 

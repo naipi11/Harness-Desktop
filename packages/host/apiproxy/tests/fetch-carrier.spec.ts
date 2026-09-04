@@ -314,6 +314,47 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect(response.rpcId).toMatch(/[0-9a-f-]{36}/)
   })
 
+  it('combines an interceptor cancellation signal into delayed session prompt admission', async () => {
+    const api = fakeApi()
+    const admission = Promise.withResolvers<AbortSignal>()
+    api.sessions.prompt = async (request, signal) => {
+      admission.resolve(signal ?? new AbortController().signal)
+      if (signal !== undefined && !signal.aborted) {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => { resolve() }, { once: true })
+        })
+      }
+      return {
+        rpcId: request.rpcId,
+        result: { ok: false, error: { code: 'cancelled' as const, message: 'aborted', details: {} } },
+      }
+    }
+    const owner = new AbortController()
+    const handler = toFetchHandler(api, {
+      async intercept(invocation) {
+        const response = invocation.invoke(owner.signal)
+        await admission.promise
+        owner.abort()
+        return response
+      },
+    })
+
+    const response = await handler.fetch(new Request('http://localhost/api/session.prompt', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'client-request', rpcId: 'cancel-owned-prompt', method: 'session.prompt',
+        payload: { sessionId: 's', mode: 'queue', content: [{ type: 'text', text: 'late' }] },
+      }),
+    }))
+
+    expect((await admission.promise).aborted).toBe(true)
+    expect(await response.json()).toMatchObject({
+      rpcId: 'cancel-owned-prompt',
+      result: { ok: false, error: { code: 'cancelled' } },
+    })
+  })
+
   it('carries the tail-page projections block through the wire schema (Zod must not strip it)', async () => {
     const response = await client().sessions.history({ sessionId: 'with-projections' as never })
     expect(response.result.ok).toBe(true)

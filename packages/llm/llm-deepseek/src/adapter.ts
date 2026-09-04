@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@harness-desktop/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -16,10 +16,10 @@ import type {
   LlmResolvedModelInfo,
   ResolvedRetryPolicy,
   StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+} from '@harness-desktop/dsh-llm'
+import type { CredentialRef } from '@harness-desktop/dsh-credentials'
+import { idleWatchdog, timeoutOf } from '@harness-desktop/dsh-timeout'
+import type { AnonymousUserId } from '@harness-desktop/dsh-anonymous-user-id'
 import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'

@@ -3,14 +3,15 @@
 # parent's subagent-sdk backend spawns this composition per run; stdout is
 # reserved for JSON-RPC frames.
 - id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  name: '@harness-desktop/dsh-sdk-jsonrpc-server'
 
 - id: child-mock-llm
   name: './child-mock-llm.ts'
 
 - id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: '@harness-desktop/dsh-agent-spine-demo'
   config:
+    harnessHome: !!js harnessHome
     persona: 'Echo where you run.'
     workspaceContext: false
     skills:
@@ -19,22 +20,22 @@
       enableRunInBackground: false
     toolJobs: false
 
-# The child persists its own session log beside the parent's (distinct root),
-# so the driving e2e can inspect both transcripts after the run.
+# The child receives its own Harness home from the driving e2e, so both
+# complete applications retain one writable root while their logs stay isolated.
 - id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: '@harness-desktop/dsh-session-persistence-jsonl'
   config:
-    root: !!js process.env.DSH_SESSION_ROOT ?? './.child-sessions'
+    root: !!js harnessHomePath('sessions')
     compression: none
 
 - id: session-checkpoints
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+  name: '@harness-desktop/dsh-session-checkpoint-policy'
 
 # bash-local executes through the subprocess seam.
 - id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
+  name: '@harness-desktop/dsh-subprocess-local'
 
 - id: bash
-  name: '@deepseek-ai/dsh-bash-local'
+  name: '@harness-desktop/dsh-bash-local'
   config:
     cwd: !!js process.env.DSH_CWD ?? process.cwd()

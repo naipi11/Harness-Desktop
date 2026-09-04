@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /** Inspect the public Codex provider composition without invoking the product. */
 
-import { boot, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
-import type {} from '@deepseek-ai/dsh-subagent'
-import type {} from '@deepseek-ai/dsh-tools'
+import { boot, resolveConfigPath } from '@harness-desktop/dsh-app-boot'
+import { SESSION_FORMAT_VERSION, SessionId } from '@harness-desktop/dsh-session'
+import type {} from '@harness-desktop/dsh-subagent'
+import type {} from '@harness-desktop/dsh-tools'
 
 const configPath = process.argv[2]
 if (configPath === undefined) {
@@ -23,6 +24,15 @@ const ctx = await boot(
 )
 
 try {
+  const persistenceProbe = SessionId('subagent-codex-composition-root')
+  await ctx.sessionPersistence.create({
+    version: SESSION_FORMAT_VERSION,
+    id: persistenceProbe,
+    createdAt: 0,
+  })
+  await ctx.sessionPersistence.append(persistenceProbe, [
+    { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+  ])
   const provider = ctx.subagents.getProvider('codex')
   if (provider === undefined) throw new Error('Codex provider was not registered')
   const tool = ctx.tools.schemas().find(schema => schema.name === 'subagent_codex')

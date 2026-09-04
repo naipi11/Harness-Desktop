@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-cordis",
+  "name": "@harness-desktop/dsh-client-ui-cordis",
   "description": "Cordis dynamic-plugin definition card: the keyed cordis_define tool row with its run/stop switch",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/extensions/ui-cordis"
   },
   "type": "module",
@@ -32,14 +32,14 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-cordis-client-runner",
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-input-trigger",
-        "@deepseek-ai/dsh-client-ui-tool",
-        "@deepseek-ai/dsh-client-ui-sidebar"
+        "@harness-desktop/dsh-client-runtime",
+        "@harness-desktop/dsh-client-connection",
+        "@harness-desktop/dsh-cordis-client-runner",
+        "@harness-desktop/dsh-api-remotes",
+        "@harness-desktop/dsh-client-locale",
+        "@harness-desktop/dsh-client-ui-input-trigger",
+        "@harness-desktop/dsh-client-ui-tool",
+        "@harness-desktop/dsh-client-ui-sidebar"
       ],
       "platform": "web"
     }
@@ -50,34 +50,34 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-cordis-client-runner": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-cordis-client-runner": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-sidebar": "workspace:^",
+    "@harness-desktop/dsh-client-ui-input-trigger": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-client-ui-tool": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-cordis-client-runner": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-cordis-client-runner": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-sidebar": "workspace:^",
+    "@harness-desktop/dsh-client-ui-input-trigger": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-client-ui-tool": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "files": [

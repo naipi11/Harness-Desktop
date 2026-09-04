@@ -1,18 +1,16 @@
 /**
- * Registry tests for `@deepseek-ai/dsh-shell-env`: built-in facts, contributor
+ * Registry tests for `@harness-desktop/dsh-shell-env`: built-in facts, contributor
  * ownership and validation, collection ordering, effect-scoped disposal, and
  * the explicit disposer contract.
  */
 
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
-import { ShellEnvRegistry } from '@deepseek-ai/dsh-shell-env'
-import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { Context } from '@harness-desktop/cordis'
+import { CallId } from '@harness-desktop/dsh-llm'
+import type { Agent } from '@harness-desktop/dsh-agent'
+import type { ToolExecution } from '@harness-desktop/dsh-tools'
+import { ShellEnvRegistry } from '@harness-desktop/dsh-shell-env'
+import * as BashEnvPlugin from '@harness-desktop/dsh-shell-env'
 
 const testToolSignal = new AbortController().signal
 
@@ -35,32 +33,26 @@ function execution(sessionId?: string): ToolExecution {
 describe('ShellEnvRegistry', () => {
   it('collects unconditional shell facts and the current agent session id', () => {
     const ctx = new Context()
-    const registry = new ShellEnvRegistry(ctx, { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(ctx, { harnessHome: './test-dsh-home' })
 
     expect(registry.collect(execution())).toEqual({
-      DSH_HOME: resolve('./test-dsh-home'),
       DSH_SHELL: '1',
+      HARNESS_HOME: './test-dsh-home',
     })
     expect(registry.collect(execution('session-a'))).toEqual({
-      DSH_HOME: resolve('./test-dsh-home'),
       DSH_SESSION_ID: 'session-a',
       DSH_SHELL: '1',
+      HARNESS_HOME: './test-dsh-home',
     })
   })
 
-  it('resolves DSH_HOME from the ambient override or the user-home default', () => {
-    vi.stubEnv('DSH_HOME', './ambient-dsh-home')
-    const fromEnvironment = new ShellEnvRegistry(new Context())
-    expect(fromEnvironment.collect(execution()).DSH_HOME).toBe(resolve('./ambient-dsh-home'))
-
-    vi.stubEnv('DSH_HOME', undefined)
-    const fromDefault = new ShellEnvRegistry(new Context())
-    expect(fromDefault.collect(execution()).DSH_HOME).toBe(join(homedir(), '.dsh'))
+  it('requires a root injected by the host', () => {
+    expect(() => new ShellEnvRegistry(new Context())).toThrow('shell-env: harnessHome is required')
   })
 
   it('collects declared contributor variables and omits unavailable values', () => {
     const ctx = new Context()
-    const registry = new ShellEnvRegistry(ctx, { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(ctx, { harnessHome: './test-dsh-home' })
     registry.register({
       name: 'optional-session-fact',
       variables: {
@@ -95,7 +87,7 @@ describe('ShellEnvRegistry', () => {
 
   it('rejects duplicate variable ownership at registration time', () => {
     const ctx = new Context()
-    const registry = new ShellEnvRegistry(ctx, { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(ctx, { harnessHome: './test-dsh-home' })
     registry.register({
       name: 'first',
       variables: { DSH_SHARED: { description: 'First owner.' } },
@@ -110,7 +102,7 @@ describe('ShellEnvRegistry', () => {
   })
 
   it('rejects duplicate contributor names and malformed declarations', () => {
-    const registry = new ShellEnvRegistry(new Context(), { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(new Context(), { harnessHome: './test-dsh-home' })
     registry.register({
       name: 'declared',
       variables: { DSH_DECLARED: { description: 'Declared fact.' } },
@@ -146,7 +138,7 @@ describe('ShellEnvRegistry', () => {
 
   it('rejects undeclared variables returned by a contributor', () => {
     const ctx = new Context()
-    const registry = new ShellEnvRegistry(ctx, { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(ctx, { harnessHome: './test-dsh-home' })
     registry.register({
       name: 'drifted-provider',
       variables: { DSH_DECLARED: { description: 'Declared fact.' } },
@@ -157,7 +149,7 @@ describe('ShellEnvRegistry', () => {
   })
 
   it('rejects non-string values returned by a contributor', () => {
-    const registry = new ShellEnvRegistry(new Context(), { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(new Context(), { harnessHome: './test-dsh-home' })
     registry.register({
       name: 'wrong-value-type',
       variables: { DSH_STRING: { description: 'String fact.' } },
@@ -169,7 +161,7 @@ describe('ShellEnvRegistry', () => {
 
   it('removes an effect-scoped contributor when its plugin is disposed', async () => {
     const ctx = new Context()
-    const registry = new ShellEnvRegistry(ctx, { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(ctx, { harnessHome: './test-dsh-home' })
     const fiber = await ctx.plugin({
       inject: ['shellEnv'],
       apply(inner: Context) {
@@ -187,7 +179,7 @@ describe('ShellEnvRegistry', () => {
   })
 
   it('returns an explicit contributor disposer', () => {
-    const registry = new ShellEnvRegistry(new Context(), { dshHome: './test-dsh-home' })
+    const registry = new ShellEnvRegistry(new Context(), { harnessHome: './test-dsh-home' })
     const dispose = registry.register({
       name: 'explicit-disposal',
       variables: { DSH_EXPLICIT_DISPOSAL: { description: 'Explicitly disposed fact.' } },
@@ -201,7 +193,7 @@ describe('ShellEnvRegistry', () => {
 
   it('the plugin registers the service and the persistence contributor on load', async () => {
     const ctx = new Context()
-    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(BashEnvPlugin, { harnessHome: '/test/harness' })
     expect(ctx.shellEnv).toBeInstanceOf(ShellEnvRegistry)
     expect(ctx.shellEnv.list()).toEqual([
       {
@@ -214,7 +206,7 @@ describe('ShellEnvRegistry', () => {
 
   it('the persistence contributor resolves DSH_SESSION_JSONL only for a jsonl backend', async () => {
     const ctx = new Context()
-    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(BashEnvPlugin, { harnessHome: '/test/harness' })
     ctx.provide('sessionPersistence', {
       locate: () => ({ kind: 'jsonl' as const, path: 'C:\\sessions\\s.jsonl' }),
     })
@@ -223,7 +215,7 @@ describe('ShellEnvRegistry', () => {
 
   it('the persistence contributor omits the variable for a non-jsonl backend', async () => {
     const ctx = new Context()
-    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(BashEnvPlugin, { harnessHome: '/test/harness' })
     ctx.provide('sessionPersistence', {
       locate: () => ({ kind: 'sqlite' as const, path: 'C:\\sessions\\s.db' }),
     })
@@ -232,7 +224,7 @@ describe('ShellEnvRegistry', () => {
 
   it('the persistence contributor omits the variable without a persistence backend', async () => {
     const ctx = new Context()
-    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(BashEnvPlugin, { harnessHome: '/test/harness' })
     expect(ctx.shellEnv.collect(execution('sess-p'))).not.toHaveProperty('DSH_SESSION_JSONL')
   })
 })

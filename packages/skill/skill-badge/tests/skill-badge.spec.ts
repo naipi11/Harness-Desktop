@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { describe, expect, it } from 'vitest'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
-import * as SkillBadge from '@deepseek-ai/dsh-skill-badge'
+import SkillRegistry from '@harness-desktop/dsh-skill'
+import * as SkillBadge from '@harness-desktop/dsh-skill-badge'
 
 describe('dsh-skill-badge', () => {
   it('registers and disposes the bundled badge skill', async () => {
@@ -15,7 +15,7 @@ describe('dsh-skill-badge', () => {
 
     expect(await ctx.skills.list()).toEqual([{
       name: 'dsh-badge',
-      description: 'Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with DeepSeek Harness. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.',
+      description: 'Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with Harness Desktop. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.',
       invocation: { modelInvocable: true, userInvocable: true },
       provider: 'dsh-badge',
       source: 'bundled',

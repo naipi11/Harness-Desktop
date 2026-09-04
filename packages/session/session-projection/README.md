@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-projection
+# @harness-desktop/dsh-session-projection
 
 English | [中文](README.zh.md)
 

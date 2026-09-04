@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-subprocess
+# @harness-desktop/dsh-subprocess
 
 [English](README.md) | 中文
 

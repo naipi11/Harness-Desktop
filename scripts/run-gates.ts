@@ -19,12 +19,12 @@ export type Mode =
   | 'ci-lint-contracts-ready'
   | 'ci-coverage'
   | 'ci-snapshot'
-  | 'ci-artifacts'
   | 'ci-consumers'
   | 'ci-windows-blocking'
   | 'ci-windows-complete'
   | 'ci-windows-observational'
   | 'node-compat'
+  | 'release-smoke'
   | 'check-all'
   | 'doc-sync'
 
@@ -104,18 +104,18 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-lint-contracts-ready':
     case 'ci-coverage':
     case 'ci-snapshot':
-    case 'ci-artifacts':
     case 'ci-consumers':
     case 'ci-windows-blocking':
     case 'ci-windows-complete':
     case 'ci-windows-observational':
     case 'node-compat':
+    case 'release-smoke':
     case 'check-all':
     case 'doc-sync':
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | release-smoke | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -206,8 +206,6 @@ export function gatesForMode(selected: Mode): Gate[] {
       return coverageGates()
     case 'ci-snapshot':
       return [pnpmScript('build', 'build'), snapshotGate()]
-    case 'ci-artifacts':
-      return ciArtifactGates()
     case 'ci-consumers':
       return ciConsumerGates()
     case 'ci-windows-blocking':
@@ -218,6 +216,8 @@ export function gatesForMode(selected: Mode): Gate[] {
       return ciWindowsObservationalGates()
     case 'node-compat':
       return nodeCompatGates()
+    case 'release-smoke':
+      return releaseSmokeGates()
     case 'check-all':
       return [
         pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
@@ -337,6 +337,24 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
         env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
         needs: ['build:web'],
       }),
+      pnpmExec('web-daemon-source-launch-smoke', [
+        'vitest',
+        'run',
+        'apps/cli/tests/web-daemon.compat.spec.ts',
+      ], {
+        label: 'Web daemon source launch smoke',
+        env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1', DSH_EXAMPLE_MODE: 'src' },
+        needs: ['build:web'],
+      }),
+      pnpmExec('web-daemon-built-launch-smoke', [
+        'vitest',
+        'run',
+        'apps/cli/tests/web-daemon.compat.spec.ts',
+      ], {
+        label: 'Web daemon built launch smoke',
+        env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1', DSH_EXAMPLE_MODE: 'lib' },
+        needs: ['build:web'],
+      }),
     )
   }
   return gates
@@ -371,16 +389,29 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
   ]
 }
 
-function ciArtifactGates(): Gate[] {
+function releaseSmokeGates(): Gate[] {
   return [
-    pnpmScript('build', 'build'),
-    pnpmScript('publint', 'publint', { needs: ['build'] }),
-    pnpmScript('node-next-types', 'verify-node-next-types', {
-      label: 'node-next types',
+    pnpmScript('generate-icons', 'generate:icons'),
+    pnpmScript('verify-icons', 'verify:icons', { needs: ['generate-icons'] }),
+    pnpmScript('build', 'build', { needs: ['verify-icons'] }),
+    {
+      id: 'desktop-package',
+      label: 'native Desktop package',
+      displayCommand: 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never',
+      ...pnpmInvocation(['--filter', '@harness-desktop/dsh-desktop', 'run', 'package', '--publish', 'never']),
       needs: ['build'],
+    },
+    pnpmScript('desktop-artifacts', 'release:verify-desktop-artifacts', { needs: ['desktop-package'] }),
+    pnpmScript('desktop-updater', 'desktop:test-updater', { needs: ['desktop-artifacts'] }),
+    pnpmScript('packed-cli', 'release:verify-packed-cli', {
+      env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
+      needs: ['desktop-updater'],
     }),
-    builtPackageInvariantsGate(['build']),
-    builtBinSmokeGate(),
+    pnpmScript('standalone-build', 'release:build-cli-standalone', { needs: ['packed-cli'] }),
+    pnpmScript('standalone-verify', 'release:verify-cli-standalone', { needs: ['standalone-build'] }),
+    pnpmScript('update-manifests', 'release:verify-update-manifests', { needs: ['standalone-verify'] }),
+    pnpmScript('cli-updater', 'release:test-cli-update', { needs: ['update-manifests'] }),
+    pnpmScript('installed-desktop', 'release:smoke-installed-desktop', { needs: ['cli-updater'] }),
   ]
 }
 
@@ -398,12 +429,17 @@ function ciConsumerGates(): Gate[] {
     }),
     snapshotGate(validatedBuild),
     webSnapshotGate(validatedBuild),
+    desktopCrossClientGate(validatedBuild),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
     }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
+      needs: validatedBuild,
+    }),
+    pnpmScript('artifact-test', 'test:artifact:built', {
+      label: 'artifact-only tests',
       needs: validatedBuild,
     }),
     builtBinSmokeGate(validatedBuild),
@@ -417,6 +453,19 @@ function webSnapshotGate(needs: string[]): Gate {
     env: { DSH_SNAPSHOT: 'replay' },
     needs,
   })
+}
+
+/** Run the real Electron shared-state lane inside the Linux display server supplied by Playwright dependencies. */
+function desktopCrossClientGate(needs: string[]): Gate {
+  const invocation = pnpmInvocation(['run', 'desktop:e2e:cross-client'])
+  return {
+    id: 'desktop-cross-client',
+    label: 'Desktop cross-client acceptance',
+    displayCommand: 'xvfb-run -a pnpm run desktop:e2e:cross-client',
+    command: 'xvfb-run',
+    args: ['-a', invocation.command, ...invocation.args],
+    needs,
+  }
 }
 
 function ciWindowsBlockingGates(): Gate[] {

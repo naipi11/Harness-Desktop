@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-model-selection",
+  "name": "@harness-desktop/dsh-client-ui-model-selection",
   "description": "Model selection: the /model popupSelect over session.models / session.selectModel",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/client/ui-model-selection"
   },
   "type": "module",
@@ -32,10 +32,10 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-commands",
-        "@deepseek-ai/dsh-api-remotes"
+        "@harness-desktop/dsh-client-locale",
+        "@harness-desktop/dsh-client-runtime",
+        "@harness-desktop/dsh-client-ui-commands",
+        "@harness-desktop/dsh-api-remotes"
       ],
       "platform": "web"
     }
@@ -46,35 +46,35 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-commands": "workspace:^",
+    "@harness-desktop/dsh-client-ui-conversation": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-input-trigger": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
     "clsx": "^2.1.1",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-api-remotes": "workspace:^",
+    "@harness-desktop/dsh-client-connection": "workspace:^",
+    "@harness-desktop/dsh-client-locale": "workspace:^",
+    "@harness-desktop/dsh-client-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-test-runtime": "workspace:^",
+    "@harness-desktop/dsh-client-ui-commands": "workspace:^",
+    "@harness-desktop/dsh-client-ui-conversation": "workspace:^",
+    "@harness-desktop/dsh-client-ui-primitives": "workspace:^",
+    "@harness-desktop/dsh-client-ui-input-trigger": "workspace:^",
+    "@harness-desktop/dsh-client-ui-slots": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "clsx": "^2.1.1",
-    "@deepseek-ai/cordis": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "files": [

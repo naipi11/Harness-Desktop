@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-web-search-exa`.
- * @module @deepseek-ai/dsh-web-search-exa/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-web-search-exa`.
+ * @module @harness-desktop/dsh-web-search-exa/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-web-search-exa'
+const PACKAGE_NAME = '@harness-desktop/dsh-web-search-exa'
 
 /** Cordis companion plugin name. */
 export const name = 'web-search-exa-invariant'

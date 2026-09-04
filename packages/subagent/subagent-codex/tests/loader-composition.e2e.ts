@@ -1,10 +1,12 @@
+import { existsSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   LOADER_SMOKE_TEST_TIMEOUT_MS,
   runLoaderSmoke,
-} from '@deepseek-ai/dsh-loader-smoke'
+} from '@harness-desktop/dsh-loader-smoke'
 
 const fixtureDir = fileURLToPath(new URL(
   '../../../../examples/acp-agent/tests/fixtures/subagent/subagent-codex/',
@@ -13,6 +15,12 @@ const fixtureDir = fileURLToPath(new URL(
 const driver = join(fixtureDir, 'driver.ts')
 const configPath = join(fixtureDir, 'cordis.yml')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
+
+async function jsonlFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true })
+  return entries.filter(entry => entry.endsWith('.jsonl') || entry.endsWith('.jsonl.zstd'))
+    .map(entry => join(dir, entry))
+}
 
 describe('Codex provider public Loader composition', () => {
   it('loads the opt-in package and foreground tool without starting Codex', async () => {
@@ -26,6 +34,10 @@ describe('Codex provider public Loader composition', () => {
       env: {
         // Loading the optional package must not probe or start a Codex binary.
         PATH: '',
+      },
+      inspect: async (cwd, harnessHome) => {
+        expect(existsSync(join(cwd, '.sessions'))).toBe(false)
+        expect(await jsonlFiles(join(harnessHome, 'sessions'))).toHaveLength(1)
       },
     })
 

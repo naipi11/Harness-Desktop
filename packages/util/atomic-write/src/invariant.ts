@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-atomic-write`.
- * @module @deepseek-ai/dsh-atomic-write/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-atomic-write`.
+ * @module @harness-desktop/dsh-atomic-write/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-atomic-write'
+const PACKAGE_NAME = '@harness-desktop/dsh-atomic-write'
 
 /** Cordis companion plugin name. */
 export const name = 'atomic-write-invariant'

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-lsp-stdio
+# @harness-desktop/dsh-lsp-stdio
 
 [English](README.md) | 中文
 

@@ -1,9 +1,9 @@
 /**
  * Shared boot glue for the app bins (`dsh`, `dsh-acp-demo`): load the gitignored
  * `.env`, install the fail-loud Loader guards, resolve the config path (snapshot-aware), load the
- * optional user patch layers from the Harness home (`~/.dsh`), expose its path resolver to
+ * optional user patch layers from `$HARNESS_HOME`, expose its path resolver to
  * config expressions, and drive the Cordis Loader against a leaf `cordis.yml` until the tree settles.
- * @module @deepseek-ai/dsh-app-boot
+ * @module @harness-desktop/dsh-app-boot
  */
 
 import { pathToFileURL } from 'node:url'
@@ -11,20 +11,22 @@ import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
-import { Context, type FiberState } from '@deepseek-ai/cordis'
-import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import Group from '@deepseek-ai/cordis-plugin-group'
-import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import type {} from '@deepseek-ai/cordis-plugin-hmr'
+import { Context, type FiberState } from '@harness-desktop/cordis'
+import Loader, { type Entry, type EntryOptions } from '@harness-desktop/cordis-plugin-loader'
+import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@harness-desktop/cordis-plugin-include'
+import Group from '@harness-desktop/cordis-plugin-group'
+import { createLocalRuntimePlugin, resolveHarnessHome, type HarnessHome, type HarnessHomeProvider } from '@harness-desktop/dsh-host-local-runtime'
+import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
+import type {} from '@harness-desktop/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@harness-desktop/dsh-system-prompt'
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
-    dshHomePath?: typeof dshHomePath
+    harnessHome?: HarnessHome
+    harnessHomeProvider?: HarnessHomeProvider
+    harnessHomePath?: ReturnType<typeof createLocalRuntimePlugin>['path']
   }
 }
 
@@ -178,7 +180,7 @@ export function loadLayeredEnv(
   binName: string, cwd: string = process.cwd(),
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): LaunchEnvironmentSnapshot {
-  const home = resolveDshHome()
+  const home = resolveHarnessHome().path
   const inherited = { ...process.env } as Record<string, string>
   // Parse both layers first: a rejection must not leave one file applied.
   const project = readEnvLayer(binName, cwd, warn)
@@ -266,7 +268,7 @@ export async function watchUserPatches(
 
 /**
  * Load an optional patch-list file: a top-level YAML array of loader patch
- * entries (`@deepseek-ai/cordis-plugin-include`'s `PatchOptions`): id-targeted config
+ * entries (`@harness-desktop/cordis-plugin-include`'s `PatchOptions`): id-targeted config
  * overrides and `insert` lists, with `!!js` expressions allowed. A missing
  * file means "no layer"; an unreadable, unparsable, or non-array file throws —
  * a present patch file that cannot apply is a misconfiguration and must fail
@@ -306,7 +308,7 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
 }
 /**
  * Parse one loader patch list: a top-level YAML array of
- * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
+ * `@harness-desktop/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
  * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
  * because a patch file that cannot be applied at all is a misconfiguration; a
  * single patch whose target row is absent stays a per-entry Loader warning, so
@@ -504,7 +506,7 @@ export async function mountRootInclude(
     }
   // `cordis:group` alongside it: a group row is how a composition gives one
   // `isolate` realm to a provider and its consumers together, and an agent
-  // preset living outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group`
+  // preset living outside this workspace cannot resolve `@harness-desktop/cordis-plugin-group`
   // by name. Both builtins load through the ambient module pipeline, so neither
   // depends on the included tree's own specifier resolution.
   ctx.loader.builtins.group = Group
@@ -526,6 +528,46 @@ export async function mountRootInclude(
   const entry = loader.resolve(includeId)
   bootstrapIncludes.set(ctx, entry)
   return entry
+}
+
+/**
+ * Route a source process's Loader imports through its active tsconfig
+ * resolver, including entries created dynamically after the root include.
+ * Built processes retain ordinary package-export resolution and do not call
+ * this helper.
+ * @param ctx - boot context after Loader installation and before config entries mount.
+ * @param resolveModule - source-mode ESM resolver supplied by the launcher.
+ */
+export function installSourceLoaderResolution(
+  ctx: Context,
+  resolveModule: (specifier: string) => string,
+): void {
+  interface LoaderInternal {
+    import(specifier: string, parentUrl: string, attributes: ImportAttributes): Promise<unknown>
+  }
+  interface LoaderService {
+    internal?: LoaderInternal
+  }
+  const loader = ctx.get('loader') as LoaderService | undefined
+  const internal = loader?.internal
+  if (loader === undefined || internal === undefined) {
+    throw new Error('app-boot: source composition requires the Node Loader resolver')
+  }
+  const handler: ProxyHandler<LoaderInternal> = {
+    get(target, property): unknown {
+      if (property === 'import') {
+        return (specifier: string, parentUrl: string, attributes: ImportAttributes) => {
+          const resolved = specifier.startsWith('.') || specifier.startsWith('file:') || specifier.startsWith('node:')
+            ? specifier
+            : resolveModule(specifier)
+          return target.import(resolved, parentUrl, attributes)
+        }
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  }
+  loader.internal = new Proxy(internal, handler)
 }
 
 /**
@@ -748,6 +790,8 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param harnessHomeProvider - an entrypoint-resolved provider; omit only when
+ * `boot()` itself is the entrypoint that selects the writable root.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -760,6 +804,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  harnessHomeProvider: HarnessHomeProvider = createLocalRuntimePlugin(),
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -767,7 +812,9 @@ export async function boot(
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    ctx.provide('dshHomePath', dshHomePath)
+    ctx.provide('harnessHome', harnessHomeProvider.home)
+    ctx.provide('harnessHomeProvider', harnessHomeProvider)
+    ctx.provide('harnessHomePath', (...segments) => harnessHomeProvider.path(...segments))
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

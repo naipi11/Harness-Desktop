@@ -29,25 +29,32 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import Group from '@deepseek-ai/cordis-plugin-group'
-import { scrubRequestHeaders, stabilizeFixtureMessageIds } from '@deepseek-ai/dsh-acp-snapshot'
+import { Context } from '@harness-desktop/cordis'
+import Loader from '@harness-desktop/cordis-plugin-loader'
+import Include, { type PatchOptions } from '@harness-desktop/cordis-plugin-include'
+import Group from '@harness-desktop/cordis-plugin-group'
+import { scrubRequestHeaders, stabilizeFixtureMessageIds } from '@harness-desktop/dsh-acp-snapshot'
 import {
   assertEntriesLoaded,
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
-} from '@deepseek-ai/dsh-app-boot'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+} from '@harness-desktop/dsh-app-boot'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
+import type {
+  DashboardControlRequest, RuntimeClientId,
+} from '@harness-desktop/dsh-host-local-runtime'
+import { mountAuthenticatedConnection } from '@harness-desktop/dsh-client-connection'
+import { LocalDashboardAuth, type BrowserHandoff } from '../../../packages/host/local-runtime/src/auth.ts'
+import { mountLocalControlRoutes } from '../../../packages/host/local-runtime/src/control-routes.ts'
+import type { RuntimeControlService } from '../../../packages/host/local-runtime/src/control-service.ts'
+import { settingsNamespace } from '@harness-desktop/dsh-settings'
+import { LlmAdapter } from '@harness-desktop/dsh-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
-import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+} from '@harness-desktop/dsh-llm'
+import type { ReplayHandle } from '@harness-desktop/dsh-llm-replay'
+import { installLlmReplay, parseSessionLog } from '@harness-desktop/dsh-llm-replay'
 import SessionStore, {
   packChunkRuns,
   SESSION_FORMAT_VERSION,
@@ -55,12 +62,12 @@ import SessionStore, {
   type Session,
   type SessionEvent,
   type SessionHeader,
-} from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+} from '@harness-desktop/dsh-session'
+import JsonlSessionPersistence from '@harness-desktop/dsh-session-persistence-jsonl'
 // Empty type imports carry the webServer/agents/sessionPersistence Context merges.
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-agent'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import type {} from '@harness-desktop/dsh-host-webserver'
+import type {} from '@harness-desktop/dsh-agent'
+import { provideCmdline } from '@harness-desktop/dsh-cmdline'
 import { REPO_ROOT, requireDist } from './support.ts'
 
 // Host-side web e2e cannot import a browser package: doing so would pull that
@@ -70,7 +77,7 @@ import { REPO_ROOT, requireDist } from './support.ts'
 // import {
 //   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE,
 //   WELCOME_NOTICE_VERSION, WELCOME_NOTICE_COPY,
-// } from '@deepseek-ai/dsh-client-ui-settings-models'
+// } from '@harness-desktop/dsh-client-ui-settings-models'
 export const WELCOME_NOTICE_SETTINGS_NAMESPACE = 'ui-onboarding'
 export const WELCOME_NOTICE_ACK_FIELD = 'welcomeNoticeVersion'
 export const WELCOME_NOTICE_VERSION = '2026-08-13.1'
@@ -175,7 +182,9 @@ export interface WebScaffold {
   workspaceCwd: string
   /** Temp persistence root (seeded sessions land here through the real API). */
   persistenceRoot: string
-  /** Isolated harness home the settings/credentials rows write ($DSH_HOME double). */
+  /** Mint a real one-use Dashboard handoff when authenticated Runtime mode is enabled. */
+  mintDashboardHandoff?: () => BrowserHandoff
+  /** Isolated harness home the settings/credentials rows write ($HARNESS_HOME double). */
   harnessHome: string
   /** Await a settled turn end: in-process turn/end, then the agent's idle flip (which follows the persistence flush). */
   whenTurnSettled(timeoutMs?: number): Promise<SessionId>
@@ -185,6 +194,11 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Mount the real Runtime cookie/handoff carriers around the shipped browser graph. */
+  authenticatedDashboard?: {
+    /** Active-work ids returned before the Dashboard stop action consumes them. */
+    activeWork?: string[]
+  }
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -318,7 +332,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     }
   }
   const workspaceCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-ws-')))
-  // Isolated harness home: the settings/credentials rows resolve $DSH_HOME
+  // Isolated harness home: the settings/credentials rows resolve $HARNESS_HOME
   // paths at load, and an in-process boot must NEVER touch the developer's
   // real ~/.dsh document or credential file.
   const harnessHome = options.harnessHome ?? join(workspaceCwd, '.dsh-home')
@@ -328,12 +342,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // tree. The row's documented fallback is the environment, so pin that: the
   // whole scaffold lifetime, not just the boot, since presets mount when a
   // session is created. Without this a developer's real ~/.dsh/skills silently
-  // enters replay requests and goldens while CI sees none. `DSH_HOME` follows
+  // enters replay requests and goldens while CI sees none. `HARNESS_HOME` follows
   // the resolved harness home so a scaffold sharing another's home — the
   // cross-port persistence scenario — pins the same roots the settings and
   // credentials rows were configured with.
   const skillRootEnvironment = {
-    DSH_HOME: harnessHome,
+    HARNESS_HOME: harnessHome,
     DSH_AGENTS_HOME: join(workspaceCwd, '.agents-home'),
     DSH_BUNDLED_SKILL_DIR: join(workspaceCwd, '.bundled-skills'),
   }
@@ -352,7 +366,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   Object.assign(process.env, skillRootEnvironment)
   let persistenceRoot: string
   try {
-    persistenceRoot = await mkdtemp(join(tmpdir(), 'dsh-web-e2e-sessions-'))
+    persistenceRoot = join(harnessHome, 'sessions')
+    await mkdir(persistenceRoot, { recursive: true })
   } catch (error) {
     const failures: unknown[] = [error]
     await rm(workspaceCwd, { recursive: true, force: true }).catch((cleanupError: unknown) => failures.push(cleanupError))
@@ -402,10 +417,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // the seeded-session scenarios navigate by content search, and these e2e
     // runs are the assembled coverage for the opt-in search path.
     { id: 'session-query-sqlite', config: { path: ':memory:', openAt: 'first-search' } },
-    // storage-json's yml root is anchored to the real $DSH_HOME; pin the row
-    // to an absolute temp root (removed with the workspace at close) so tests
-    // never write the user's harness home.
-    { id: 'storage-json', config: { root: join(workspaceCwd, '.dsh-storages') } },
     // Skill discovery is model-visible input. Pin every host-level root inside
     // the owned temp world so ~/.dsh, ~/.agents, and a bundled-root env setting
     // cannot change replay requests or conversation goldens. Project roots stay
@@ -413,7 +424,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     {
       id: 'skill-filesystem',
       config: {
-        dshHome: join(workspaceCwd, '.dsh-home'),
+        harnessHome,
         agentsHome: join(workspaceCwd, '.agents-home'),
         bundledSkillDir: join(workspaceCwd, '.bundled-skills'),
         watch: false,
@@ -443,15 +454,19 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       config: { host: '127.0.0.1', port: 0 },
     },
     // The bundle's web-runtime row resolves the same built dist under test
-    // (apps/web IS @deepseek-ai/dsh-web-frontend); only the URL line is silenced.
+    // (apps/web IS @harness-desktop/dsh-web-frontend); only the URL line is silenced.
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
     { id: 'web-runtime', config: { printUrl: false, surfaceContext } },
-    ...options.remoteAuthority === undefined
-      ? []
-      : [{ id: 'connection', config: { trustedHosts: [options.remoteAuthority] } }],
-    { id: 'settings', config: { dshHome: harnessHome } },
-    { id: 'credentials', config: { dshHome: harnessHome } },
+    options.authenticatedDashboard === undefined
+      ? {
+        id: 'connection',
+        disabled: false,
+        config: { trustedHosts: options.remoteAuthority === undefined ? [] : [options.remoteAuthority] },
+      }
+      : { id: 'connection', disabled: true },
+    { id: 'settings', config: { harnessHome } },
+    { id: 'credentials', config: { harnessHome } },
     // The shipped directory-picker row is the -auto chooser, which resolves
     // the interaction from the RUNNING host (display, SSH launch, bind). The
     // lane's goldens are interaction-specific (workspace-management drives
@@ -460,8 +475,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // disable+insert pair.
     { id: 'directory-picker', disabled: true },
     { insert: [
-      { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
-      { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
+      { id: 'directory-picker-browse', name: '@harness-desktop/dsh-host-directory-picker-browse' },
+      { id: 'ui-directory-picker-browse', name: '@harness-desktop/dsh-client-ui-directory-picker-browse' },
     ] },
     ...options.agentPresets === undefined
       ? []
@@ -473,7 +488,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // scenario adds only the model-facing tools that exercise those services.
     ...options.cordisTools === true
       ? [{ insert: [
-        { id: 'tool-cordis', name: '@deepseek-ai/dsh-tool-cordis' },
+        { id: 'tool-cordis', name: '@harness-desktop/dsh-tool-cordis' },
       ] }]
       : [],
     ...options.deepSeekSearch === undefined
@@ -496,6 +511,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const ctx = new Context()
   let port = 0
   let replayHandle: ReplayHandle | undefined
+  let mintDashboardHandoff: (() => BrowserHandoff) | undefined
   try {
     process.chdir(workspaceCwd)
     // The production module-resolution setup: an empty profile root inside the temp
@@ -508,7 +524,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
-    ctx.provide('dshHomePath', dshHomePath)
+    const homeProvider = createLocalRuntimePlugin({ env: { ...process.env, HARNESS_HOME: harnessHome } })
+    ctx.provide('harnessHome', homeProvider.home)
+    ctx.provide('harnessHomeProvider', homeProvider)
+    ctx.provide('harnessHomePath', (...segments: readonly string[]) => homeProvider.path(...segments))
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come
@@ -524,7 +543,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
     // how a preset gives one `isolate` realm to a provider and its consumers,
     // and a preset resolving package names from its own directory cannot reach
-    // `@deepseek-ai/cordis-plugin-group` by name.
+    // `@harness-desktop/cordis-plugin-group` by name.
     ctx.loader.builtins.group = Group
     await ctx.loader.create({
       name: 'cordis:include',
@@ -542,6 +561,69 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       throw new Error('web e2e scaffold: webServer service missing after settled boot')
     }
     port = boundPort
+
+    if (options.authenticatedDashboard !== undefined) {
+      const origin = `http://127.0.0.1:${String(port)}`
+      const auth = new LocalDashboardAuth({ accessToken: 'web-e2e-native-token', origin })
+      let activeWork = [...(options.authenticatedDashboard.activeWork ?? [])]
+      const controlService = {
+        sessions: undefined,
+        async handleDashboard(_owner: RuntimeClientId, request: DashboardControlRequest) {
+          if (request.operation === 'get-legacy-migration') return { kind: 'not-needed' }
+          if (request.operation === 'observe-active-work') return { ownUiWork: [...activeWork] }
+          if (request.operation === 'stop-own-ui-work') {
+            const work = [...activeWork]
+            activeWork = []
+            return work.length === 0 ? { kind: 'none-active' } : { kind: 'stopped', work }
+          }
+          return { kind: 'not-needed' }
+        },
+      } as unknown as RuntimeControlService
+      mountLocalControlRoutes(ctx, { auth, controlService })
+      mountAuthenticatedConnection(ctx, { authorize: request => auth.authorizeDashboard(request) })
+      mintDashboardHandoff = () => auth.mintBrowserHandoff()
+    } else {
+      // The in-process Web lane predates the local Runtime process and has no
+      // native client that can mint a browser handoff. Admit only same-origin
+      // Dashboard control probes so the built AppWebEntry/Loader graph runs;
+      // authenticated scenarios opt into the Runtime carrier above.
+      ctx.webServer.register({
+        kind: 'exact',
+        path: '/_harness/dashboard-control',
+        async handler(request, response) {
+          const host = request.headers.host
+          if (request.method !== 'POST' || host === undefined || request.headers.origin !== `http://${host}`) {
+            response.writeHead(403)
+            response.end('forbidden')
+            return
+          }
+          const chunks: Uint8Array[] = []
+          for await (const chunk of request as AsyncIterable<Uint8Array>) chunks.push(chunk)
+          let operation: unknown
+          try {
+            operation = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { operation?: unknown }).operation
+          } catch {
+            response.writeHead(400)
+            response.end('invalid request')
+            return
+          }
+          const value = operation === 'get-legacy-migration'
+            ? { kind: 'not-needed' }
+            : operation === 'observe-active-work'
+              ? { ownUiWork: [] }
+              : operation === 'stop-own-ui-work'
+                ? { kind: 'none-active' }
+                : undefined
+          if (value === undefined) {
+            response.writeHead(400)
+            response.end('invalid request')
+            return
+          }
+          response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ ok: true, value }))
+        },
+      })
+    }
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
@@ -586,6 +668,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ctx,
     workspaceCwd,
     persistenceRoot,
+    ...(mintDashboardHandoff === undefined ? {} : { mintDashboardHandoff }),
     // Barrier stack: the in-process turn/end identifies the session, its
     // explicit flush makes the transcript durable, and the caller's browser
     // settled-poll comes last because host completion strictly precedes render.

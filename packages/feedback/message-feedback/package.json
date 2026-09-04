@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-message-feedback",
+  "name": "@harness-desktop/dsh-message-feedback",
   "description": "Lifecycle-bound per-message rating and note sidecar for the DeepSeek Harness",
-  "version": "0.1.0-rc.5",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/naipi11/Harness-Desktop.git",
     "directory": "packages/feedback/message-feedback"
   },
   "type": "module",
@@ -49,32 +49,32 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/dsh-brand": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-storage-domain": "workspace:^",
+    "@harness-desktop/dsh-typert-protocol": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@harness-desktop/schemastery": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis-plugin-include": "workspace:^",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
-    "@deepseek-ai/dsh-storage": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/dsh-storage-json": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@harness-desktop/cordis-plugin-include": "workspace:^",
+    "@harness-desktop/cordis-plugin-loader": "workspace:^",
+    "@harness-desktop/dsh-brand": "workspace:^",
+    "@harness-desktop/dsh-invariants": "workspace:^",
+    "@harness-desktop/dsh-llm": "workspace:^",
+    "@harness-desktop/dsh-session": "workspace:^",
+    "@harness-desktop/dsh-session-persistence": "workspace:^",
+    "@harness-desktop/dsh-session-persistence-jsonl": "workspace:^",
+    "@harness-desktop/dsh-storage": "workspace:^",
+    "@harness-desktop/dsh-storage-domain": "workspace:^",
+    "@harness-desktop/dsh-storage-json": "workspace:^",
+    "@harness-desktop/dsh-typert-protocol": "workspace:^",
+    "@harness-desktop/cordis": "workspace:^"
   }
 }

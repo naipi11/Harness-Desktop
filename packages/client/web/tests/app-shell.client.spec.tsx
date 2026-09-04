@@ -8,11 +8,11 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { TestSessions, TestWorkspaces } from '@deepseek-ai/dsh-client-test-runtime'
-import type { Stabilizer } from '@deepseek-ai/dsh-client-test-runtime'
-import * as AppShell from '@deepseek-ai/dsh-client-web/src/app-shell.ts'
+import { Context } from '@harness-desktop/cordis'
+import { SlotRegistry } from '@harness-desktop/dsh-client-runtime/client'
+import { TestSessions, TestWorkspaces } from '@harness-desktop/dsh-client-test-runtime'
+import type { Stabilizer } from '@harness-desktop/dsh-client-test-runtime'
+import * as AppShell from '@harness-desktop/dsh-client-web/src/app-shell.ts'
 
 afterEach(cleanup)
 
@@ -31,6 +31,10 @@ async function bench() {
 }
 
 describe('app-shell assembly plugin', () => {
+  it('waits for the workspace service consumed by the workbench assembly', () => {
+    expect(AppShell.inject).toContain('workspaces')
+  })
+
   it('installs the renderer and provides the assembled appShell face', async () => {
     const { ctx, slots } = await bench()
     slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)

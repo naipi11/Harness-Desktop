@@ -18,15 +18,20 @@ Status: implemented
 
 **每个配置源有唯一声明位置。** 组合包 yml 值是工程默认，Settings 分节是可写的用户偏好，CLI（命令行界面）flags 面向其归属的启动器配置行，env 值则通过 yml `!!js` 表达式进入。patch 会整体替换一行的 config。解析后的前端 `distIndex` 通过同一条 patch 通道作为组装事实传递。与传输无关的提供方／模型默认值归 `ctx.agentDefaultModel` 所有；[直接 headless 入口](2026-08-09-headless-direct-core-entry-point.md)与 Web 网关消费同一份状态。
 
-**传输五分。** `dsh-host-apiproxy` 是网关插件（`api-gateway` 行）：默认导出 `ApiProxyService`，只配置 `{nativeOpen?}`，消费 base 层不偏向特定入口的 `ctx.agentDefaultModel`，provide `ctx.apiProxy`，保持传输无关且不注册路由。`dsh-host-webserver` 是朴素的路由注册插件：`WebServer` provide `ctx.webServer`（`register(route) → disposer`、重复 pattern 即抛、`tapIndex` 按注册序应用、`port`），激活即 listen，单请求失败时答 400 并记日志，且不认识任何 harness 概念。connection node 半拥有从 `ctx.apiProxy` 经 `toFetchHandler` 绑定到 `/api` 的逻辑。modules node 半（`ClientModuleRegistry`，provide `ctx.clientModules`）拥有单包增量扫描、bundle 路由、index tap 与 `onRebuilt`/`onGraphChanged` 通知。HMR（热模块替换） node 半通过 `fs.watchFile` membership 与 `/plugins/events` SSE 路由拥有开发期重载。
+**传输五分。** `dsh-host-apiproxy` 是网关插件（`api-gateway` 行）：默认导出 `ApiProxyService`，只配置 `{nativeOpen?}`，消费 base 层不偏向特定入口的 `ctx.agentDefaultModel`，provide `ctx.apiProxy`，保持传输无关且不注册路由。`dsh-host-webserver` 是朴素的路由注册插件：`WebServer` provide `ctx.webServer`（`register(route) → disposer`、重复 pattern 即抛、`tapIndex` 按注册序应用、`port`），激活即 listen，单请求失败时答 400 并记日志，且不认识任何 harness 概念。connection node 半拥有从 `ctx.apiProxy` 经 `toFetchHandler` 绑定到 `/api` 的逻辑。modules node 半（`ClientModuleRegistry`，provide `ctx.clientModules`）拥有单包增量扫描、bundle 路由、index tap 与 `onRebuilt`/`onGraphChanged` 通知。裸 Loader 配置项名称从 config-tree 锚点解析包元数据。构建版组合会保留用于 pnpm／包锚定的物理 `file:` import；注册表使用 `findPackageJSON` 恢复浏览器图所需的 manifest 包名，并以该身份协调所有物理别名。无法解析或不含客户端的配置项保持缺席；匿名 manifest 只有在声明 Web 客户端后才会失败；畸形元数据在自身的 dirty 处理轮次报告，不会污染另一个包的协调。HMR（热模块替换） node 半通过 `fs.watchFile` membership 与 `/plugins/events` SSE 路由拥有开发期重载。
 
 **包出口纪律。** modules 包只暴露 `.`（node 半）与 `./client`（完整浏览器半：`ClientModuleSystem`、`parseBootManifest`、收编插件面）——不设专用子路径；wire 类型经根出口 re-export 给 host 侧消费方。收编握手：内核在 cordis 之前把建好的实例写入 `window.__DSH_MODULES__`；`./client` 的 apply 读取该槽位（缺少时显式抛错）并 provide `ctx.modules`。
+
+## 验证
+
+针对性 node-half 测试要求物理构建文件配置项恢复其 manifest 包 id，在存活与禁用别名并存时保留唯一图记录，忽略无法解析和匿名的非客户端配置项，并只报告一次无关的畸形元数据。构建版跨客户端 Web 通道启动规范构建版运行时，import 其物理构建版 connector，要求构建版 Web dist 存在，并在通过语义浏览器交互驱动共享状态之前到达已认证就绪的 Engineering workbench。
 
 ## 后果
 
 - 重组一个 web 部署 = 改 yml/patch；退役件（`mountWebPlugins`、`CLIENT_PACKAGES`、`createHostWebPluginRegistry`、`startWebServer`、webserver 的图/SSE/api 知识）全部删除。
 - [Headless 是直接 core 入口](2026-08-09-headless-direct-core-entry-point.md)：其随附 profile 包含共享的 base Agent 能力，并省去 Host、HTTP、Web 与浏览器层。本笔记的传输划分是浏览器 surface 的约定。
 - 一个值得记住的 TypeScript 坑：`declare module 'cordis'` augmentation 所在文件若**没有任何 cordis import**，会被降级成独立模块声明，无声打散全程序的 `Context` merge（`ctx.on`/`ctx.effect` 全程序消失）。用 `import type {} from 'cordis'` 锚定。
+- 源码启动与构建版规范运行时启动现在会发布同一个以包名标识的浏览器图，即使它们的 Host Loader 配置项名称有意不同。
 
 ## 考虑过的替代方案
 

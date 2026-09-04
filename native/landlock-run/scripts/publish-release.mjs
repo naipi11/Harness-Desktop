@@ -64,7 +64,7 @@ function integrityOf(tarball) {
  * @returns {{name: string, version: string}} What the packed manifest declares.
  */
 function packedIdentity(tarball) {
-  const result = spawnSync('tar', ['-xOzf', tarball, 'package/package.json'], { encoding: 'utf8' });
+  const result = spawnSync('tar', ['-xOzf', tarball, 'package/package.json'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status !== 0) throw new Error(`cannot read the manifest inside ${tarball}:\n${result.stderr}`);
   const manifest = JSON.parse(result.stdout);
   if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') {
@@ -80,7 +80,7 @@ function packedIdentity(tarball) {
  * @returns {{kind: 'absent'} | {kind: 'present', integrity: string}} Registry state.
  */
 function registryState(name, version) {
-  const result = spawnSync('npm', ['view', `${name}@${version}`, 'dist.integrity', '--json'], { encoding: 'utf8' });
+  const result = spawnSync('npm', ['view', `${name}@${version}`, 'dist.integrity', '--json'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status !== 0) {
     const output = `${result.stdout}${result.stderr}`;
     if (output.includes('E404') || output.includes('404 Not Found')) return { kind: 'absent' };
@@ -109,7 +109,7 @@ async function publishTarball(tarball, name, version) {
   for (let tries = 1; tries <= PUBLISH_ATTEMPTS; tries += 1) {
     // No --access: publishConfig.access in each manifest decides, and a
     // command-line flag would override it.
-    const result = spawnSync('npm', ['publish', tarball, ...tagArgs], { encoding: 'utf8' });
+    const result = spawnSync('npm', ['publish', tarball, ...tagArgs], { encoding: 'utf8', shell: process.platform === 'win32' });
     const output = `${result.stdout}${result.stderr}`;
     if (result.status === 0) return;
 

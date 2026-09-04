@@ -1,9 +1,13 @@
 import { availableParallelism } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 
 const DEFAULT_SNAPSHOT_MAX_CONCURRENCY = 5
+const productMetadataSource = fileURLToPath(
+  new URL('./packages/boot/app-boot/src/product-metadata.ts', import.meta.url),
+)
 
 function positiveIntFromEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -41,6 +45,11 @@ export default defineConfig({
   // through the tsconfig.base.json paths facade; the native option cannot do
   // this (the root tsconfig is a solution file with no paths).
   plugins: [tsconfigPaths({ projects: ['./tsconfig.base.json'] }), standardDecoratorPlugin()],
+  resolve: {
+    alias: {
+      '@harness-desktop/dsh-app-boot/product-metadata': productMetadataSource,
+    },
+  },
   test: {
     execArgv: vitestExecArgv,
     setupFiles: ['./scripts/test-invariants.ts'],
@@ -50,7 +59,9 @@ export default defineConfig({
       // mode remains the zero-build path, while lib mode requires a prior build.
       ...(process.env.DSH_EXAMPLE_MODE === 'lib' ? ['apps/web/tests/**/*.snapshot.ts'] : []),
       'apps/cli/tests/**/*.snapshot.ts',
+      'apps/desktop/tests/**/*.snapshot.tsx',
       'examples/*/tests/**/*.snapshot.ts',
+      'packages/host/local-runtime/tests/**/*.snapshot.ts',
     ],
     // Replay never writes committed outputs and every scenario owns its
     // mutable runtime state (the subprocess suites use a unique temp dir and

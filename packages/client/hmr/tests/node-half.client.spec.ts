@@ -5,10 +5,10 @@
 import { mkdtempSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context } from '@harness-desktop/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WebBootGraph, ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
-import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
+import type { WebBootGraph, ClientModuleRegistry } from '@harness-desktop/dsh-client-modules'
+import type { WebRoute, WebServer } from '@harness-desktop/dsh-host-webserver'
 import { apply, Config, EVENTS_ENDPOINT, inject } from '../src/index.ts'
 
 const POLL_MS = 20

@@ -2,13 +2,13 @@
  * Concrete agent-loop plugin: creates scoped ReactLoopAgents, publishes them
  * through the agent/session registries, and owns their ordered teardown.
  *
- * @module @deepseek-ai/dsh-agent-loop
+ * @module @harness-desktop/dsh-agent-loop
  */
 
-import { Context, FiberState, Service } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service } from '@harness-desktop/cordis'
 import { randomUUID } from 'node:crypto'
-import z from '@deepseek-ai/schemastery'
-import { emitAgentEvent } from '@deepseek-ai/dsh-agent'
+import z from '@harness-desktop/schemastery'
+import { emitAgentEvent } from '@harness-desktop/dsh-agent'
 import type {
   Agent,
   AgentFactory,
@@ -18,14 +18,14 @@ import type {
   CreateAgentOptions,
   ResumeAgentOptions,
   SessionStartSource,
-} from '@deepseek-ai/dsh-agent'
-import { errorChain } from '@deepseek-ai/dsh-llm'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
-import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-tools'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+} from '@harness-desktop/dsh-agent'
+import { errorChain } from '@harness-desktop/dsh-llm'
+import { installSettingsSection, settingsNamespace } from '@harness-desktop/dsh-settings'
+import { SessionId, SessionPreparation } from '@harness-desktop/dsh-session'
+import type { Session, SessionHeader } from '@harness-desktop/dsh-session'
+import type {} from '@harness-desktop/dsh-system-prompt'
+import type {} from '@harness-desktop/dsh-tools'
+import type { SessionPersistence } from '@harness-desktop/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
 
@@ -157,7 +157,7 @@ interface PreparedAgent {
   dispose(): Promise<void>
 }
 
-declare module '@deepseek-ai/cordis' {
+declare module '@harness-desktop/cordis' {
   interface Context {
     agentLoop: AgentLoop
     /**

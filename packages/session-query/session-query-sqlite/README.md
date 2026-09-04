@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-query-sqlite
+# @harness-desktop/dsh-session-query-sqlite
 
 English | [中文](README.zh.md)
 

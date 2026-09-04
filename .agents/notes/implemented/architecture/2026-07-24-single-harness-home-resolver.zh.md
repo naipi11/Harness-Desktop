@@ -1,4 +1,4 @@
-# Agent Note: 单一 harness home 解析器
+# Agent Note: 单一 Harness home provider
 
 Status: implemented
 
@@ -6,33 +6,33 @@ Status: implemented
 
 ## 问题
 
-对于"DeepSeek Harness 用户数据存放在哪里"，harness 里存在两套互不一致的约定：
+宿主本地消费方曾分别解释可写用户数据根目录。插件可能读取 `$DSH_HOME`、使用 `~/.dsh`，或者接收配置路径；应用启动器和 Loader 表达式还会再次解析同一事实。因此，即使默认值看似相同，也无法证明设置、凭据、会话、附件、skill、指令、profile 和 shell 子进程使用同一个目录。
 
-- `@deepseek-ai/dsh-home` 按 `configured ?? $DSH_HOME ?? ~/.dsh` 解析。
-- `@deepseek-ai/dsh-home-paths` 又提供了**第二个** `resolveDshHome`，优先级相同但额外做了波浪号展开——它几乎是 `dsh-home` 的重复实现，却没有任何门禁发现，因为两者分属不同的包，而且早已漂移（只有一个会展开波浪号）。
-
-同一条横切事实有两个解析器，意味着不存在单一的 home 策略。
+可写根目录策略还需要平台默认值，并且必须区分迁移来源。若把旧 `$DSH_HOME` 值当作写入回退，就会永久保留两个活动根目录，并允许兼容来源重定向新数据。
 
 ## 决策
 
-由一个解析器统一掌管 harness home，落在 `@deepseek-ai/dsh-home-paths`，采用单一根目录：
+`@harness-desktop/dsh-host-local-runtime` 负责可写根目录策略。`resolveHarnessHome()` 接受非空白的 `HARNESS_HOME` 覆盖值；未设置时，Windows 选择 `%LOCALAPPDATA%\Harness Desktop`，macOS 选择 `~/Library/Application Support/Harness Desktop`，Linux 选择 `$XDG_DATA_HOME/harness-desktop` 或 `~/.local/share/harness-desktop`。它返回绝对路径且带品牌类型的 `HarnessHome`。`$DSH_HOME` 只作为旧数据导入候选报告，绝不选择写入目标。
 
-```
-explicit configured path  >  $DSH_HOME  >  ~/.dsh
-```
+每个应用都在 Loader 树挂载前创建一个不可变的 `HarnessHomeProvider`。`dsh-app-boot` 向 Loader 发布该 provider，以及派生的 `harnessHome` 和 `harnessHomePath(...)` 表达式值。组合把这些已解析值传给每个宿主本地消费方；消费方不得重新读取环境、创建第二个 provider 或增加 `$DSH_HOME` 写入路径。需要隔离的启动器在创建 provider 前提供 `HARNESS_HOME`，无环境变量启动则保留平台默认值。
 
-空或仅含空白的 `$DSH_HOME` 被当作未设置处理；否则，`resolve('')` 会悄悄把 home 落在当前工作目录。harness 把所有用户数据都放在同一个根目录下；不存在 XDG 的 config/data/cache 拆分。`dshHomePath(...segments)` 将部署负责的子路径拼接到该根目录下，`dsh-app-boot` 在挂载条目前向 Loader `!!js` 配置表达式暴露它，因此出厂组合无需复制解析器即可派生 `sessions` 和 `storages`。`dshHomeDisplay()` 为面向用户的路径以符号形式命名已解析的根目录——默认 home 显示为 `~/.dsh`，任何已配置的 home 显示为 `$DSH_HOME`——这样用户全局的 `AGENTS.md` 标签就绝不会泄露机器上的绝对路径。它取代了 agent-instructions 中自定义的「默认值 vs `$DSH_HOME`」判断。
+`@harness-desktop/dsh-home-paths` 保留波浪号展开和监听路径规范化等无依赖路径原语，但不负责数据根目录策略。持久写入方接收已解析 provider 或其子路径：设置、凭据、会话持久化、附件和匿名身份都写入同一个 home。profile、agent 指令、preset、skill 发现和受管理的 shell 环境消费同一次解析结果。
 
-`@deepseek-ai/dsh-home` 被删除。它的三个引用方（`dsh-tool-bash`、`dsh-skill-filesystem`、`dsh-agent-spine-demo`）从 `dsh-home-paths` 导入 `resolveDshHome`。
-
-`dsh-telemetry` 及其独立 home 策略已随 [SDK 项目工具链移除](../simplification/2026-08-11-remove-sdk-project-toolchain.md)一并消失，因此该解析器是唯一的 home 策略。
+组装验证通过真实 profile manifest 运行构建产物，其组合包列表包含 `@harness-desktop/dsh-base`。专用的产物 Vitest lane 写入每一种持久产物，并从进程外观察读取侧消费方。源码测试清单排除该 lane，独立产物命令会先构建所需宿主产物。
 
 ## 备选方案
 
-**保留两份 `resolveDshHome` 副本。** 它们早已漂移（一个展开波浪号，一个不展开），并把同一条横切事实编码了两遍。`util/` 层的意义正是在于合并，重复的解析器是一个潜在的分歧 bug。
+**让每个插件自行解析环境。** 即使调用相同 helper，也仍会在不同时刻解析，并允许配置绕过应用持有的值。注入使一个已经解析的 provider 成为唯一写入权威。
 
-**采用 XDG（遵从 `$XDG_CONFIG_HOME`，或把 config/data/cache 拆分到各自的目录树）。** 经过考虑后放弃，转而采用一个显而易见的根目录。单一的 `$DSH_HOME || ~/.dsh` 基准事实与 `~/.claude` / `~/.aws` 一致，无需对每个 `~/.dsh` 消费方按类别重新归类，也不留下任何需要协调的解析器不对称。
+**保留 `$DSH_HOME` 作为可写兼容回退。** 旧值可以为显式导入工作流标识数据，但通过它写入会保留本决策要消除的双根目录行为。新写入只使用 `HARNESS_HOME` 或平台默认值。
+
+**把配置、数据和缓存拆分到不同根目录。** 平台数据目录约定提供默认位置，但 Harness 持有的每个持久子目录仍位于一个根目录下。多根目录分类会在没有当前消费方需求的情况下重新引入协调问题。
+
+**用手工缩小组合验证提供方。** 这种树可以验证单个构造器，却可能遗漏出厂配置项、patch 覆盖或真实 profile 解析。因此，产物 lane 通过生产入口消费 base 组合包。
 
 ## 影响
 
-- 单一 home 事实，单一解析器。`dsh-home-paths` 是唯一归属方；`util/` 组失去了 `home` 包。
+- 一次应用运行只有一个可写 home provider 和一个 `HARNESS_HOME` shell 事实；受管理的子进程环境中绝不出现 `DSH_HOME`。
+- 原始组合和编程式组合必须向有要求的消费方注入已解析 provider。缺少注入会在 Loader 激活时失败，而不会悄悄选择另一个目录。
+- 默认位置采用原生应用数据目录，而不是 `~/.dsh`。这是预发布存储破坏性变更；旧数据复制和冲突策略属于独立导入工作流。
+- 仅产物验证具有显式构建前置，并且不会被普通源码测试程序收集。

@@ -1,12 +1,12 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-cmdline`.
- * @module @deepseek-ai/dsh-cmdline/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-cmdline`.
+ * @module @harness-desktop/dsh-cmdline/invariant
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-cmdline'
+const PACKAGE_NAME = '@harness-desktop/dsh-cmdline'
 
 /** Cordis companion plugin name. */
 export const name = 'cmdline-invariant'

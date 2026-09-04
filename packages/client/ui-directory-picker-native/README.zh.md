@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-directory-picker-native
+# @harness-desktop/dsh-client-ui-directory-picker-native
 
 [English](README.md) | 中文
 

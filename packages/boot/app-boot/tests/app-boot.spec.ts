@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { Context } from '@harness-desktop/cordis'
+import { createLocalRuntimePlugin } from '@harness-desktop/dsh-host-local-runtime'
+import SystemPrompt, { renderPrompt } from '@harness-desktop/dsh-system-prompt'
 import {
   addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
@@ -110,7 +111,7 @@ describe('loadLayeredEnv', () => {
       '',
     ].join('\n'))
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     vi.stubEnv('APP_BOOT_LAYERED_INHERITED', 'inherited')
     const warn = vi.fn()
     try {
@@ -138,7 +139,7 @@ describe('loadLayeredEnv', () => {
     const project = tmp()
     writeFileSync(join(project, '.env'), `${NAMES[1]}=applied-anyway\n${content}`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     try {
       expect(() => loadLayeredEnv(NAME, project, vi.fn())).toThrow(/only the launching environment may set/)
       expect(process.env[NAMES[1]]).toBeUndefined()
@@ -154,7 +155,7 @@ describe('loadLayeredEnv', () => {
     writeFileSync(join(home, '.env'), `${NAMES[1]}=u\n`)
     writeFileSync(join(project, '.env'), `${NAMES[2]}=p\n`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     try {
       const snapshot = loadLayeredEnv(NAME, project, vi.fn())
       expect(snapshot.get(NAMES[1])).toEqual({ value: 'u', source: 'user-env', path: join(home, '.env') })
@@ -172,7 +173,7 @@ describe('loadLayeredEnv', () => {
     writeFileSync(join(home, '.env'), `${NAMES[1]}=real-home\n`)
     writeFileSync(join(project, '.env'), `${NAMES[2]}=set-by-project\n`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     try {
       loadLayeredEnv(NAME, project, vi.fn())
       expect(process.env[NAMES[1]]).toBe('real-home')
@@ -190,7 +191,7 @@ describe('loadLayeredEnv', () => {
     mkdirSync(join(home, '.env'))
     writeFileSync(join(project, '.env'), `${NAMES[2]}=project-only\n`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     const warn = vi.fn()
     try {
       const snapshot = loadLayeredEnv(NAME, project, warn)
@@ -210,7 +211,7 @@ describe('loadLayeredEnv', () => {
     mkdirSync(join(home, '.env'))
     writeFileSync(join(project, '.env'), `${NAMES[2]}=project-only\n`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
     try {
       const snapshot = loadLayeredEnv(NAME, project)
@@ -229,7 +230,7 @@ describe('loadLayeredEnv', () => {
     const project = tmp()
     writeFileSync(join(project, '.env'), `${NAMES[2]}=project-only\n`)
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     const warn = vi.fn()
     try {
       const snapshot = loadLayeredEnv(NAME, project, warn)
@@ -245,7 +246,7 @@ describe('loadLayeredEnv', () => {
     const home = tmp()
     const project = tmp()
     clear()
-    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('HARNESS_HOME', home)
     vi.stubEnv('APP_BOOT_LAYERED_INHERITED', 'inherited')
     try {
       const snapshot = loadLayeredEnv(NAME, project, vi.fn())
@@ -260,7 +261,7 @@ describe('loadLayeredEnv', () => {
     const both = tmp()
     writeFileSync(join(both, '.env'), `${NAMES[2]}=one-file\n`)
     clear()
-    vi.stubEnv('DSH_HOME', both)
+    vi.stubEnv('HARNESS_HOME', both)
     try {
       const snapshot = loadLayeredEnv(NAME, both, vi.fn())
       expect(snapshot.get(NAMES[2])).toEqual({ value: 'one-file', source: 'project-env', path: join(both, '.env') })
@@ -562,12 +563,12 @@ describe('boot', () => {
     const dir = tmp()
     const harness = tmp()
     const absolutePlugin = join(dir, 'absolute.mjs')
-    const shadow = join(dir, 'node_modules', '@deepseek-ai', 'dsh-system-prompt')
-    const harnessPlugin = join(harness, 'node_modules', '@deepseek-ai', 'dsh-system-prompt')
+    const shadow = join(dir, 'node_modules', '@harness-desktop', 'dsh-system-prompt')
+    const harnessPlugin = join(harness, 'node_modules', '@harness-desktop', 'dsh-system-prompt')
     mkdirSync(shadow, { recursive: true })
     mkdirSync(harnessPlugin, { recursive: true })
     writeFileSync(join(shadow, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-system-prompt',
+      name: '@harness-desktop/dsh-system-prompt',
       type: 'module',
       exports: './index.mjs',
     }))
@@ -578,7 +579,7 @@ describe('boot', () => {
       '',
     ].join('\n'))
     writeFileSync(join(harnessPlugin, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-system-prompt',
+      name: '@harness-desktop/dsh-system-prompt',
       type: 'module',
       exports: './index.mjs',
     }))
@@ -592,7 +593,7 @@ describe('boot', () => {
     writeFileSync(absolutePlugin, 'export function apply(ctx) { ctx.provide("absolutePluginLoaded", true) }\n')
     const entries = [
       '- id: prompt',
-      "  name: '@deepseek-ai/dsh-system-prompt'",
+      "  name: '@harness-desktop/dsh-system-prompt'",
       '- id: relative',
       "  name: './relative.mjs'",
     ]
@@ -658,10 +659,10 @@ describe('boot', () => {
     expect(disposed).toBe(true)
   })
 
-  it('exposes dshHomePath to Loader config expressions', async () => {
+  it('exposes harnessHomePath to Loader config expressions', async () => {
     const dir = tmp()
-    const dshHome = join(dir, 'home')
-    vi.stubEnv('DSH_HOME', dshHome)
+    const harnessHome = join(dir, 'home')
+    vi.stubEnv('HARNESS_HOME', harnessHome)
     writeFileSync(join(dir, 'capture.mjs'), [
       'export const name = "capture"',
       'export function apply(ctx, config) {',
@@ -673,16 +674,44 @@ describe('boot', () => {
       '- id: capture',
       '  name: ./capture.mjs',
       '  config:',
-      "    path: !!js dshHomePath('sessions')",
+      "    path: !!js harnessHomePath('sessions')",
       '',
     ].join('\n'))
     let ctx: Context | undefined
     try {
       ctx = await boot(NAME, join(dir, 'cordis.yml'))
-      expect(ctx.get('capturedPath')).toBe(join(dshHome, 'sessions'))
+      expect(ctx.get('capturedPath')).toBe(join(harnessHome, 'sessions'))
     } finally {
       await ctx?.fiber.dispose()
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('uses the entrypoint provider object before Loader entries mount', async () => {
+    const dir = tmp()
+    const provider = createLocalRuntimePlugin({ env: { HARNESS_HOME: join(dir, 'home') } })
+    writeFileSync(join(dir, 'capture.mjs'), [
+      'export const name = "capture"',
+      'export function apply(ctx, config) {',
+      '  ctx.provide("capturedProvider", config.provider)',
+      '  ctx.provide("capturedPath", config.path)',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: capture',
+      '  name: ./capture.mjs',
+      '  config:',
+      '    provider: !!js harnessHomeProvider',
+      "    path: !!js harnessHomePath('sessions')",
+      '',
+    ].join('\n'))
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined, provider)
+    try {
+      expect(ctx.get('capturedProvider')).toBe(provider)
+      expect(ctx.get('capturedPath')).toBe(provider.path('sessions'))
+    } finally {
+      await ctx.fiber.dispose()
     }
   })
 

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-typert-protocol
+# @harness-desktop/dsh-typert-protocol
 
 [English](README.md) | 中文
 

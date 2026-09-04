@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-host-plugin-inventory
+# @harness-desktop/dsh-host-plugin-inventory
 
 English | [中文](README.zh.md)
 

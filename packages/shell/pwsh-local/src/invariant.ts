@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-pwsh-local`.
- * @module @deepseek-ai/dsh-pwsh-local/invariant
+ * Package-owned invariant companion for `@harness-desktop/dsh-pwsh-local`.
+ * @module @harness-desktop/dsh-pwsh-local/invariant
  */
 
 /* jscpd:ignore-start */
-import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Context } from '@harness-desktop/cordis'
+import type { InvariantInstaller } from '@harness-desktop/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-pwsh-local'
+const PACKAGE_NAME = '@harness-desktop/dsh-pwsh-local'
 
 /** Cordis companion plugin name. */
 export const name = 'pwsh-local-invariant'

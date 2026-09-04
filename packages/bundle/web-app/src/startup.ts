@@ -3,12 +3,12 @@
  * family (`--host`, `--port`, `--trusted-host`) and its `--help`
  * text, then provides the immutable values as {@link WEB_STARTUP_SERVICE}.
  * Ordinary rows inject that service before reading it from lazy config.
- * @module @deepseek-ai/dsh-web-app/startup
+ * @module @harness-desktop/dsh-web-app/startup
  */
 
 import { Command } from 'commander'
-import type { Context } from '@deepseek-ai/cordis'
-import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+import type { Context } from '@harness-desktop/cordis'
+import { parseCmdline } from '@harness-desktop/dsh-cmdline'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-startup'
@@ -43,7 +43,7 @@ interface WebOptions {
 function webCommand(): Command {
   return new Command()
     .name('dsh --profile web')
-    .description('Serve the DeepSeek Harness browser UI.')
+    .description('Serve the Harness Desktop browser UI.')
     .helpOption('-h, --help', 'show this help')
     .option('--host <host>', 'bind host')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
@@ -52,6 +52,8 @@ function webCommand(): Command {
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --port 8080              serve on another port
+  dsh web --daemon                           start the web server in the background
+  dsh web --background                       alias for --daemon
 `)
 }
 

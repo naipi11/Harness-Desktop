@@ -7,7 +7,8 @@ The credential capability family separates reference resolution from its provide
 | Package | Role | ctx key |
 |---|---|---|
 | [`credentials/`](credentials/README.md) | Credential-reference seam | `ctx.credentials` |
-| [`credentials-local/`](credentials-local/README.md) | Environment and local-file provider | registers `ctx.credentials` |
+| [`credentials-local/`](credentials-local/README.md) | Environment and local-file provider; no longer mounted in the Runtime base composition | registers `ctx.credentials` |
+| [`credentials-platform/`](credentials-platform/README.md) | Platform/environment provider (Runtime) | registers `ctx.credentials` |
 
 Configuration carries references, not secret values. Consumers resolve those references at their operation boundary; the child READMEs own mutation, precedence, and storage semantics.
 

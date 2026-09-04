@@ -57,6 +57,12 @@
       "path": "../../packages/util/home-paths"
     },
     {
+      "path": "../../packages/util/update-policy"
+    },
+    {
+      "path": "../../packages/host/local-runtime"
+    },
+    {
       "path": "../../packages/mcp/mcp-client"
     },
     {

@@ -1,8 +1,8 @@
-# Your first plugin
+# Internal plugin format reference
 
 English | [中文](index.zh.md)
 
-This tutorial creates a minimal Harness plugin and loads it into the Web UI. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
+This is an internal app-boot format reference, not a runnable public Web tutorial. It shows the files for a minimal Harness plugin; the product CLI cannot load its arbitrary patch. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
 
 ## Create a local project
 
@@ -17,7 +17,7 @@ mkdir -p scratch-plugin/src
 In Harness, a plugin is a TypeScript module that exports an `apply` function. The framework calls `apply` when loading the plugin and passes a `ctx` context object through which the plugin registers capabilities:
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 
 export const name = 'my-plugin'
 
@@ -33,7 +33,7 @@ That is the complete configuration.
 Create `scratch-plugin/src/my-plugin.ts`:
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 
 export const name = 'hello-plugin'
 
@@ -55,13 +55,13 @@ Run `pwd` from the repository root, then create `scratch-plugin/cordis.yml` as a
 
 The plugin path must be absolute. A patch file contributes configuration but does not change the profile directory from which the loader resolves module paths.
 
-Start the Web UI with that overlay:
+The scratch files above are format examples only; no checked-in test composes them. The canonical internal app-boot artifact gate is:
 
 ```sh
-pnpm dsh web --patch ./scratch-plugin/cordis.yml
+pnpm exec vitest run --config vitest.artifact.config.ts packages/boot/app-boot/tests/app-boot.artifact.ts
 ```
 
-Open `http://127.0.0.1:3080`. The terminal prints `[hello-plugin] plugin loaded!` during startup.
+That acceptance test boots a built internal app-boot composition and verifies its inserted probe plus durable artifacts. It does not load this scratch directory or imply a public Web command.
 
 ## Automatic cleanup
 
@@ -70,7 +70,7 @@ Anything registered through `ctx`—event listeners, tools, or timers—is clean
 For a resource that needs explicit cleanup, such as a network connection, use `ctx.effect()` to provide its disposer:
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 
 export function apply(ctx: Context) {
   ctx.effect(() => {
@@ -89,7 +89,7 @@ export function apply(ctx: Context) {
 If the plugin consumes another service such as `tools` or `llm`, declare it in `inject`:
 
 ```ts ignore-check
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 
 export const name = 'my-tool-plugin'
 export const inject = ['tools']
@@ -109,7 +109,7 @@ In addition to a function module, a plugin can use object or class form.
 ### Object form
 
 ```ts
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context } from '@harness-desktop/cordis'
 
 export default {
   name: 'my-plugin',
@@ -123,7 +123,7 @@ export default {
 ### Class form
 
 ```ts
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@harness-desktop/cordis'
 
 export default class MyService extends Service {
   static inject = ['tools']

@@ -4,8 +4,8 @@
  * @module park-parent
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Context } from '@harness-desktop/cordis'
+import type { SessionId } from '@harness-desktop/dsh-session'
 
 /**
  * Reject every step of the stand-in parent. Each child settlement wakes its
