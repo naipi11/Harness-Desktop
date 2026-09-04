@@ -23,6 +23,9 @@ export default {
   files: ['out/**', 'package.json', 'resources/icons/**'],
   extraResources,
   asar: true,
+  // Native update rollback launches this packaged executable in Electron's
+  // Node mode; keep the fuse explicit across Electron Builder releases.
+  electronFuses: { runAsNode: true },
   // Windows keeps pnpm's target-native payload because electron-builder's rebuild
   // of the patched node-pty dependency mutates the shared linked-worktree store;
   // macOS/Linux retain builder rebuilds for their target and universal payloads.

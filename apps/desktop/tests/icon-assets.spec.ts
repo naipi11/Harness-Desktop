@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 import { createWindowOptions, desktopIconPath } from '../src/main/window-options.ts'
 
 interface BuilderIconConfig {
+  readonly electronFuses: { readonly runAsNode: boolean }
   readonly win: { readonly icon: string }
   readonly mac: { readonly icon: string; readonly x64ArchFiles: string }
   readonly linux: { readonly icon: string }
@@ -36,6 +37,7 @@ it('selects the generated native icon for each desktop platform', () => {
 })
 
 it('configures Electron Builder to package the generated native icons', () => {
+  expect(builderConfig.electronFuses.runAsNode).toBe(true)
   expect(builderConfig.win.icon).toBe('resources/icons/win/harness-desktop.ico')
   expect(builderConfig.mac.icon).toBe('resources/icons/mac/harness-desktop.icns')
   expect(builderConfig.mac.x64ArchFiles).toBe('Contents/Resources/app.asar.unpacked/node_modules/**')

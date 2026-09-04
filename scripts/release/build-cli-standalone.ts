@@ -61,6 +61,16 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
       join(root, 'patches', nodePtyPatchFile),
       join(deployedPackage, 'patches', nodePtyPatchFile),
     )
+    const workspacePath = join(deployedPackage, 'pnpm-workspace.yaml')
+    const workspace = await readFile(workspacePath, 'utf8')
+    const relocatedWorkspace = workspace.replace(
+      /^  node-pty@1\.1\.0: >-\r?\n    [^\r\n]+\r?\n/u,
+      `  node-pty@1.1.0: patches/${nodePtyPatchFile}\n`,
+    )
+    if (relocatedWorkspace === workspace) {
+      throw new Error('packed CLI: deployed workspace does not declare the node-pty patch path')
+    }
+    await writeFile(workspacePath, relocatedWorkspace)
     await execa('pnpm', [
       '--dir', deployedPackage,
       'install', '--prod', '--offline', '--frozen-lockfile', '--ignore-scripts',

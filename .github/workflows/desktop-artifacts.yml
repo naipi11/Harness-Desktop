@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
           sudo add-apt-repository --yes universe
           sudo apt-get update
-          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools libnspr4 libnss3 libasound2t64
+          sudo apt-get install --yes fuse3 libfuse2t64 squashfs-tools libnspr4 libnss3 libasound2t64 xvfb
           test -c /dev/fuse
           test -x /bin/fusermount3 || test -x /usr/bin/fusermount3
           test -x "$(command -v unsquashfs)"
@@ -194,7 +194,12 @@ jobs:
 
       - name: Test Desktop updater and rollback
         id: desktop-updater
-        run: pnpm run desktop:test-updater
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run desktop:test-updater
+          fi
+          exec pnpm run desktop:test-updater
 
       - name: Verify packed CLI from an empty offline prefix
         id: packed-cli
@@ -240,13 +245,23 @@ jobs:
 
       - name: Smoke installed Desktop artifacts
         id: installed-desktop
-        run: pnpm run release:smoke-installed-desktop
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run release:smoke-installed-desktop
+          fi
+          exec pnpm run release:smoke-installed-desktop
 
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback
         env:
           DSH_RUN_NATIVE_UPDATE_E2E: '1'
-        run: pnpm --dir apps/desktop run test:e2e:native-update
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm --dir apps/desktop run test:e2e:native-update
+          fi
+          exec pnpm --dir apps/desktop run test:e2e:native-update
 
       - name: Write redacted native release evidence
         id: release-evidence
