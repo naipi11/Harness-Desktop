@@ -63,14 +63,7 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
     )
     const workspacePath = join(deployedPackage, 'pnpm-workspace.yaml')
     const workspace = await readFile(workspacePath, 'utf8')
-    const relocatedWorkspace = workspace.replace(
-      /^  node-pty@1\.1\.0: >-\r?\n    [^\r\n]+\r?\n/u,
-      `  node-pty@1.1.0: patches/${nodePtyPatchFile}\n`,
-    )
-    if (relocatedWorkspace === workspace) {
-      throw new Error('packed CLI: deployed workspace does not declare the node-pty patch path')
-    }
-    await writeFile(workspacePath, relocatedWorkspace)
+    await writeFile(workspacePath, relocateNodePtyPatchPath(workspace))
     await execa('pnpm', [
       '--dir', deployedPackage,
       'install', '--prod', '--offline', '--frozen-lockfile', '--ignore-scripts',
@@ -115,6 +108,27 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
   } finally {
     await rm(deployParent, { recursive: true, force: true })
   }
+}
+
+/**
+ * Repoint a deployed pnpm workspace's node-pty patch at the copied patch file.
+ * @param workspace - deploy-generated workspace configuration.
+ * @returns workspace configuration whose patch path is package-relative.
+ */
+export function relocateNodePtyPatchPath(workspace: string): string {
+  const workspaceLines = workspace.split(/\r?\n/u)
+  const patchDeclarationIndex = workspaceLines.findIndex(line => line.startsWith('  node-pty@1.1.0:'))
+  if (patchDeclarationIndex < 0) {
+    throw new Error('packed CLI: deployed workspace does not declare the node-pty patch path')
+  }
+  const continuation = workspaceLines[patchDeclarationIndex + 1]
+  const declaration = `  node-pty@1.1.0: patches/${nodePtyPatchFile}`
+  workspaceLines.splice(
+    patchDeclarationIndex,
+    continuation?.trim().endsWith(nodePtyPatchFile) ? 2 : 1,
+    declaration,
+  )
+  return workspaceLines.join('\n')
 }
 
 /** One allowlisted local Node distribution. */

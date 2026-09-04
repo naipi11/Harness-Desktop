@@ -631,15 +631,18 @@ function runtimeDesktopArchitecture(): 'x64' | 'arm64' {
 /** Load the exact packaged Runtime entry through Electron's Node mode and require a clean stdin-owned lifetime. */
 async function loadPackagedRuntime(executable: string, asar: string): Promise<boolean> {
   const home = await mkdtemp(join(tmpdir(), 'harness-desktop-runtime-load-'))
-  const entry = join(asar, ...packagedRuntimeAsarEntries[0].split('/'))
+  const entry = process.platform === 'win32'
+    ? `${asar.replaceAll('\\', '/')}/${packagedRuntimeAsarEntries[0]}`
+    : join(asar, ...packagedRuntimeAsarEntries[0].split('/'))
   try {
     const platformHome = join(home, 'platform-home')
+    const readyFile = join(home, 'runtime-ready')
     await mkdir(join(platformHome, 'AppData', 'Roaming'), { recursive: true })
     await mkdir(join(platformHome, 'AppData', 'Local'), { recursive: true })
     return await new Promise<boolean>((resolveLoad) => {
       const child = spawn(executable, [entry], {
         cwd: home,
-        env: packagedRuntimeEnvironment(home, platformHome),
+        env: { ...packagedRuntimeEnvironment(home, platformHome), DSH_RUNTIME_READY_FILE: readyFile },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
@@ -648,9 +651,11 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
       let settled = false
       let forcedFailure = false
       let stdinClosed = false
+      let readyFileSeen = false
       const outputLimit = 16 * 1_024
       const isReady = (): boolean => stdout.includes('harness-runtime: ready ')
         || stderr.includes('harness-runtime: ready ')
+        || readyFileSeen
       const closeInputWhenReady = (): void => {
         if (!stdinClosed && isReady()) {
           stdinClosed = true
@@ -671,12 +676,21 @@ async function loadPackagedRuntime(executable: string, asar: string): Promise<bo
         if (settled) return
         settled = true
         clearTimeout(timer)
+        clearInterval(readyPoller)
         resolveLoad(value)
       }
       const timer = setTimeout(() => {
         forcedFailure = true
         child.kill()
       }, 30_000)
+      const readyPoller = setInterval(() => {
+        if (readyFileSeen || settled) return
+        void exists(readyFile).then((present) => {
+          if (!present || readyFileSeen || settled) return
+          readyFileSeen = true
+          closeInputWhenReady()
+        })
+      }, 25)
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk: string) => { appendOutput('stdout', chunk) })
       child.stderr.setEncoding('utf8')

@@ -2,6 +2,7 @@
 /** Private Runtime-process entry used by future local launchers. */
 
 import { once } from 'node:events'
+import { writeFile } from 'node:fs/promises'
 import { createLocalRuntimePlugin } from './data-root.ts'
 import { startCanonicalRuntime } from './runtime.ts'
 import { consumeElectronRunAsNodeEnvironment } from './runtime-client.ts'
@@ -19,6 +20,10 @@ try {
   })
   restoreOutput()
   process.stderr.write(`harness-runtime: ready ${JSON.stringify(runtime.status())}\n`)
+  const readyFile = process.env.DSH_RUNTIME_READY_FILE
+  if (readyFile !== undefined && readyFile !== '') {
+    await writeFile(readyFile, 'harness-runtime: ready\n', { flag: 'wx', mode: 0o600 })
+  }
   if (process.env.HARNESS_RUNTIME_TEST_MODE === 'stdin-lifetime') {
     process.stdin.resume()
     await once(process.stdin, 'end')
