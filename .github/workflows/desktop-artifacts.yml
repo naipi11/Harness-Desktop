@@ -237,7 +237,7 @@ jobs:
 
       - name: Verify update manifests with ephemeral fixtures
         id: update-manifests
-        run: node --import tsx/esm scripts/release/verify-update-manifests.ts
+        run: node node_modules/vitest/vitest.mjs run scripts/release/build-update-manifest.spec.ts scripts/release/create-ephemeral-update-policy.spec.ts scripts/release/verify-update-manifests.spec.ts scripts/release/release-workflow-helpers.spec.ts
 
       - name: Sign and verify manifests for this row's produced artifacts
         id: produced-update-manifests
@@ -245,16 +245,18 @@ jobs:
 
       - name: Test CLI updater and rollback
         id: cli-updater
-        run: node --import tsx/esm scripts/release/test-cli-update.ts
+        run: |
+          node node_modules/vitest/vitest.mjs run apps/cli/tests/update.spec.ts apps/cli/tests/standalone-update-source.spec.ts apps/cli/tests/windows-standalone-update.spec.ts
+          node node_modules/vitest/vitest.mjs run --config vitest.e2e.config.ts apps/cli/tests/update.e2e.ts
 
       - name: Smoke installed Desktop artifacts
         id: installed-desktop
         shell: bash
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node --import tsx/esm scripts/release/smoke-installed-desktop.ts
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
           fi
-          exec node --import tsx/esm scripts/release/smoke-installed-desktop.ts
+          exec node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
 
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback

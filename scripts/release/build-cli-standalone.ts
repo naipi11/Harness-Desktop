@@ -47,7 +47,11 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
   const deployParent = await mkdtemp(join(tmpdir(), 'harness-cli-deploy-'))
   const deployedPackage = join(deployParent, 'package')
   try {
-    await execa('pnpm', ['run', 'verify:cli-runtime-closure'], { cwd: root, reject: true })
+    await execa(process.execPath, ['--import', 'tsx/esm', 'scripts/verify-runtime-closure.ts'], {
+      cwd: root,
+      env: { ...process.env, CI: 'true' },
+      reject: true,
+    })
     await execa('pnpm', [
       '--filter', '@harness-desktop/cli',
       'deploy', '--legacy', '--prod',
@@ -82,10 +86,9 @@ export async function packCliForRelease(outputDirectory: string): Promise<string
     await verifyPackedCliClosure(deployedPackage)
     await mkdir(outputDirectory, { recursive: true })
     const packed = await execa('pnpm', [
-      '--dir', deployedPackage,
       '--config.node-linker=hoisted',
       'pack', '--pack-destination', outputDirectory,
-    ], { cwd: root, reject: true })
+    ], { cwd: deployedPackage, reject: true })
     const packedPath = packed.stdout.trim().split(/\r?\n/u).at(-1)
     if (packedPath === undefined || packedPath === '') throw new Error('packed CLI: pnpm pack returned no tarball path')
     const tarball = isAbsolute(packedPath) ? packedPath : join(outputDirectory, packedPath)

@@ -60,15 +60,12 @@ import {
 } from './window-options.ts'
 
 if (process.env.DSH_DESKTOP_RUNTIME_PROBE === '1') {
-  await import(pathToFileURL(join(
-    process.resourcesPath,
-    'app.asar',
-    'node_modules',
-    '@harness-desktop',
-    'dsh-host-local-runtime',
-    'lib',
-    'bin.js',
-  )).href)
+  try {
+    await import('@harness-desktop/dsh-host-local-runtime/bin')
+  } catch (error) {
+    process.stderr.write(`packaged Runtime probe failed: ${String(error)}\n`)
+    process.exit(1)
+  }
   app.quit()
   process.exit(0)
 }
