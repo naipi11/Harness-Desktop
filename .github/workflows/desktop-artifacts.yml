@@ -217,10 +217,10 @@ jobs:
         run: |
           if [[ "${RUNNER_OS}" == "macOS" ]]; then
             for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm exec tsx scripts/release/build-cli-standalone.ts
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/build-cli-standalone.ts
             done
           else
-            pnpm exec tsx scripts/release/build-cli-standalone.ts
+            node --import tsx/esm scripts/release/build-cli-standalone.ts
           fi
 
       - name: Verify standalone CLI archives
@@ -229,32 +229,32 @@ jobs:
         run: |
           if [[ "${RUNNER_OS}" == "macOS" ]]; then
             for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" pnpm run release:verify-cli-standalone
+              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/verify-cli-standalone.ts
             done
           else
-            pnpm run release:verify-cli-standalone
+            node --import tsx/esm scripts/release/verify-cli-standalone.ts
           fi
 
       - name: Verify update manifests with ephemeral fixtures
         id: update-manifests
-        run: pnpm run release:verify-update-manifests
+        run: node --import tsx/esm scripts/release/verify-update-manifests.ts
 
       - name: Sign and verify manifests for this row's produced artifacts
         id: produced-update-manifests
-        run: pnpm run release:verify-produced-update-manifests
+        run: node --import tsx/esm scripts/release/verify-produced-update-manifests.ts
 
       - name: Test CLI updater and rollback
         id: cli-updater
-        run: pnpm run release:test-cli-update
+        run: node --import tsx/esm scripts/release/test-cli-update.ts
 
       - name: Smoke installed Desktop artifacts
         id: installed-desktop
         shell: bash
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run release:smoke-installed-desktop
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node --import tsx/esm scripts/release/smoke-installed-desktop.ts
           fi
-          exec pnpm run release:smoke-installed-desktop
+          exec node --import tsx/esm scripts/release/smoke-installed-desktop.ts
 
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback
@@ -263,9 +263,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm --dir apps/desktop run test:e2e:native-update
+            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
           fi
-          exec pnpm --dir apps/desktop run test:e2e:native-update
+          exec node node_modules/playwright/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
 
       - name: Write redacted native release evidence
         id: release-evidence
@@ -283,7 +283,7 @@ jobs:
           DSH_RELEASE_CHECK_CLI_UPDATER: ${{ steps.cli-updater.outcome }}
           DSH_RELEASE_CHECK_INSTALLED_DESKTOP: ${{ steps.installed-desktop.outcome }}
           DSH_RELEASE_CHECK_NATIVE_UPDATE_ROLLBACK: ${{ steps.native-update-rollback.outcome }}
-        run: pnpm exec tsx scripts/release/collect-release-evidence.ts
+        run: node --import tsx/esm scripts/release/collect-release-evidence.ts
 
       - name: Upload native release artifacts
         if: ${{ success() }}
