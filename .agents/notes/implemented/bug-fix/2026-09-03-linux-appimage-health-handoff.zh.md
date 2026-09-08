@@ -16,7 +16,7 @@ release-workflow helper 测试会有意清空子进程环境，因此在 hosted 
 
 `apps/desktop/tests/support/runtime-live-entry.mjs` 在 boot 前使用 `import.meta.resolve()` 解析 source patch 插入项中的每个 bare package name，同时保留 `cordis:` 与已有的 `file:` entry。Built Runtime composition 继续使用现有的 patch 解析路径。`isCurrentWatchdogHeartbeat()` 允许 Linux heartbeat 不早于 `candidateStartedBeforeMs - healthCheckTimeoutMs`，且不晚于观测时间；Windows launch nonce 语法与默认的严格 helper 行为保持不变。Linux 已安装更新测试接受两种情况：带有存活 candidate process 的实时 applied marker，或 candidate version 已安装、私有 journal 已消失且 Runtime 报告 `applied:applied` 或 `up-to-date:up-to-date`。
 
-freshness window 使用已有 policy health window，而不是新增部署 tunable 字段。事务专属私有存储和 worker 的终态 applied outcome 仍然是必需条件，因此近期 heartbeat 不能在没有 detached worker proof 的情况下提交更新。source resolver 属于测试 Runtime 基础设施；它不会仅为改变解析锚点而向 `dsh-host-local-runtime` 增加所有 bundle package 的直接依赖。
+freshness window 使用已有 policy health window，而不是新增部署 tunable 字段。事务专属私有存储和 worker 的终态 applied outcome 仍然是必需条件，因此近期 heartbeat 不能在没有 detached worker proof 的情况下提交更新。source resolver 属于测试 Runtime 基础设施；它不会仅为改变解析锚点而向 `dsh-host-local-runtime` 增加所有 bundle package 的直接依赖。canonical Runtime 选择的动态 directory-picker 选项是有意保留的例外，因为它们从这个 package anchor 创建 Host 与 Client entry；依赖闭包记录在 [Desktop hosted acceptance boundaries](2026-09-04-desktop-hosted-acceptance-boundaries.md)。
 
 Windows PowerShell 在执行 supervisor 的 worker 脚本前会向 `PATHEXT` 追加 `.CPL`。`createWindowsWorkerEnvironment()` 显式包含这个扩展，使 WMI 子进程 receipt 与受限环境一致，同时不扩大允许的环境变量名称集合。
 

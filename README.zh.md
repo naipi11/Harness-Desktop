@@ -73,6 +73,8 @@ CI 使用 `--publish never` 构建每一行；在当前平台进行的本地构�
 
 Desktop 与 CLI 的发布默认值均会拒绝未配置的更新：代码中不含生产更新公钥、已配置的精确 HTTPS 源或发布位置，因此未配置可实际运行的自动更新。启用更新前，必须对这些先决条件以及上述每项外部发布审批分别进行审计。
 
+未安装更新策略的 Windows 预览版可以正常启动，但自动更新不可用。策略无法读取或无效时仍显示错误并禁用更新；这些预览版需手动下载并运行安装包。
+
 ## 社区与支持
 
 - 欢迎通过 [GitHub Discussions](https://github.com/naipi11/Harness-Desktop/discussions) 提交反馈或 bug 报告。

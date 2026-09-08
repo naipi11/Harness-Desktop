@@ -54,13 +54,20 @@ export interface DesktopUpdateSourceOptions {
 /**
  * Load the immutable public release policy installed beside Electron resources.
  * @param options - packaged resource root and exact current native target.
- * @returns a source that only fetches configured manifests and manifest-authenticated artifacts.
- * @throws when policy, platform, architecture, or exact endpoint is unavailable.
+ * @returns a source that only fetches configured manifests and authenticated artifacts, or undefined when no policy is installed.
+ * @throws when a policy is unreadable or invalid, or the native target is unsupported.
  */
-export async function loadDesktopUpdateSource(options: DesktopUpdateSourceOptions): Promise<DesktopUpdateSource> {
+export async function loadDesktopUpdateSource(options: DesktopUpdateSourceOptions): Promise<DesktopUpdateSource | undefined> {
   const target = desktopTarget(options.platform, options.arch)
   if (target === undefined) throw new Error('Desktop update target is unsupported')
-  const decoded = JSON.parse(await readFile(join(options.resourcesPath, policyFilename), 'utf8')) as unknown
+  let text: string
+  try {
+    text = await readFile(join(options.resourcesPath, policyFilename), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  const decoded = JSON.parse(text) as unknown
   const policy = parseReleaseUpdateConfiguration(decoded, productMetadata.appId)
   const sourceOptions = {
     allowedOrigins: policy.trust.allowedOrigins,

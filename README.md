@@ -73,6 +73,8 @@ CI builds every row with `--publish never`; a local current-platform build does 
 
 Desktop and CLI shipped defaults are fail-closed: they contain no production update public key, configured exact HTTPS origin, or release location, so no live automatic update is configured. Enabling updates requires those prerequisites to be audited separately from every external release approval above.
 
+Windows preview builds without an installed update policy start normally with automatic updates unavailable. An unreadable or invalid policy still displays an error and disables updates; use a manually downloaded installer for these previews.
+
 ## Community and support
 
 - Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/naipi11/Harness-Desktop/discussions).

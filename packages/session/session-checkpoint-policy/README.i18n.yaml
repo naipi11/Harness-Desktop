@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/session/session-checkpoint-policy/README.md
-README.md: 01ed3c694967b1a86245d01b9d9f7eecd1193348
-README.zh.md: e2c197c0cc1d942a045c1ea22c1fb257f6e4059d
+README.md: 5af08c4dacc2b42e616ce6f0ed7b6a0b5b1fc2a1
+README.zh.md: f70641a795f7e6aeffdb591d93dc194f836c1c63

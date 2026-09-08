@@ -33,7 +33,8 @@ it('builds one CommonJS preload and makes the main process load it', async () =>
   expect(main).toContain('../preload/index.cjs')
   expect(main).toContain('from "@harness-desktop/dsh-host-local-runtime"')
   expect(main).not.toContain('@harness-desktop/dsh-app-boot/product-metadata')
-  expect(main).not.toContain('HARNESS_HOME')
+  // Detached workers forward the home allowlist; Main must not resolve Runtime data itself.
+  expect(main).not.toMatch(/process\.env(?:\.HARNESS_HOME|\["HARNESS_HOME"\])/u)
   expect(main).not.toContain('DesktopShell')
   expect(main).not.toMatch(/credentials-(?:local|file)|credential-provider/u)
 })

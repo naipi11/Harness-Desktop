@@ -24,8 +24,15 @@ test('launches native installed artifacts after authenticated Dashboard boot and
       const bootManifest = await fixture.page.evaluate(() => {
         const value = (globalThis as { __DSH_BOOT__?: unknown }).__DSH_BOOT__
         if (typeof value !== 'object' || value === null) return value
-        const record = value as { plugins?: unknown; modules?: unknown }
-        return { modules: record.modules, plugins: record.plugins }
+        const record = value as { modules?: unknown; entries?: unknown }
+        const entries = Array.isArray(record.entries)
+          ? record.entries.map((entry: unknown) => {
+            if (typeof entry !== 'object' || entry === null) return entry
+            const row = entry as { id?: unknown; inject?: unknown; url?: unknown; immediately?: unknown }
+            return { id: row.id, inject: row.inject, url: row.url, immediately: row.immediately }
+          })
+          : record.entries
+        return { keys: Object.keys(record), modules: record.modules, entries }
       }).catch(() => undefined)
       const diagnostic = [
         `artifact=${artifact.name}`,

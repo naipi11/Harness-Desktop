@@ -10,6 +10,7 @@ import {
   createWindowsWorkerEnvironment,
   encodeWindowsArgument,
   launchNativeRollbackWorker,
+  nativeRollbackWorkerDependencies,
   runWindowsPowerShellBridge,
   type NativeRollbackWorkerChild,
   type NativeRollbackWorkerDependencies,
@@ -121,11 +122,14 @@ function dependenciesFixture(
         return value
       },
       listPrivate: async () => [],
-      lstatPrivate: async path => ({
-        isDirectory: () => path.endsWith('workers'),
-        isFile: () => files.has(path),
-        isSymbolicLink: () => false,
-      }),
+      lstatPrivate: async (path) => {
+        if (!path.endsWith('workers') && !files.has(path)) throw Object.assign(new Error('absent'), { code: 'ENOENT' })
+        return {
+          isDirectory: () => path.endsWith('workers'),
+          isFile: () => files.has(path),
+          isSymbolicLink: () => false,
+        }
+      },
       canonicalize: async path => path,
       isExactProcessImageRunning: async () => exactImageRunning,
       remove: async (path) => { files.delete(path) },
@@ -619,7 +623,7 @@ describe('launchNativeRollbackWorker', () => {
     const argument = 'C:\\private path\\trailing\\'
     await expect(decodeWindowsCommandLine(`"fixture.exe" ${encodeWindowsArgument(argument)}`))
       .resolves.toEqual(['fixture.exe', argument])
-  })
+  }, 30_000)
 
   it.each([
     ['case-insensitive duplicate names', { SystemRoot: 'C:\\Windows', WINDIR: 'C:\\Windows', Path: 'first', PATH: 'second' }, 'duplicate'],
@@ -676,6 +680,36 @@ describe('launchNativeRollbackWorker', () => {
     expect([...subject.files.keys()].filter(path => /native-(?:update-supervisor|rollback-worker|rollback-plan)-/u.test(path)))
       .toHaveLength(3)
   }, 15_000)
+
+  it.runIf(process.platform === 'win32')('rejects a non-not-found error in the generated PID probe and retains private inputs', async () => {
+    const inspector = createWindowsExactImageInspector(async (executable, args, options) => {
+      const program = Buffer.from(args[4]!, 'base64').toString('utf16le')
+      const prefix = 'function Get-Process { [CmdletBinding()] param([int]$Id); Write-Error -Message "PID inspection denied" -Category PermissionDenied -ErrorId "FixtureAccessDenied" }'
+      return await runWindowsPowerShellBridge(executable, [
+        ...args.slice(0, 4), Buffer.from(`${prefix}; ${program}`, 'utf16le').toString('base64'),
+      ], options)
+    })
+    const subject = dependenciesFixture(new FakeWorker())
+    const removed: string[] = []
+    subject.dependencies.isExactProcessImageRunning = async (_path, timeout, processId) =>
+      await inspector(process.execPath, timeout, processId)
+    subject.dependencies.remove = async (path) => { removed.push(path); subject.files.delete(path) }
+    const result = launchNativeRollbackWorker({
+      platform: 'win32', executablePath: plan.applicationPath, workerPath: 'unused.js',
+      windowsSupervisorTemplatePath: 'supervisor.exe', windowsWorkerTemplatePath: 'worker.ps1',
+      plan, workerReadyTimeoutMs: 5_000, workerId, dependencies: subject.dependencies,
+    })
+    await expect(result).rejects.toThrow('exact-image inspection failed')
+    expect((await result.catch((error: unknown) => error) as Error).cause)
+      .toMatchObject({ message: 'native Desktop rollback supervisor exact-image inspection failed' })
+    expect(removed).toEqual([])
+    expect([...subject.files.keys()].filter(path => /native-(?:update-supervisor|rollback-worker|rollback-plan)-/u.test(path)))
+      .toHaveLength(3)
+  }, 15_000)
+
+  it.runIf(process.platform === 'win32')('accepts genuine PID not-found from the generated probe with an existing target', async () => {
+    await expect(createWindowsExactImageInspector()(process.execPath, 5_000, 2_147_483_647)).resolves.toBe(false)
+  }, 10_000)
 
   it.runIf(process.platform === 'win32')('preserves private inputs after an actual bridge process timeout', async () => {
     expect(runWindowsPowerShellBridge).toBeTypeOf('function')
@@ -910,6 +944,143 @@ describe('launchNativeRollbackWorker', () => {
     expect(child.unrefCalls).toBe(0)
   })
 
+  it.each(['readiness', 'initial cancellation', 'cleanup revalidation'] as const)(
+    'retains inputs when the supervisor target disappears before %s', async (phase) => {
+      const subject = dependenciesFixture(new FakeWorker(), false, 0, false, phase !== 'readiness')
+      const inspect = subject.dependencies.isExactProcessImageRunning.bind(subject.dependencies)
+      const stat = subject.dependencies.lstatPrivate.bind(subject.dependencies)
+      const removed: string[] = []
+      let cancellationProved = false
+      subject.dependencies.isExactProcessImageRunning = async (...args) => {
+        const running = await inspect(...args)
+        if (!running) cancellationProved = true
+        return running
+      }
+      subject.dependencies.lstatPrivate = async (path) => {
+        const cancelling = [...subject.files.keys()].some(file => file.includes('native-update-cancel-'))
+        if (path.includes('native-update-supervisor-') && (phase === 'readiness'
+          || (phase === 'initial cancellation' && cancelling) || (phase === 'cleanup revalidation' && cancellationProved))) {
+          throw Object.assign(new Error('target disappeared'), { code: 'ENOENT' })
+        }
+        return await stat(path)
+      }
+      subject.dependencies.remove = async (path) => { removed.push(path); subject.files.delete(path) }
+      const result = launchNativeRollbackWorker({
+        platform: 'win32', executablePath: plan.applicationPath, workerPath: 'unused.js',
+        windowsSupervisorTemplatePath: 'supervisor.exe', windowsWorkerTemplatePath: 'worker.ps1',
+        plan, workerReadyTimeoutMs: 100, workerId, dependencies: subject.dependencies,
+      })
+      await expect(result).rejects.toThrow(phase === 'readiness' ? 'exact-image inspection failed' : 'worker startup failed')
+      expect((await result.catch((error: unknown) => error) as Error).cause).toBeInstanceOf(Error)
+      expect(removed).toEqual([])
+    },
+  )
+
+  it.runIf(process.platform === 'win32')('rejects a missing target in the generated exact-image probe even for an absent PID', async () => {
+    await expect(createWindowsExactImageInspector()(`${process.execPath}.missing-target`, 5_000, 2_147_483_647))
+      .rejects.toThrow('exact-image inspection failed')
+  }, 10_000)
+
+  it.each(['EPERM', 'EBUSY'])('retains inputs on supervisor target inspection %s', async (code) => {
+    const subject = dependenciesFixture(new FakeWorker())
+    const stat = subject.dependencies.lstatPrivate.bind(subject.dependencies)
+    const removed: string[] = []
+    subject.dependencies.lstatPrivate = async (path) => {
+      if (path.includes('native-update-supervisor-')) throw Object.assign(new Error('target inspection denied'), { code })
+      return await stat(path)
+    }
+    subject.dependencies.remove = async (path) => { removed.push(path) }
+    await expect(launchNativeRollbackWorker({
+      platform: 'win32', executablePath: plan.applicationPath, workerPath: 'unused.js',
+      windowsSupervisorTemplatePath: 'supervisor.exe', windowsWorkerTemplatePath: 'worker.ps1',
+      plan, workerReadyTimeoutMs: 100, workerId, dependencies: subject.dependencies,
+    })).rejects.toThrow('exact-image inspection failed')
+    expect(removed).toEqual([])
+  })
+
+  it('skips inspection only after successful owned image deletion and observed ENOENT', async () => {
+    const subject = dependenciesFixture(new FakeWorker(), false, 0, false, true)
+    const stat = subject.dependencies.lstatPrivate.bind(subject.dependencies)
+    const inspect = subject.dependencies.isExactProcessImageRunning.bind(subject.dependencies)
+    let removedImage = false
+    let observedOwnedAbsence = 0
+    subject.dependencies.lstatPrivate = async (path) => {
+      if (removedImage && path.includes('native-update-supervisor-')) observedOwnedAbsence += 1
+      return await stat(path)
+    }
+    subject.dependencies.isExactProcessImageRunning = async (...args) => {
+      expect(removedImage).toBe(false)
+      return await inspect(...args)
+    }
+    subject.dependencies.remove = async (path, requireExisting) => {
+      if (path.includes('native-update-supervisor-')) {
+        expect(requireExisting).toBe(true)
+        expect(subject.files.has(path)).toBe(true)
+        removedImage = true
+      }
+      subject.files.delete(path)
+    }
+    const result = launchNativeRollbackWorker({
+      platform: 'win32', executablePath: plan.applicationPath, workerPath: 'unused.js',
+      windowsSupervisorTemplatePath: 'supervisor.exe', windowsWorkerTemplatePath: 'worker.ps1',
+      plan, workerReadyTimeoutMs: 100, workerId, dependencies: subject.dependencies,
+    })
+    await expect(result).rejects.toThrow('worker startup failed')
+    expect((await result.catch((error: unknown) => error) as Error).cause).toBeUndefined()
+    expect(observedOwnedAbsence).toBeGreaterThan(0)
+    expect([...subject.files.keys()].some(path => path.includes(workerId))).toBe(false)
+  })
+
+  it('rejects ENOENT from strict owned unlink rather than recording a successful deletion', async () => {
+    const missing = `${process.execPath}.${workerId}.missing`
+    await expect(nativeRollbackWorkerDependencies.remove(missing, true)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(nativeRollbackWorkerDependencies.remove(missing)).resolves.toBeUndefined()
+  })
+
+  it('forwards the readiness cap and five-second final cancellation and cleanup defaults', async () => {
+    const subject = dependenciesFixture(new FakeWorker(), false, 0, false, true)
+    const old = 'native-update-supervisor-55555555-5555-4555-8555-555555555555.exe'
+    const stat = subject.dependencies.lstatPrivate.bind(subject.dependencies)
+    subject.dependencies.lstatPrivate = async path => path.endsWith(old)
+      ? { isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false }
+      : await stat(path)
+    subject.dependencies.listPrivate = async () => [old]
+    let now = 0
+    const timeouts: Array<number | undefined> = []
+    subject.dependencies.now = () => now
+    subject.dependencies.delay = async (milliseconds) => { now += milliseconds }
+    subject.dependencies.isExactProcessImageRunning = async (path, timeout) => {
+      timeouts.push(timeout)
+      if (path.endsWith(old)) return false
+      if (timeouts.length === 2) return true
+      if (timeouts.length === 3) {
+        now = 30_000
+        throw Object.assign(new Error('bounded probe timeout'), { killed: true, signal: 'SIGTERM' })
+      }
+      return false
+    }
+    const result = launchNativeRollbackWorker({
+      platform: 'win32', executablePath: plan.applicationPath, workerPath: 'unused.js',
+      windowsSupervisorTemplatePath: 'supervisor.exe', windowsWorkerTemplatePath: 'worker.ps1',
+      plan, workerReadyTimeoutMs: 30_000, workerId, dependencies: subject.dependencies,
+    })
+    await expect(result).rejects.toThrow('worker startup failed')
+    expect((await result.catch((error: unknown) => error) as Error).cause).toBeUndefined()
+    expect(timeouts).toEqual([undefined, 15_000, 15_000, 5_000, 5_000])
+  })
+
+  it('defaults stale inspection to five seconds and caps explicit inspection at fifteen seconds', async () => {
+    vi.stubEnv('SystemRoot', 'C:/Windows')
+    const timeouts: number[] = []
+    const inspect = createWindowsExactImageInspector(async (_executable, _args, options) => {
+      timeouts.push(options.timeout)
+      return { stdout: 'absent', stderr: '' }
+    })
+    await inspect('C:/private/stale.exe')
+    await inspect('C:/private/stale.exe', 30_000)
+    expect(timeouts).toEqual([5_000, 15_000])
+  })
+
   it('requests Windows cancellation and removes the drained acknowledgement last after matching exit proof', async () => {
     const child = new FakeWorker()
     const subject = dependenciesFixture(child, false, 0, false, true, 0, false)
@@ -922,11 +1093,6 @@ describe('launchNativeRollbackWorker', () => {
         subject.dependencies.isExactProcessImageRunning = async () => false
       }
     }
-    subject.dependencies.lstatPrivate = async path => ({
-      isDirectory: () => path.endsWith('workers'),
-      isFile: () => subject.files.has(path),
-      isSymbolicLink: () => false,
-    })
     subject.dependencies.remove = async (path) => { removed.push(path); subject.files.delete(path) }
 
     await expect(launchNativeRollbackWorker({
@@ -1179,7 +1345,7 @@ describe('launchNativeRollbackWorker', () => {
     subject.dependencies.listPrivate = async () => [old, live, link, malformed]
     subject.dependencies.lstatPrivate = async path => ({
       isDirectory: () => path.endsWith('workers'),
-      isFile: () => path.endsWith(old) || path.endsWith(live),
+      isFile: () => path.endsWith(old) || path.endsWith(live) || subject.files.has(path),
       isSymbolicLink: () => path.endsWith(link),
     })
     subject.dependencies.canonicalize = async (path) => { canonicalized.push(path); return path }
@@ -1227,6 +1393,7 @@ async function decodeWindowsCommandLine(commandLine: string): Promise<readonly s
   ], {
     env: { ...createWindowsWorkerEnvironment(), DSH_TEST_COMMAND_LINE: commandLine },
     windowsHide: true,
+    timeout: 15_000,
   })
   if (result.stderr !== '') throw new Error('CommandLineToArgvW probe wrote stderr')
   return JSON.parse(result.stdout) as readonly string[]

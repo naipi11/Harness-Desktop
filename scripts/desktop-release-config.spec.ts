@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { execa } from 'execa'
+import { dump, load } from 'js-yaml'
 import { afterEach, describe, expect, it } from 'vitest'
 import { productMetadata } from '../packages/boot/app-boot/src/product-metadata.ts'
 import {
@@ -148,11 +149,13 @@ async function probeExtraResourceCopy(
   ])
 
   const requireFromDesktop = createRequire(resolve(import.meta.dirname, '../apps/desktop/package.json'))
+  const requireFromBuilder = createRequire(requireFromDesktop.resolve('electron-builder/package.json'))
+  const requireFromBuilderLib = createRequire(requireFromBuilder.resolve('app-builder-lib/package.json'))
   const fileMatcherModule = await import(pathToFileURL(
-    requireFromDesktop.resolve('app-builder-lib/out/fileMatcher.js'),
+    requireFromBuilder.resolve('app-builder-lib/out/fileMatcher.js'),
   ).href) as InstalledFileMatcherModule
   const builderFsModule = await import(pathToFileURL(
-    requireFromDesktop.resolve('builder-util/out/fs.js'),
+    requireFromBuilderLib.resolve('builder-util/out/fs.js'),
   ).href) as InstalledBuilderFsModule
   const matchers = fileMatcherModule.getFileMatchers({}, 'extraResources', resourceRoot, {
     defaultSrc: projectRoot,
@@ -225,7 +228,7 @@ jobs:
             cli-artifact: dist/cli-standalone/harness-cli-*.tar.gz
     steps:
       - name: Configure pnpm store path
-        shell: bash
+        shell: pwsh
         run: pnpm store path
       - name: Verify pinned Node distribution checksum
         id: node-runtime
@@ -233,8 +236,9 @@ jobs:
       - name: Generate ephemeral public update policy
         run: |
           pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
-          echo "DSH_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
-          echo "DSH_DESKTOP_UPDATE_POLICY=\${DSH_UPDATE_POLICY_OUTPUT}" >> "\$GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DSH_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV
+          "DSH_DESKTOP_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV
       - name: Enable Linux AppImage FUSE runtime and static inspection
         if: \${{ runner.os == 'Linux' }}
         shell: bash
@@ -267,7 +271,14 @@ jobs:
         run: pnpm run release:verify-desktop-artifacts
       - name: Test Desktop updater and rollback
         id: desktop-updater
-        run: pnpm run desktop:test-updater
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run desktop:test-updater --maxWorkers=1
+          } else {
+            pnpm run desktop:test-updater --maxWorkers=1
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify packed CLI from an empty offline prefix
         id: packed-cli
         env:
@@ -275,26 +286,34 @@ jobs:
         run: pnpm run release:verify-packed-cli
       - name: Build standalone CLI archives
         id: build-cli
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "\${RUNNER_OS}" == "macOS" ]]; then
-            for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="\${arch}" pnpm run release:build-cli-standalone
-            done
-          else
+          if ($env:RUNNER_OS -eq 'macOS') {
+            $env:DSH_CLI_STANDALONE_PLATFORM = 'darwin'
+            foreach ($arch in 'arm64', 'x64') {
+              $env:DSH_CLI_STANDALONE_ARCH = $arch
+              pnpm run release:build-cli-standalone
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } else {
             pnpm run release:build-cli-standalone
-          fi
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify standalone CLI archives
         id: verify-cli
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "\${RUNNER_OS}" == "macOS" ]]; then
-            for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="\${arch}" pnpm run release:verify-cli-standalone
-            done
-          else
+          if ($env:RUNNER_OS -eq 'macOS') {
+            $env:DSH_CLI_STANDALONE_PLATFORM = 'darwin'
+            foreach ($arch in 'arm64', 'x64') {
+              $env:DSH_CLI_STANDALONE_ARCH = $arch
+              pnpm run release:verify-cli-standalone
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } else {
             pnpm run release:verify-cli-standalone
-          fi
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify update manifests with ephemeral fixtures
         id: update-manifests
         run: pnpm run release:verify-update-manifests
@@ -306,12 +325,26 @@ jobs:
         run: pnpm run release:test-cli-update
       - name: Smoke installed Desktop artifacts
         id: installed-desktop
-        run: pnpm run release:smoke-installed-desktop
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run release:smoke-installed-desktop
+          } else {
+            pnpm run release:smoke-installed-desktop
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback
         env:
           DSH_RUN_NATIVE_UPDATE_E2E: '1'
-        run: pnpm --dir apps/desktop run test:e2e:native-update
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm --dir apps/desktop run test:e2e:native-update
+          } else {
+            pnpm --dir apps/desktop run test:e2e:native-update
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Write redacted native release evidence
         id: release-evidence
         if: \${{ always() }}
@@ -839,7 +872,7 @@ describe('desktop release config gate', () => {
       'desktopArtifactsWorkflow: missing runner windows-2025',
       'desktopArtifactsWorkflow: missing runner macos-15',
       'desktopArtifactsWorkflow: missing runner ubuntu-24.04',
-      'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
+      'desktopArtifactsWorkflow: Configure pnpm store path must use shell pwsh',
       'desktopArtifactsWorkflow: Verify packed CLI from an empty offline prefix must set DSH_REQUIRE_BUILT_CLI_SMOKE=1',
       'desktopArtifactsWorkflow: forbidden publish marker NODE_AUTH_TOKEN',
       'desktopArtifactsWorkflow: forbidden publish marker release:publish',
@@ -865,7 +898,7 @@ describe('desktop release config gate', () => {
     )
   })
 
-  it('rejects Bash-authored pnpm store setup without an explicit Bash shell', () => {
+  it('requires explicit native PowerShell for pnpm store setup', () => {
     const files = conformingFiles()
     const violations = collectDesktopReleaseViolations({
       ...files,
@@ -884,7 +917,7 @@ describe('desktop release config gate', () => {
     })
 
     expect(violations).toContain(
-      'desktopArtifactsWorkflow: Configure pnpm store path must use shell bash',
+      'desktopArtifactsWorkflow: Configure pnpm store path must use shell pwsh',
     )
   })
 
@@ -903,6 +936,52 @@ describe('desktop release config gate', () => {
     )
   })
 
+  it('rejects an archive loop that can hide an earlier architecture failure', () => {
+    const files = conformingFiles()
+    const desktopArtifactsWorkflow = files.desktopArtifactsWorkflow.replaceAll(
+      '          set -euo pipefail\n', '',
+    ).replaceAll('              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n', '')
+    expect(collectDesktopReleaseViolations({ ...files, desktopArtifactsWorkflow })).toEqual(expect.arrayContaining([
+      'desktopArtifactsWorkflow: build-cli must own both macOS arm64 and x64 archives in one outcome',
+      'desktopArtifactsWorkflow: verify-cli must own both macOS arm64 and x64 archives in one outcome',
+    ]))
+  })
+
+  it('rejects unredacted error contexts appended to the evidence upload', () => {
+    const files = conformingFiles()
+    const desktopArtifactsWorkflow = files.desktopArtifactsWorkflow.replace(
+      '            dist/release-logs/release-evidence.json',
+      '            dist/release-logs/release-evidence.json\n            apps/desktop/test-results/**/error-context.md',
+    )
+    expect(collectDesktopReleaseViolations({ ...files, desktopArtifactsWorkflow })).toContain(
+      'desktopArtifactsWorkflow: evidence upload must contain only the three redacted evidence paths',
+    )
+  })
+
+  it('rejects workflow steps that bypass native Windows PowerShell', async () => {
+    const files = await readDesktopReleaseFiles()
+    const workflow = load(files.desktopArtifactsWorkflow) as { jobs: { package: { steps: Record<string, unknown>[] } } }
+    const step = workflow.jobs.package.steps.find(candidate => candidate.id === 'build-cli')!
+    step.shell = 'bash'
+    expect(collectDesktopReleaseViolations({ ...files, desktopArtifactsWorkflow: dump(workflow) })).toContain(
+      'desktopArtifactsWorkflow: Windows-applicable run steps must use native pwsh',
+    )
+  })
+
+  it('preserves serialized updater tests and Linux Xvfb execution', async () => {
+    const files = await readDesktopReleaseFiles()
+    const workflow = load(files.desktopArtifactsWorkflow) as { jobs: { package: { steps: Record<string, unknown>[] } } }
+    const step = workflow.jobs.package.steps.find(candidate => candidate.id === 'desktop-updater')!
+    step.run = 'pnpm run desktop:test-updater'
+    step.shell = 'bash'
+    expect(collectDesktopReleaseViolations({ ...files, desktopArtifactsWorkflow: dump(workflow) })).toContain(
+      'desktopArtifactsWorkflow: missing ordered exact command pnpm run desktop:test-updater --maxWorkers=1',
+    )
+    expect(collectDesktopReleaseViolations({ ...files, desktopArtifactsWorkflow: dump(workflow) })).toContain(
+      'desktopArtifactsWorkflow: desktop-updater must use Linux Xvfb and native Windows pwsh',
+    )
+  })
+
   it('requires platform-selected CLI archives, every native recovery entry, and redacted evidence upload', () => {
     const files = conformingFiles()
     expect(collectDesktopReleaseViolations({
@@ -917,8 +996,8 @@ describe('desktop release config gate', () => {
     expect(collectDesktopReleaseViolations({
       ...files,
       desktopArtifactsWorkflow: files.desktopArtifactsWorkflow.replaceAll(
-        'for arch in arm64 x64',
-        'for arch in arm64',
+        "foreach ($arch in 'arm64', 'x64')",
+        "foreach ($arch in 'arm64')",
       ),
     })).toEqual(expect.arrayContaining([
       'desktopArtifactsWorkflow: build-cli must own both macOS arm64 and x64 archives in one outcome',

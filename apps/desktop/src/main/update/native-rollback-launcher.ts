@@ -18,6 +18,7 @@ const diagnosticsEnvironmentKey = 'DSH_NATIVE_UPDATE_E2E_DIAGNOSTICS'
 const testLibraryPathEnvironmentKey = 'DSH_TEST_ELECTRON_LD_LIBRARY_PATH'
 const windowsBridgeRequestEnvironmentKey = 'DSH_NATIVE_WMI_LAUNCH'
 const windowsBridgeOutputLimit = 1024
+const windowsExactImageTimeoutMs = 15_000
 const windowsEnvironmentBlockLimit = 16 * 1024
 const windowsCreateFlags = 0x0100_0408
 const supervisorNamePattern = /^native-update-supervisor-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.exe$/iu
@@ -88,11 +89,16 @@ export interface NativeRollbackWorkerDependencies {
   /**
    * @param path - canonical executable path.
    * @param timeoutMs - optional local inspection bound.
+   * @param processId - optional WMI process id already verified by the launch bridge.
    * @returns whether one live image equals it.
    */
-  isExactProcessImageRunning(path: string, timeoutMs?: number): Promise<boolean>
-  /** @param path - exact private temporary file or link. @returns settlement when absent or removed. */
-  remove(path: string): Promise<void>
+  isExactProcessImageRunning(path: string, timeoutMs?: number, processId?: number): Promise<boolean>
+  /**
+   * @param path - exact private temporary file or link.
+   * @param requireExisting - reject an already absent entry.
+   * @returns settlement after removal, or absence only when permitted.
+   */
+  remove(path: string, requireExisting?: boolean): Promise<void>
   /** @param milliseconds - bounded readiness poll delay. @returns fulfillment after the delay. */
   delay(milliseconds: number): Promise<void>
   /** @returns current monotonic milliseconds for launch and readiness deadlines. */
@@ -152,6 +158,7 @@ interface ChildWorkerLaunch {
 interface WindowsWorkerLaunch {
   readonly kind: 'windows'
   readonly supervisorPath: string
+  readonly supervisorProcessId: number
   readonly privateWorkerDirectory: string
   readonly scriptPath: string
   readonly planPath: string
@@ -182,6 +189,7 @@ export async function launchNativeRollbackWorker(options: NativeRollbackWorkerLa
     await awaitWorkerReady(
       launch.kind === 'child' ? launch.terminal : undefined,
       launch.kind === 'windows' ? launch.supervisorPath : undefined,
+      launch.kind === 'windows' ? launch.supervisorProcessId : undefined,
       request,
       failurePath,
       launch.kind === 'windows'
@@ -198,7 +206,7 @@ export async function launchNativeRollbackWorker(options: NativeRollbackWorkerLa
       await launch.flushStages()
       try {
         const proof = await requestWindowsCancellation(
-          options, request, launch.supervisorPath, dependencies, launch.recordStage,
+          options, request, launch.supervisorPath, launch.supervisorProcessId, dependencies, launch.recordStage,
         )
         await cleanupWindowsPrivateInputs(
           launch.privateWorkerDirectory,
@@ -249,6 +257,7 @@ async function launchWindowsWorker(
   )
   const readinessDeadline = monotonicNow(dependencies) + options.workerReadyTimeoutMs
   let launchAttempted = false
+  let supervisorProcessId: number | undefined
   try {
     recordStage('prepare')
     await dependencies.writePrivate(supervisorPath, await dependencies.readResource(options.windowsSupervisorTemplatePath))
@@ -256,7 +265,7 @@ async function launchWindowsWorker(
     await dependencies.writePrivate(planPath, `${JSON.stringify(request)}\n`)
     launchAttempted = true
     recordStage('bridge-create')
-    await runWindowsSupervisorBridge(
+    supervisorProcessId = await runWindowsSupervisorBridge(
       supervisorPath,
       scriptPath,
       planPath,
@@ -270,6 +279,7 @@ async function launchWindowsWorker(
     return {
       kind: 'windows',
       supervisorPath,
+      supervisorProcessId,
       privateWorkerDirectory,
       scriptPath,
       planPath,
@@ -281,7 +291,7 @@ async function launchWindowsWorker(
     await recordStage.flush()
     if (launchAttempted) {
       try {
-        const proof = await requestWindowsCancellation(options, request, supervisorPath, dependencies, recordStage)
+        const proof = await requestWindowsCancellation(options, request, supervisorPath, supervisorProcessId, dependencies, recordStage)
         await cleanupWindowsPrivateInputs(
           privateWorkerDirectory, supervisorPath, scriptPath, planPath, request, proof, dependencies,
         )
@@ -310,6 +320,7 @@ async function cleanupWindowsPrivateInputs(
 ): Promise<void> {
   const cancelPath = win32.join(workerDirectory, `native-update-cancel-${request.workerId}.req`)
   const drainedPath = win32.join(workerDirectory, `native-update-drained-${request.workerId}.ack`)
+  let supervisorRemoved = false
   for (const path of [
     supervisorPath,
     scriptPath,
@@ -320,10 +331,11 @@ async function cleanupWindowsPrivateInputs(
     win32.join(workerDirectory, `native-candidate-installer-${request.workerId}.exe`),
     cancelPath,
   ]) {
-    await assertWindowsCancellationProof(proof, dependencies)
-    await dependencies.remove(path)
+    await assertWindowsCancellationProof(proof, dependencies, supervisorRemoved)
+    await dependencies.remove(path, path === supervisorPath)
+    if (path === supervisorPath) supervisorRemoved = true
   }
-  await assertWindowsCancellationProof(proof, dependencies)
+  await assertWindowsCancellationProof(proof, dependencies, supervisorRemoved)
   await dependencies.remove(drainedPath)
 }
 
@@ -409,6 +421,7 @@ async function launchElectronWorker(
 async function awaitWorkerReady(
   terminal: WorkerTerminal | undefined,
   supervisorPath: string | undefined,
+  supervisorProcessId: number | undefined,
   request: NativeRollbackWorkerRequest,
   failurePath: string,
   deadline: number,
@@ -426,8 +439,7 @@ async function awaitWorkerReady(
     try {
       if (supervisorPath !== undefined) {
         recordStage?.('readiness-image')
-        const running = await exactImageRunningForReadiness(supervisorPath, dependencies, deadline)
-        if (running === undefined) break
+        const running = await exactImageRunningForReadiness(supervisorPath, supervisorProcessId, dependencies, deadline)
         if (!running) throw new Error('native Desktop rollback supervisor exact private image exited before readiness')
       }
       if (monotonicNow(dependencies) >= deadline) break
@@ -437,8 +449,7 @@ async function awaitWorkerReady(
         if (monotonicNow(dependencies) >= deadline) break
         if (supervisorPath !== undefined) {
           recordStage?.('readiness-image')
-          const running = await exactImageRunningForReadiness(supervisorPath, dependencies, deadline)
-          if (running === undefined) break
+          const running = await exactImageRunningForReadiness(supervisorPath, supervisorProcessId, dependencies, deadline)
           if (!running) throw new Error('native Desktop rollback supervisor exact private image exited before readiness')
         }
         if (monotonicNow(dependencies) >= deadline) break
@@ -447,8 +458,7 @@ async function awaitWorkerReady(
         if (confirmed === `${request.workerId}\n`) {
           if (supervisorPath !== undefined) {
             recordStage?.('readiness-image')
-            const running = await exactImageRunningForReadiness(supervisorPath, dependencies, deadline)
-            if (running === undefined) break
+            const running = await exactImageRunningForReadiness(supervisorPath, supervisorProcessId, dependencies, deadline)
             if (!running) throw new Error('native Desktop rollback supervisor exact private image exited before readiness')
           }
           if (monotonicNow(dependencies) >= deadline) break
@@ -457,6 +467,7 @@ async function awaitWorkerReady(
         }
       }
     } catch (error) {
+      if (isWindowsInspectionDeadlineExpired(error) || isWindowsInspectionTimeout(error)) break
       if (!isTransientWindowsMarkerReadError(error, request.plan.platform)) throw error
     }
     await dependencies.delay(workerReadyPollMs)
@@ -501,6 +512,7 @@ async function requestWindowsCancellation(
   options: NativeRollbackWorkerLaunchOptions,
   request: NativeRollbackWorkerRequest,
   supervisorPath: string,
+  supervisorProcessId: number | undefined,
   dependencies: NativeRollbackWorkerDependencies,
   recordStage?: NativeUpdateStageRecorder,
 ): Promise<WindowsCancellationProof> {
@@ -510,13 +522,25 @@ async function requestWindowsCancellation(
   const record = `${request.workerId}:${randomUUID()}\n`
   await dependencies.writePrivate(cancelPath, record)
   const deadline = monotonicNow(dependencies) + options.workerReadyTimeoutMs
+  const supervisorStopped = async (probeDeadline?: number): Promise<boolean> => {
+    try {
+      return !await exactImageRunning(supervisorPath, dependencies, probeDeadline, supervisorProcessId)
+    } catch (error) {
+      if (isWindowsInspectionTimeout(error) || isWindowsInspectionDeadlineExpired(error)) return false
+      throw error
+    }
+  }
   while (monotonicNow(dependencies) < deadline) {
     const acknowledged = await readExactDrainedAcknowledgement(drainedPath, record, dependencies)
-    if (acknowledged && !await exactImageRunning(supervisorPath, dependencies, deadline)) {
+    if (acknowledged && await supervisorStopped(deadline)) {
       recordStage?.('cancellation-proof')
-      return { drainedPath, record, supervisorPath }
+      return { drainedPath, record, supervisorPath, supervisorProcessId }
     }
     await dependencies.delay(workerReadyPollMs)
+  }
+  if (await readExactDrainedAcknowledgement(drainedPath, record, dependencies) && await supervisorStopped()) {
+    recordStage?.('cancellation-proof')
+    return { drainedPath, record, supervisorPath, supervisorProcessId }
   }
   throw new Error('native Desktop rollback supervisor cancellation proof timed out')
 }
@@ -525,16 +549,20 @@ interface WindowsCancellationProof {
   readonly drainedPath: string
   readonly record: string
   readonly supervisorPath: string
+  readonly supervisorProcessId: number | undefined
 }
 
 async function assertWindowsCancellationProof(
   proof: WindowsCancellationProof,
   dependencies: NativeRollbackWorkerDependencies,
+  supervisorRemoved: boolean,
 ): Promise<void> {
   if (!await readExactDrainedAcknowledgement(proof.drainedPath, proof.record, dependencies)) {
     throw new Error('native Desktop rollback supervisor cancellation proof was not retained')
   }
-  if (await exactImageRunning(proof.supervisorPath, dependencies)) {
+  // Only this cleanup's successful unlink permits an absent image; reappearance requires inspection.
+  if (supervisorRemoved && !await privatePathExists(proof.supervisorPath, dependencies)) return
+  if (await exactImageRunning(proof.supervisorPath, dependencies, undefined, proof.supervisorProcessId)) {
     throw new Error('native Desktop rollback supervisor cancellation proof still has an exact private image')
   }
 }
@@ -561,6 +589,39 @@ function isTransientWindowsMarkerReadError(error: unknown, platform: NodeJS.Plat
   return code === 'EBUSY' || code === 'EPERM'
 }
 
+function isWindowsInspectionTimeout(error: unknown): boolean {
+  let current: unknown = error
+  while (current instanceof Error) {
+    const record = current as Error & { cause?: unknown; killed?: unknown; signal?: unknown }
+    if (record.killed === true && record.signal !== undefined && record.signal !== null) return true
+    current = record.cause
+  }
+  return false
+}
+
+function isWindowsInspectionDeadlineExpired(error: unknown): boolean {
+  let current: unknown = error
+  while (current instanceof Error) {
+    const record = current as Error & { cause?: unknown }
+    if (record.message === 'inspection deadline expired') return true
+    current = record.cause
+  }
+  return false
+}
+
+async function privatePathExists(
+  path: string,
+  dependencies: NativeRollbackWorkerDependencies,
+): Promise<boolean> {
+  try {
+    await dependencies.lstatPrivate(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
 function awaitSpawn(child: NativeRollbackWorkerChild): Promise<void> {
   return new Promise((resolve, reject) => {
     child.once('error', reject)
@@ -579,22 +640,28 @@ async function exactImageRunning(
   supervisorPath: string,
   dependencies: NativeRollbackWorkerDependencies,
   deadline?: number,
+  supervisorProcessId?: number,
 ): Promise<boolean> {
   try {
+    const metadata = await dependencies.lstatPrivate(supervisorPath)
+    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error('supervisor target is not a regular private image')
     const remaining = deadline === undefined ? 5_000 : Math.floor(deadline - monotonicNow(dependencies))
     if (remaining <= 0) throw new Error('inspection deadline expired')
-    return await dependencies.isExactProcessImageRunning(supervisorPath, Math.min(remaining, 5_000))
-  } catch {
-    throw new Error('native Desktop rollback supervisor exact-image inspection failed')
+    return await dependencies.isExactProcessImageRunning(
+      supervisorPath, Math.min(remaining, windowsExactImageTimeoutMs), supervisorProcessId,
+    )
+  } catch (error) {
+    throw new Error('native Desktop rollback supervisor exact-image inspection failed', { cause: error })
   }
 }
 
 async function exactImageRunningForReadiness(
   supervisorPath: string,
+  supervisorProcessId: number | undefined,
   dependencies: NativeRollbackWorkerDependencies,
   deadline: number,
 ): Promise<boolean> {
-  return await exactImageRunning(supervisorPath, dependencies, deadline)
+  return await exactImageRunning(supervisorPath, dependencies, deadline, supervisorProcessId)
 }
 
 function observeWorker(child: NativeRollbackWorkerChild): WorkerTerminal {
@@ -639,7 +706,9 @@ const windowsSupervisorBridgeProgram = [
   'if ($ReturnValue -eq 0 -and $ProcessId -gt 0) {',
   '  $Process = Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) | Select-Object -First 1',
   '  if ($null -ne $Process -and $Process.ExecutablePath -and $Process.SessionId -eq [Diagnostics.Process]::GetCurrentProcess().SessionId) {',
-  '    $ExactImage = [IO.Path]::GetFullPath([string]$Process.ExecutablePath).Equals([IO.Path]::GetFullPath([string]$Request.supervisorPath), [StringComparison]::OrdinalIgnoreCase)',
+  '    $ActualImage = (Resolve-Path -LiteralPath ([string]$Process.ExecutablePath) -ErrorAction Stop).Path',
+  '    $ExpectedImage = (Resolve-Path -LiteralPath ([string]$Request.supervisorPath) -ErrorAction Stop).Path',
+  '    $ExactImage = $ActualImage.Equals($ExpectedImage, [StringComparison]::OrdinalIgnoreCase)',
   '  }',
   '}',
   '[Console]::Out.Write((ConvertTo-Json -Compress -InputObject ([ordered]@{ returnValue = $ReturnValue; processId = $ProcessId; exactImage = $ExactImage })))',
@@ -650,7 +719,33 @@ const windowsExactImageProbeProgram = [
   "$ProgressPreference = 'SilentlyContinue'",
   '$Target = [Environment]::GetEnvironmentVariable("DSH_NATIVE_SUPERVISOR_IMAGE", "Process")',
   'if ([String]::IsNullOrEmpty($Target)) { throw \'invalid target\' }',
-  '$Match = Get-CimInstance -Namespace root/cimv2 -ClassName Win32_Process -ErrorAction Stop | Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath).Equals($Target, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1',
+  '$TargetItem = Get-Item -LiteralPath $Target -Force -ErrorAction Stop',
+  'if ($TargetItem -isnot [IO.FileInfo] -or ($TargetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw \'invalid target image\' }',
+  '$TargetPath = (Resolve-Path -LiteralPath $Target -ErrorAction Stop).Path',
+  '$ProcessIdText = [Environment]::GetEnvironmentVariable("DSH_NATIVE_SUPERVISOR_PROCESS_ID", "Process")',
+  'if ([String]::IsNullOrEmpty($ProcessIdText)) {',
+  '  $TargetName = [IO.Path]::GetFileName($TargetPath)',
+  '  $Filter = "Name = \'{0}\'" -f $TargetName.Replace("\'", "\'\'")',
+  '  $Processes = @(Get-CimInstance -Namespace root/cimv2 -ClassName Win32_Process -Filter $Filter -ErrorAction Stop)',
+  '} else {',
+  '  if ($ProcessIdText -notmatch \'^[1-9][0-9]{0,9}$\') { throw \'invalid process id\' }',
+  '  try { $Processes = @(Get-Process -Id ([int]$ProcessIdText) -ErrorAction Stop) } catch {',
+  '    if ($_.FullyQualifiedErrorId -ne "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand" -or $_.CategoryInfo.Category -ne [Management.Automation.ErrorCategory]::ObjectNotFound) { throw }',
+  '    $Processes = @()',
+  '  }',
+  '}',
+  '$Match = $null',
+  '$Uninspectable = $false',
+  'foreach ($Process in $Processes) {',
+  '  if ($Process.PSObject.Properties["ExecutablePath"] -ne $null) { $CandidatePath = [string]$Process.ExecutablePath } else { $CandidatePath = [string]$Process.Path }',
+  '  if ([String]::IsNullOrEmpty($CandidatePath)) { $Uninspectable = $true; continue }',
+  '  if ($Process.SessionId -ne [Diagnostics.Process]::GetCurrentProcess().SessionId) { $Uninspectable = $true; continue }',
+  '  $CandidateFullPath = [IO.Path]::GetFullPath($CandidatePath)',
+  '  if ($CandidateFullPath.Equals($TargetPath, [StringComparison]::OrdinalIgnoreCase)) { $Match = $Process; break }',
+  '  $ActualPath = (Resolve-Path -LiteralPath $CandidatePath -ErrorAction Stop).Path',
+  '  if ($ActualPath.Equals($TargetPath, [StringComparison]::OrdinalIgnoreCase)) { $Match = $Process; break }',
+  '}',
+  'if ($null -eq $Match -and $Uninspectable) { throw \'a same-name process image could not be inspected\' }',
   'if ($null -eq $Match) { [Console]::Out.Write("absent") } else { [Console]::Out.Write("present") }',
 ].join('; ')
 
@@ -680,7 +775,7 @@ async function runWindowsSupervisorBridge(
   deadline: number,
   dependencies: NativeRollbackWorkerDependencies,
   recordStage: NativeUpdateStageRecorder,
-): Promise<void> {
+): Promise<number> {
   const systemRoot = supervisorEnvironment.SystemRoot
   if (systemRoot === undefined) throw new Error('native Desktop rollback WMI bridge requires the Windows system root')
   const request: WindowsBridgeRequest = {
@@ -721,6 +816,7 @@ async function runWindowsSupervisorBridge(
   if (result.processId <= 0) throw new Error('native Desktop rollback WMI bridge returned a malformed result')
   if (!result.exactImage) throw new Error('native Desktop rollback WMI provider did not establish the exact private supervisor image')
   recordStage('bridge-identity')
+  return result.processId
 }
 
 function createNativeUpdateStageRecorder(
@@ -840,28 +936,30 @@ function parseWindowsBridgeResult(stdout: string): WindowsBridgeResult {
  */
 export function createWindowsExactImageInspector(
   runWindowsCommand: NativeRollbackWindowsBridge = runWindowsPowerShellBridge,
-): (path: string, timeoutMs?: number) => Promise<boolean> {
-  return async (path, timeoutMs = 5_000) => {
+): (path: string, timeoutMs?: number, processId?: number) => Promise<boolean> {
+  return async (path, timeoutMs = 5_000, processId) => {
     const systemRoot = process.env.SystemRoot
     if (systemRoot === undefined) throw new Error('native Desktop exact-image inspection requires the Windows system root')
     try {
+      const environment: NodeJS.ProcessEnv = { ...createWindowsWorkerEnvironment(), DSH_NATIVE_SUPERVISOR_IMAGE: path }
+      if (processId !== undefined) environment.DSH_NATIVE_SUPERVISOR_PROCESS_ID = String(processId)
       const result = await runWindowsCommand(
         win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
         ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(windowsExactImageProbeProgram, 'utf16le').toString('base64')],
         {
-          env: { ...createWindowsWorkerEnvironment(), DSH_NATIVE_SUPERVISOR_IMAGE: path },
+          env: environment,
           maxBuffer: windowsBridgeOutputLimit,
-          timeout: Math.max(1, Math.min(timeoutMs, 5_000)),
+          timeout: Math.max(1, Math.min(timeoutMs, windowsExactImageTimeoutMs)),
           windowsHide: true,
         },
       )
-      if (result.stderr !== '') throw new Error('inspection stderr was not empty')
+      if (result.stderr !== '') throw new Error(`inspection stderr was not empty: ${boundedWindowsDiagnostic(result.stderr)}`)
       if (result.stdout === 'present') return true
       if (result.stdout === 'absent') return false
-    } catch {
-      throw new Error('native Desktop exact-image inspection failed')
+      throw new Error(`inspection stdout was not recognized: ${boundedWindowsDiagnostic(result.stdout)}`)
+    } catch (error) {
+      throw new Error('native Desktop exact-image inspection failed', { cause: error })
     }
-    throw new Error('native Desktop exact-image inspection failed')
   }
 }
 
@@ -974,6 +1072,10 @@ function normalizeWindowsPowerShellPathExtensions(value: string): string {
   return value === '' ? '.CPL' : `${value};.CPL`
 }
 
+function boundedWindowsDiagnostic(value: string): string {
+  return value.replace(/(token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu, '$1=[REDACTED]').slice(-1_024)
+}
+
 function windowsSystemDrive(systemRoot: string): string | undefined {
   if (!win32.isAbsolute(systemRoot) || /[\0\r\n]/u.test(systemRoot)) return undefined
   const root = win32.parse(systemRoot).root
@@ -1010,7 +1112,11 @@ export const nativeRollbackWorkerDependencies: NativeRollbackWorkerDependencies 
   lstatPrivate: async path => await lstat(path),
   canonicalize: async path => await realpath(path),
   isExactProcessImageRunning: createWindowsExactImageInspector(),
-  remove: async (path) => { await unlink(path).catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }) },
+  remove: async (path, requireExisting = false) => {
+    await unlink(path).catch((error: unknown) => {
+      if (requireExisting || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    })
+  },
   delay: milliseconds => new Promise((resolve) => { setTimeout(resolve, milliseconds) }),
   spawn: (command, args, options) => spawn(command, args, options),
 }

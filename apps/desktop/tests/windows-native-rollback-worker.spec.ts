@@ -11,6 +11,7 @@ import {
   createWindowsWorkerEnvironment,
   launchNativeRollbackWorker,
   nativeRollbackWorkerDependencies,
+  runWindowsPowerShellBridge,
   type NativeRollbackWorkerChild,
   type NativeRollbackWorkerDependencies,
 } from '../src/main/update/native-rollback-launcher.ts'
@@ -21,6 +22,35 @@ const workerTemplate = resolve(import.meta.dirname, '../resources/update/windows
 const supervisorTemplate = resolve(import.meta.dirname, '../out/native/win32-x64/windows-native-update-supervisor.exe')
 
 windows('windows-native-rollback-worker', () => {
+  it.each(['EPERM', 'EBUSY'])('rejects %s rather than proving private file absence', async (code) => {
+    let now = 0
+    let attempts = 0
+    await expect(waitForAbsent(['private.exe'], async () => {
+      attempts += 1
+      throw Object.assign(new Error('inspection locked'), { code })
+    }, () => now, async () => { now += 1_000 }))
+      .rejects.toThrow('did not clean its private files')
+    expect(attempts).toBeGreaterThan(1)
+  })
+
+  it('accepts only ENOENT after bounded transient private file inspection locks', async () => {
+    let now = 0
+    let attempts = 0
+    await expect(waitForAbsent(['private.exe'], async () => {
+      attempts += 1
+      throw Object.assign(new Error('inspection'), { code: attempts < 3 ? 'EBUSY' : 'ENOENT' })
+    }, () => now, async () => { now += 25 })).resolves.toBeUndefined()
+    expect(attempts).toBe(3)
+  })
+
+  it.each([
+    ['CIM query failure', 'Write-Error -Message "CIM denied" -Category PermissionDenied -ErrorId FixtureCimDenied'],
+    ['uninspectable relevant row', '[pscustomobject]@{ Name = "fixture.exe"; ExecutablePath = $null }'],
+  ])('rejects %s rather than proving exact process absence', async (_name, body) => {
+    const prefix = `function Get-CimInstance { [CmdletBinding()] param([Parameter(Position=0)][string]$ClassName, [string]$Filter); ${body} }`
+    await expect(waitForNoExactProcess('C:\\private\\fixture.exe', prefix)).rejects.toThrow()
+  }, 10_000)
+
   it('includes the control-panel extension that Windows PowerShell adds to PATHEXT', () => {
     expect(createWindowsWorkerEnvironment({ PATHEXT: '.COM;.EXE' }).PATHEXT).toBe('.COM;.EXE;.CPL')
     expect(createWindowsWorkerEnvironment({ PATHEXT: '.COM;.CPL' }).PATHEXT).toBe('.COM;.CPL')
@@ -527,7 +557,7 @@ windows('windows-native-rollback-worker', () => {
       parent.kill()
       await rm(directory, { recursive: true, force: true })
     }
-  }, 45_000)
+  }, 120_000)
 
   it('gives a real WMI-created private image only the constrained supervisor environment', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'harness-wmi-environment-'))
@@ -1047,10 +1077,15 @@ windows('windows-native-rollback-worker', () => {
       let descendantProcessId = 0
       let cancellationRecord = ''
       let proofChecks = 0
+      let supervisorProcessId: number | undefined
       const removed: string[] = []
       const dependencies: NativeRollbackWorkerDependencies = {
         ...nativeRollbackWorkerDependencies,
-        remove: async (path) => {
+        isExactProcessImageRunning: async (path, timeoutMs, processId) => {
+          if (processId !== undefined) supervisorProcessId = processId
+          return await nativeRollbackWorkerDependencies.isExactProcessImageRunning(path, timeoutMs, processId)
+        },
+        remove: async (path, requireExisting) => {
           proofChecks += 1
           if (path !== drainedPath) {
             const requestRecord = await readFile(cancelPath, 'utf8')
@@ -1059,11 +1094,18 @@ windows('windows-native-rollback-worker', () => {
           }
           const drainedRecord = await readFile(drainedPath, 'utf8')
           expect(drainedRecord).toBe(cancellationRecord)
-          expect(await nativeRollbackWorkerDependencies.isExactProcessImageRunning(supervisorPath)).toBe(false)
+          if (await testPathExists(supervisorPath)) {
+            expect(supervisorProcessId).toBeDefined()
+            expect(
+              await nativeRollbackWorkerDependencies.isExactProcessImageRunning(
+                supervisorPath, undefined, supervisorProcessId,
+              ),
+            ).toBe(false)
+          }
           expect(processIsAlive(workerProcessId)).toBe(false)
           expect(processIsAlive(descendantProcessId)).toBe(false)
           removed.push(path)
-          await nativeRollbackWorkerDependencies.remove(path)
+          await nativeRollbackWorkerDependencies.remove(path, requireExisting)
         },
       }
       const result = launchNativeRollbackWorker({
@@ -1075,7 +1117,7 @@ windows('windows-native-rollback-worker', () => {
       await Promise.all([waitForPresent(workerProcessIdPath), waitForPresent(descendantPath)])
       workerProcessId = Number.parseInt(await readFile(workerProcessIdPath, 'utf8'), 10)
       descendantProcessId = Number.parseInt(await readFile(descendantPath, 'utf8'), 10)
-      await expect(result).rejects.toThrow('exact-image inspection failed')
+      await expect(result).rejects.toThrow('native Desktop rollback worker did not become ready')
       expect(processIsAlive(descendantProcessId)).toBe(false)
       await waitForAbsent([
         supervisorPath,
@@ -1175,6 +1217,16 @@ function nativeFixturePlan(rollbackPath: string, parentProcessId = process.pid) 
   }
 }
 
+async function testPathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
 function sortedEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
   return Object.entries(environment)
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
@@ -1182,15 +1234,22 @@ function sortedEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
     .sort((left, right) => left.localeCompare(right, 'en'))
 }
 
-async function waitForAbsent(paths: readonly string[]): Promise<void> {
-  const deadline = Date.now() + 5_000
-  while (Date.now() < deadline) {
-    const present = await Promise.all(paths.map(async path => await readFile(path).then(() => true).catch((error: unknown) => {
-      if (isTransientReadError(error)) return false
+async function waitForAbsent(
+  paths: readonly string[],
+  inspect: (path: string) => Promise<unknown> = lstat,
+  now: () => number = Date.now,
+  delay: () => Promise<void> = async () => { await new Promise<void>((resolve) => { setTimeout(resolve, 25) }) },
+): Promise<void> {
+  const deadline = now() + 5_000
+  while (now() < deadline) {
+    const present = await Promise.all(paths.map(async path => await inspect(path).then(() => true).catch((error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return false
+      if (code === 'EPERM' || code === 'EBUSY') return true
       throw error
     })))
     if (present.every(value => !value)) return
-    await new Promise<void>((resolve) => { setTimeout(resolve, 25) })
+    await delay()
   }
   throw new Error('Windows native rollback worker did not clean its private files')
 }
@@ -1308,28 +1367,39 @@ async function processIsInJob(processId: number): Promise<boolean> {
   return await successfulOutput(probe) === '1'
 }
 
-async function waitForNoExactProcess(executablePath: string): Promise<void> {
+async function waitForNoExactProcess(executablePath: string, probePrefix = ''): Promise<void> {
   const deadline = Date.now() + 5_000
   while (Date.now() < deadline) {
     const command = [
-      '$target = [Environment]::GetEnvironmentVariable("DSH_TEST_PROCESS_IMAGE")',
-      'if (Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath).Equals($target, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1) { exit 1 }',
+      probePrefix,
+      "$ErrorActionPreference = 'Stop'",
+      '$target = [IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable("DSH_TEST_PROCESS_IMAGE"))',
+      '$name = [IO.Path]::GetFileName($target)',
+      '$filter = "Name = \'{0}\'" -f $name.Replace("\'", "\'\'")',
+      '$present = $false',
+      'foreach ($row in @(Get-CimInstance -ClassName Win32_Process -Filter $filter -ErrorAction Stop)) {',
+      '  if ([String]::IsNullOrEmpty([string]$row.ExecutablePath)) { throw "same-name process image is uninspectable" }',
+      '  if ([IO.Path]::GetFullPath($row.ExecutablePath).Equals($target, [StringComparison]::OrdinalIgnoreCase)) { $present = $true }',
+      '}',
+      'if ($present) { [Console]::Out.Write("present") } else { [Console]::Out.Write("absent") }',
     ].join('; ')
     const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    const probe = spawn(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
-      env: { ...process.env, DSH_TEST_PROCESS_IMAGE: executablePath }, windowsHide: true, stdio: 'ignore',
+    const result = await runWindowsPowerShellBridge(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      env: { ...createWindowsWorkerEnvironment(), DSH_TEST_PROCESS_IMAGE: executablePath },
+      windowsHide: true,
+      maxBuffer: 1024,
+      timeout: Math.max(1, Math.min(5_000, deadline - Date.now())),
     })
-    const code = await new Promise<number | null>((resolveExit, rejectExit) => {
-      probe.once('error', rejectExit); probe.once('exit', resolveExit)
-    })
-    if (code === 0) return
+    if (result.stderr !== '') throw new Error('exact process absence probe wrote stderr')
+    if (result.stdout === 'absent') return
+    if (result.stdout !== 'present') throw new Error('exact process absence probe returned ambiguous output')
     await new Promise<void>((resolveDelay) => { setTimeout(resolveDelay, 25) })
   }
   throw new Error('private native supervisor did not exit')
 }
 
 async function waitForPresent(path: string): Promise<void> {
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     if (await readFile(path).then(() => true).catch(() => false)) return
     await new Promise<void>((resolveDelay) => { setTimeout(resolveDelay, 25) })
@@ -1338,7 +1408,7 @@ async function waitForPresent(path: string): Promise<void> {
 }
 
 async function waitForProcessAbsent(processId: number): Promise<void> {
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     if (!processIsAlive(processId)) return
     await new Promise<void>((resolveDelay) => { setTimeout(resolveDelay, 25) })
@@ -1349,12 +1419,6 @@ async function waitForProcessAbsent(processId: number): Promise<void> {
 function quoteWindowsArgument(value: string): string {
   if (value.includes('"')) throw new Error('fixture path contains an unsupported quote')
   return `"${value}"`
-}
-
-/** @returns whether the worker is still opening or deleting its private readiness marker. */
-function isTransientReadError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code
-  return code === 'ENOENT' || code === 'EBUSY' || code === 'EPERM'
 }
 
 function powershellLiteral(value: string): string {

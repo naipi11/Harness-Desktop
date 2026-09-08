@@ -17,6 +17,20 @@ const runtimeConfig = fileURLToPath(new URL(
 const basePatch = fileURLToPath(new URL('../../../../packages/bundle/base/cordis.patch.yml', import.meta.url))
 const webPatch = fileURLToPath(new URL('../../../../packages/bundle/web-app/cordis.patch.yml', import.meta.url))
 
+function resolveSourcePatchModules(patches) {
+  return structuredClone(patches).map((patch) => {
+    if (typeof patch !== 'object' || patch === null || !('insert' in patch) || !Array.isArray(patch.insert)) return patch
+    return {
+      ...patch,
+      insert: patch.insert.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string') return entry
+        if (entry.name.startsWith('cordis:') || entry.name.startsWith('file:')) return entry
+        return { ...entry, name: import.meta.resolve(entry.name) }
+      }),
+    }
+  })
+}
+
 async function flushSessions(ctx) {
   const sessions = ctx.get('sessions')
   if (sessions === undefined) throw new Error('Desktop live Runtime has no session service')
@@ -34,7 +48,7 @@ const runtime = await startRuntime({
   mountPrivateControl: true,
   flush: flushSessions,
   async boot(provider) {
-    const patches = [
+    const patches = resolveSourcePatchModules([
       ...loadOverlayPatches('desktop-live-runtime', basePatch),
       ...loadOverlayPatches('desktop-live-runtime', webPatch),
       { id: 'session-title-llm', disabled: true },
@@ -56,7 +70,7 @@ const runtime = await startRuntime({
         },
         { id: 'desktop-live-approval-tool', name: approvalTool },
       ] },
-    ]
+    ])
     return boot('desktop-live-runtime', runtimeConfig, patches, (ctx) => {
       installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))
       provideCmdline(ctx, { args: [], exit: () => {} })

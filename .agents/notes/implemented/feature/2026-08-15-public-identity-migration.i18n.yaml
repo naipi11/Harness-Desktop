@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-public-identity-migration.md
-2026-08-15-public-identity-migration.md: 4aa61903f9f6eadcb2b7c5bb06d1a5c429401f44
-2026-08-15-public-identity-migration.zh.md: ecd8632cfa94a83c03b8ee302c2942820ba72c38
+2026-08-15-public-identity-migration.md: 6bc2ea7d3d08690a9d696dd66683fdba1fa8a8de
+2026-08-15-public-identity-migration.zh.md: b75219e50d0e5921291adf2814d276a4f17ff901

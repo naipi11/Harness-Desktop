@@ -55,6 +55,18 @@ const releaseCredentialVariables = [
   'WIN_CSC_LINK',
 ] as const
 const builderConfigFlag = '--config electron-builder.config.mjs' as const
+const graphicalStepIds = ['desktop-updater', 'installed-desktop', 'native-update-rollback'] as const
+
+function graphicalRun(command: string): string {
+  return [
+    "if ($env:RUNNER_OS -eq 'Linux') {",
+    `  xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" ${command}`,
+    '} else {',
+    `  ${command}`,
+    '}',
+    'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
+  ].join('\n')
+}
 const desktopNativePrepareCommand = 'pnpm --dir ../.. run prepare:desktop-native' as const
 const releaseEvidenceEnvironment = {
   DSH_RELEASE_MATRIX_LABEL: '${{ matrix.label }}',
@@ -271,8 +283,8 @@ export function collectDesktopReleaseViolations(files: DesktopReleaseFiles): str
       violations.push(`desktopArtifactsWorkflow: missing runner ${runner}`)
     }
   }
-  if (!workflowStepUsesShell(files.desktopArtifactsWorkflow, 'Configure pnpm store path', 'bash')) {
-    violations.push('desktopArtifactsWorkflow: Configure pnpm store path must use shell bash')
+  if (!workflowStepUsesShell(files.desktopArtifactsWorkflow, 'Configure pnpm store path', 'pwsh')) {
+    violations.push('desktopArtifactsWorkflow: Configure pnpm store path must use shell pwsh')
   }
   if (!workflowStepHasEnvironment(
     files.desktopArtifactsWorkflow,
@@ -362,10 +374,10 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
 
   const requiredSteps = [
     ['Verify pinned Node distribution checksum', 'pnpm exec tsx scripts/release/verify-node-runtime-archive.ts', 'node-runtime'],
-    ['Generate ephemeral public update policy', 'pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts\necho "DSH_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"\necho "DSH_DESKTOP_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"'],
+    ['Generate ephemeral public update policy', 'pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"DSH_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV\n"DSH_DESKTOP_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV'],
     ['Package installer', 'pnpm --filter @harness-desktop/dsh-desktop run package --publish never', 'package'],
     ['Inspect native Desktop artifacts', 'pnpm run release:verify-desktop-artifacts', 'desktop-artifacts'],
-    ['Test Desktop updater and rollback', 'pnpm run desktop:test-updater', 'desktop-updater'],
+    ['Test Desktop updater and rollback', 'pnpm run desktop:test-updater --maxWorkers=1', 'desktop-updater'],
     ['Verify packed CLI from an empty offline prefix', 'pnpm run release:verify-packed-cli', 'packed-cli'],
     ['Verify update manifests with ephemeral fixtures', 'pnpm run release:verify-update-manifests', 'update-manifests'],
     ["Sign and verify manifests for this row's produced artifacts", 'pnpm run release:verify-produced-update-manifests', 'produced-update-manifests'],
@@ -380,10 +392,22 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
       'desktopArtifactsWorkflow: native supervisor preparation belongs to the Desktop package lifecycle',
     )
   }
+  const defaults = isRecord(packageJob.defaults) && isRecord(packageJob.defaults.run) ? packageJob.defaults.run : undefined
+  if (steps.some(step => typeof step.run === 'string'
+    && step.if !== "${{ runner.os == 'Linux' }}" && step.if !== "${{ runner.os == 'macOS' }}"
+    && (step.shell ?? defaults?.shell ?? 'pwsh') !== 'pwsh')) {
+    violations.push('desktopArtifactsWorkflow: Windows-applicable run steps must use native pwsh')
+  }
+  for (const id of graphicalStepIds) {
+    if (steps.find(step => step.id === id)?.shell !== 'pwsh') {
+      violations.push(`desktopArtifactsWorkflow: ${id} must use Linux Xvfb and native Windows pwsh`)
+    }
+  }
   let previousIndex = -1
   for (const [name, command, id] of requiredSteps) {
+    const expectedRun = graphicalStepIds.some(candidate => candidate === id) ? graphicalRun(command ?? '') : command
     const index = steps.findIndex((step, candidateIndex) => candidateIndex > previousIndex
-      && step.name === name && normalizedRun(step.run) === command && (id === undefined || step.id === id))
+      && step.name === name && normalizedRun(step.run) === expectedRun && (id === undefined || step.id === id))
     if (index === -1) {
       violations.push(name === 'Verify pinned Node distribution checksum'
         ? 'desktopArtifactsWorkflow: Verify pinned Node distribution checksum must execute the exact verifier command'
@@ -440,6 +464,13 @@ function auditDesktopArtifactsWorkflow(workflowText: string): string[] {
   const evidenceUploadPaths = typeof evidenceUploadPath === 'string'
     ? evidenceUploadPath.split(/\r?\n/u).map(line => line.trim()).filter(Boolean)
     : []
+  if (!sameStrings(evidenceUploadPaths, [
+    'dist/release-logs/release-evidence.json',
+    '${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/manifests/ready/*.json',
+    '${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/bindings.json',
+  ])) {
+    violations.push('desktopArtifactsWorkflow: evidence upload must contain only the three redacted evidence paths')
+  }
   if (!sameStrings(artifactUploadPaths, ['${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/artifacts/*'])
     || !evidenceUploadPaths.includes('${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/manifests/ready/*.json')
     || !evidenceUploadPaths.includes('${{ env.DSH_UPDATE_SNAPSHOT_ROOT }}/bindings.json')) {
@@ -666,13 +697,21 @@ function resourceBasename(value: string): string | undefined {
 }
 
 function provesBothMacCliArchitectures(step: Record<string, unknown> | undefined, script: string): boolean {
-  if (step === undefined || step.shell !== 'bash' || typeof step.run !== 'string') return false
-  const run = normalizedRun(step.run)
-  return run.includes('if [[ "${RUNNER_OS}" == "macOS" ]]')
-    && run.includes('for arch in arm64 x64')
-    && run.includes('DSH_CLI_STANDALONE_PLATFORM=darwin')
-    && run.includes('DSH_CLI_STANDALONE_ARCH="${arch}"')
-    && run.includes(`pnpm run ${script}`)
+  if (step === undefined || step.shell !== 'pwsh' || typeof step.run !== 'string') return false
+  const expected = [
+    "if ($env:RUNNER_OS -eq 'macOS') {",
+    "$env:DSH_CLI_STANDALONE_PLATFORM = 'darwin'",
+    "foreach ($arch in 'arm64', 'x64') {",
+    '$env:DSH_CLI_STANDALONE_ARCH = $arch',
+    `pnpm run ${script}`,
+    'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
+    '}',
+    '} else {',
+    `pnpm run ${script}`,
+    'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
+    '}',
+  ]
+  return JSON.stringify(normalizedRun(step.run).split('\n').map(line => line.trim())) === JSON.stringify(expected)
 }
 
 function auditReleaseCandidatesWorkflow(workflowText: string): string[] {

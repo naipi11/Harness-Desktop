@@ -111,7 +111,7 @@ function showNativeRecoveryBlocked(): void {
 async function initializeNativeUpdates(): Promise<'continue' | 'rollback-scheduled' | 'recovery-blocked'> {
   const installation = await selfUpdateInstallation()
   if (!app.isPackaged || installation === undefined) return 'continue'
-  let source: DesktopUpdateSource
+  let source: DesktopUpdateSource | undefined
   try {
     source = await loadDesktopUpdateSource({
       resourcesPath: process.resourcesPath,
@@ -126,6 +126,7 @@ async function initializeNativeUpdates(): Promise<'continue' | 'rollback-schedul
     )
     return 'continue'
   }
+  if (source === undefined) return 'continue'
   const candidateLaunchNonce = process.platform === 'win32' ? parseNativeUpdateLaunchNonce(process.argv) : undefined
   const adapter = new NativeDesktopInstallAdapter({
     appId: productMetadata.appId,

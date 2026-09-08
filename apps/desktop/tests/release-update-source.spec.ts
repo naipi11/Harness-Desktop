@@ -1,7 +1,7 @@
 /** Packaged Desktop release-policy source behavior. */
 
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -35,6 +35,20 @@ async function fixture(): Promise<{ readonly resourcesPath: string; close(): Pro
 }
 
 describe('Desktop release update source', () => {
+  it('leaves updates unconfigured without fetching when the packaged policy is absent', async () => {
+    const resourcesPath = await mkdtemp(join(tmpdir(), 'harness-no-update-policy-'))
+    let calls = 0
+    try {
+      await expect(loadDesktopUpdateSource({
+        resourcesPath, platform: 'win32', arch: 'x64', currentVersion: '1.0.1',
+        fetch: async () => { calls += 1; return response('{}') },
+      })).resolves.toBeUndefined()
+      expect(calls).toBe(0)
+    } finally {
+      await rm(resourcesPath, { recursive: true, force: true })
+    }
+  })
+
   it('uses only a packaged public policy for the exact Runtime channel and verified artifact origin', async () => {
     const subject = await fixture()
     const requests: string[] = []
@@ -47,6 +61,8 @@ describe('Desktop release update source', () => {
     }
     try {
       const source = await loadDesktopUpdateSource({ resourcesPath: subject.resourcesPath, platform: 'win32', arch: 'x64', currentVersion: '1.0.0', fetch })
+      expect(source).toBeDefined()
+      if (source === undefined) throw new Error('fixture policy was not loaded')
 
       await expect(source.loadManifest('stable')).resolves.toEqual({ candidate: true })
       await expect(source.loadRollbackManifest('stable')).resolves.toEqual({ rollback: true })
@@ -58,6 +74,30 @@ describe('Desktop release update source', () => {
       expect(source.trust).toEqual({ allowedOrigins: [origin], publicKeys: { 'release-test': publicKey } })
     } finally {
       await subject.close()
+    }
+  })
+
+  it.each(['{broken', '{}'])('rejects a damaged installed policy instead of treating it as unconfigured: %s', async (contents) => {
+    const resourcesPath = await mkdtemp(join(tmpdir(), 'harness-invalid-policy-'))
+    try {
+      await writeFile(join(resourcesPath, 'update-policy.json'), contents)
+      await expect(loadDesktopUpdateSource({
+        resourcesPath, platform: 'win32', arch: 'x64', currentVersion: '1.0.1',
+      })).rejects.toThrow()
+    } finally {
+      await rm(resourcesPath, { recursive: true, force: true })
+    }
+  })
+
+  it('propagates policy read failures instead of treating them as absence', async () => {
+    const resourcesPath = await mkdtemp(join(tmpdir(), 'harness-policy-read-error-'))
+    try {
+      await mkdir(join(resourcesPath, 'update-policy.json'))
+      await expect(loadDesktopUpdateSource({
+        resourcesPath, platform: 'win32', arch: 'x64', currentVersion: '1.0.1',
+      })).rejects.toThrow()
+    } finally {
+      await rm(resourcesPath, { recursive: true, force: true })
     }
   })
 
@@ -89,6 +129,8 @@ describe('Desktop release update source', () => {
         currentVersion: '1.0.1',
         fetch: async () => { calls += 1; return response('{}') },
       })
+      expect(source).toBeDefined()
+      if (source === undefined) throw new Error('fixture policy was not loaded')
 
       await expect(source.loadManifest('stable')).rejects.toThrow('update policy omits this target')
       expect(calls).toBe(0)

@@ -5642,6 +5642,9 @@ importers:
       '@harness-desktop/dsh-client-connection':
         specifier: workspace:^
         version: link:../../client/connection
+      '@harness-desktop/dsh-client-ui-directory-picker-browse':
+        specifier: workspace:^
+        version: link:../../client/ui-directory-picker-browse
       '@harness-desktop/dsh-client-ui-directory-picker-native':
         specifier: workspace:^
         version: link:../../client/ui-directory-picker-native
@@ -5657,6 +5660,9 @@ importers:
       '@harness-desktop/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../apiproxy
+      '@harness-desktop/dsh-host-directory-picker-browse':
+        specifier: workspace:^
+        version: link:../directory-picker-browse
       '@harness-desktop/dsh-host-directory-picker-native':
         specifier: workspace:^
         version: link:../directory-picker-native

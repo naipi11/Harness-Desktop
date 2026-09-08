@@ -24,6 +24,9 @@ jobs:
   package:
     name: Package ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
     strategy:
       fail-fast: false
       matrix:
@@ -59,12 +62,13 @@ jobs:
 
       - name: Configure pnpm store path
         id: pnpm-store
-        shell: bash
+        shell: pwsh
         run: |
-          store_root="$HOME/.local/share/pnpm/store"
-          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
-          store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
-          echo "path=$store_path" >> "$GITHUB_OUTPUT"
+          $env:PNPM_CONFIG_STORE_DIR = Join-Path $HOME '.local/share/pnpm/store'
+          "PNPM_CONFIG_STORE_DIR=$env:PNPM_CONFIG_STORE_DIR" >> $env:GITHUB_ENV
+          $storePath = pnpm store path --silent
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "path=$storePath" >> $env:GITHUB_OUTPUT
 
       - uses: actions/cache/restore@v4
         with:
@@ -128,27 +132,25 @@ jobs:
           test -x "$(command -v unsquashfs)"
 
       - name: Acquire pinned local Node distribution
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          version="${PRIMARY_NODE_VERSION}"
-          case "${RUNNER_OS}-${RUNNER_ARCH}" in
-            Windows-X64) filename="node-v${version}-win-x64.zip" ;;
-            Windows-ARM64) filename="node-v${version}-win-arm64.zip" ;;
-            macOS-X64) filename="node-v${version}-darwin-x64.tar.gz" ;;
-            macOS-ARM64) filename="node-v${version}-darwin-arm64.tar.gz" ;;
-            Linux-X64) filename="node-v${version}-linux-x64.tar.gz" ;;
-            Linux-ARM64) filename="node-v${version}-linux-arm64.tar.gz" ;;
-            *) echo "Unsupported Node runtime target: ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
-          esac
-          runtime_root="${RUNNER_TEMP}/harness-node-runtime"
-          mkdir -p "${runtime_root}"
-          curl --fail --silent --show-error --location \
-            "https://nodejs.org/dist/v${version}/${filename}" \
-            --output "${runtime_root}/${filename}"
-          echo "DSH_NODE_RUNTIME_ROOT=${runtime_root}" >> "${GITHUB_ENV}"
-          echo "DSH_NODE_RUNTIME_FILENAME=${filename}" >> "${GITHUB_ENV}"
-          echo "DSH_NODE_RUNTIME_VERSION=${version}" >> "${GITHUB_ENV}"
+          $version = $env:PRIMARY_NODE_VERSION
+          $target = switch ("$env:RUNNER_OS-$env:RUNNER_ARCH") {
+            'Windows-X64' { 'win-x64.zip' }
+            'Windows-ARM64' { 'win-arm64.zip' }
+            'macOS-X64' { 'darwin-x64.tar.gz' }
+            'macOS-ARM64' { 'darwin-arm64.tar.gz' }
+            'Linux-X64' { 'linux-x64.tar.gz' }
+            'Linux-ARM64' { 'linux-arm64.tar.gz' }
+            default { throw "Unsupported Node runtime target: $env:RUNNER_OS-$env:RUNNER_ARCH" }
+          }
+          $filename = "node-v$version-$target"
+          $runtimeRoot = Join-Path $env:RUNNER_TEMP 'harness-node-runtime'
+          New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+          Invoke-WebRequest "https://nodejs.org/dist/v$version/$filename" -OutFile (Join-Path $runtimeRoot $filename)
+          "DSH_NODE_RUNTIME_ROOT=$runtimeRoot" >> $env:GITHUB_ENV
+          "DSH_NODE_RUNTIME_FILENAME=$filename" >> $env:GITHUB_ENV
+          "DSH_NODE_RUNTIME_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Acquire both pinned macOS CLI runtimes
         if: ${{ runner.os == 'macOS' }}
@@ -167,13 +169,14 @@ jobs:
         run: pnpm exec tsx scripts/release/verify-node-runtime-archive.ts
 
       - name: Generate ephemeral public update policy
-        shell: bash
+        shell: pwsh
         env:
           DSH_UPDATE_POLICY_OUTPUT: ${{ runner.temp }}/harness-update-policy.json
         run: |
           pnpm exec tsx scripts/release/create-ephemeral-update-policy.ts
-          echo "DSH_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
-          echo "DSH_DESKTOP_UPDATE_POLICY=${DSH_UPDATE_POLICY_OUTPUT}" >> "$GITHUB_ENV"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DSH_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV
+          "DSH_DESKTOP_UPDATE_POLICY=$env:DSH_UPDATE_POLICY_OUTPUT" >> $env:GITHUB_ENV
 
       - name: Generate product icons
         run: pnpm run generate:icons
@@ -194,25 +197,14 @@ jobs:
 
       - name: Test Desktop updater and rollback
         id: desktop-updater
-        shell: bash
+        shell: pwsh
         run: |
-          tests=(
-            apps/desktop/tests/update-service.spec.ts
-            apps/desktop/tests/update-manifest.spec.ts
-            apps/desktop/tests/native-install.spec.ts
-            apps/desktop/tests/native-transition-gate.spec.ts
-            apps/desktop/tests/native-rollback.spec.ts
-            apps/desktop/tests/native-rollback-launcher.spec.ts
-            apps/desktop/tests/installer-policy-state.spec.ts
-            apps/desktop/tests/release-update-source.spec.ts
-            apps/desktop/tests/self-installation.spec.ts
-            apps/desktop/tests/windows-native-rollback-worker.spec.ts
-            apps/desktop/tests/windows-native-update-supervisor.spec.ts
-          )
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
-          fi
-          exec node node_modules/vitest/vitest.mjs run --root . "${tests[@]}" --maxWorkers=1
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run desktop:test-updater --maxWorkers=1
+          } else {
+            pnpm run desktop:test-updater --maxWorkers=1
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify packed CLI from an empty offline prefix
         id: packed-cli
@@ -226,69 +218,71 @@ jobs:
 
       - name: Build standalone CLI archives
         id: build-cli
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${RUNNER_OS}" == "macOS" ]]; then
-            for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/build-cli-standalone.ts
-            done
-          else
-            node --import tsx/esm scripts/release/build-cli-standalone.ts
-          fi
+          if ($env:RUNNER_OS -eq 'macOS') {
+            $env:DSH_CLI_STANDALONE_PLATFORM = 'darwin'
+            foreach ($arch in 'arm64', 'x64') {
+              $env:DSH_CLI_STANDALONE_ARCH = $arch
+              pnpm run release:build-cli-standalone
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } else {
+            pnpm run release:build-cli-standalone
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Verify standalone CLI archives
         id: verify-cli
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${RUNNER_OS}" == "macOS" ]]; then
-            for arch in arm64 x64; do
-              DSH_CLI_STANDALONE_PLATFORM=darwin DSH_CLI_STANDALONE_ARCH="${arch}" node --import tsx/esm scripts/release/verify-cli-standalone.ts
-            done
-          else
-            node --import tsx/esm scripts/release/verify-cli-standalone.ts
-          fi
+          if ($env:RUNNER_OS -eq 'macOS') {
+            $env:DSH_CLI_STANDALONE_PLATFORM = 'darwin'
+            foreach ($arch in 'arm64', 'x64') {
+              $env:DSH_CLI_STANDALONE_ARCH = $arch
+              pnpm run release:verify-cli-standalone
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } else {
+            pnpm run release:verify-cli-standalone
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Verify update manifests with ephemeral fixtures
         id: update-manifests
-        run: node node_modules/vitest/vitest.mjs run scripts/release/build-update-manifest.spec.ts scripts/release/create-ephemeral-update-policy.spec.ts scripts/release/verify-update-manifests.spec.ts scripts/release/release-workflow-helpers.spec.ts
+        run: pnpm run release:verify-update-manifests
 
       - name: Sign and verify manifests for this row's produced artifacts
         id: produced-update-manifests
-        run: node --import tsx/esm scripts/release/verify-produced-update-manifests.ts
+        run: pnpm run release:verify-produced-update-manifests
 
       - name: Test CLI updater and rollback
         id: cli-updater
-        run: |
-          node node_modules/vitest/vitest.mjs run apps/cli/tests/update.spec.ts apps/cli/tests/standalone-update-source.spec.ts apps/cli/tests/windows-standalone-update.spec.ts
-          node node_modules/vitest/vitest.mjs run --config vitest.e2e.config.ts apps/cli/tests/update.e2e.ts
+        run: pnpm run release:test-cli-update
 
       - name: Smoke installed Desktop artifacts
         id: installed-desktop
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
-          fi
-          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-artifacts.e2e.ts
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm run release:smoke-installed-desktop
+          } else {
+            pnpm run release:smoke-installed-desktop
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Exercise actual installed native update and rollback
         id: native-update-rollback
         env:
           DSH_RUN_NATIVE_UPDATE_E2E: '1'
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            exec xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
-          fi
-          exec node node_modules/@playwright/test/cli.js test --config apps/desktop/playwright.config.ts apps/desktop/tests/installed-native-update-rollback.e2e.ts
-
-      - name: Upload installed Desktop error contexts
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-installed-error-context-${{ matrix.runner }}
-          path: apps/desktop/test-results/**/error-context.md
-          if-no-files-found: ignore
+          if ($env:RUNNER_OS -eq 'Linux') {
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" pnpm --dir apps/desktop run test:e2e:native-update
+          } else {
+            pnpm --dir apps/desktop run test:e2e:native-update
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Write redacted native release evidence
         id: release-evidence
@@ -306,7 +300,7 @@ jobs:
           DSH_RELEASE_CHECK_CLI_UPDATER: ${{ steps.cli-updater.outcome }}
           DSH_RELEASE_CHECK_INSTALLED_DESKTOP: ${{ steps.installed-desktop.outcome }}
           DSH_RELEASE_CHECK_NATIVE_UPDATE_ROLLBACK: ${{ steps.native-update-rollback.outcome }}
-        run: node --import tsx/esm scripts/release/collect-release-evidence.ts
+        run: pnpm exec tsx scripts/release/collect-release-evidence.ts
 
       - name: Upload native release artifacts
         if: ${{ success() }}
