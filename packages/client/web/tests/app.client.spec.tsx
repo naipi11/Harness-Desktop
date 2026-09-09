@@ -12,6 +12,7 @@ import { EMPTY_CHAT_SNAPSHOT } from '@harness-desktop/dsh-client-runtime/client'
 import type { SessionId } from '@harness-desktop/dsh-client-runtime/client'
 import { deliverablePaths } from '@harness-desktop/dsh-client-ui-deliverables/client'
 import { buildRenderApp } from '@harness-desktop/dsh-client-web/src/app.tsx'
+import { LocaleRuntime } from '@harness-desktop/dsh-client-locale/client'
 
 let runtime: SlotTestRuntime | undefined
 
@@ -93,6 +94,14 @@ async function workbench() {
   const foundation = {
     observeActiveWork: vi.fn(async () => ({ ownUiWork: ['workbench-operation'] })),
     stopOwnUiWork: vi.fn(async () => ({ kind: 'stopped' as const, work: ['workbench-operation'] })),
+    listFiles: vi.fn(async () => ({
+      directory: '', path: 'C:\\workspace', truncated: false,
+      entries: [{ name: 'src', path: 'C:\\workspace\\src', directory: 'src', kind: 'directory' as const }],
+    })),
+    openTerminal: vi.fn(async () => ({ id: 'shell-1', output: 'PowerShell ready', exited: false, exitCode: null, shell: 'powershell.exe' })),
+    readTerminal: vi.fn(async () => ({ id: 'shell-1', output: 'shell command output', exited: false, exitCode: null, shell: 'powershell.exe' })),
+    writeTerminal: vi.fn(async () => {}),
+    closeTerminal: vi.fn(async () => {}),
   }
   return {
     runtime,
@@ -103,6 +112,19 @@ async function workbench() {
 }
 
 describe('buildRenderApp', () => {
+  it('updates the entire workbench when the shared language changes', async () => {
+    const b = await workbench()
+    const locale = new LocaleRuntime(b.runtime.ctx)
+    b.runtime.provide('locale', locale)
+    locale.setLocale('zh')
+    const view = render(<>{b.renderApp()}</>)
+    expect(view.getByRole('tab', { name: '文件' })).toBeTruthy()
+    expect(view.getByText('工作区')).toBeTruthy()
+    act(() => { locale.setLocale('en') })
+    expect(view.getByRole('tab', { name: 'Files' })).toBeTruthy()
+    expect(view.queryByRole('tab', { name: '文件' })).toBeNull()
+  })
+
   it('fails loud when the sessions service is unavailable', () => {
     expect(() => buildRenderApp({ ctx: new Context() })).toThrow('sessions service unavailable')
   })
@@ -161,12 +183,13 @@ describe('buildRenderApp', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open C:\\workspace\\src\\app.ts' }))
 
     fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
-    expect(view.getByText('48 tests passed')).toBeTruthy()
-    fireEvent.change(view.getByRole('textbox', { name: 'Terminal input' }), { target: { value: 'run focused tests' } })
-    fireEvent.click(view.getByRole('button', { name: 'Send terminal input' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    expect(await view.findByText('PowerShell ready')).toBeTruthy()
+    fireEvent.change(view.getByRole('textbox', { name: 'Terminal input' }), { target: { value: 'Get-Location' } })
+    fireEvent.click(view.getByRole('button', { name: 'Run command' }))
     await waitFor(() => {
-      expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'run focused tests' }], 'queue')
-      expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
+      expect(b.foundation.writeTerminal).toHaveBeenCalledWith('shell-1', 'Get-Location\r')
+      expect(b.prompt).not.toHaveBeenCalled()
     })
 
     fireEvent.click(view.getByRole('tab', { name: 'Artifacts' }))
@@ -175,8 +198,8 @@ describe('buildRenderApp', () => {
     expect(view.getByText('Ship workbench')).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: 'Complete Ship workbench' }))
     await waitFor(() => {
-      expect(b.prompt).toHaveBeenCalledTimes(2)
-      expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(3)
+      expect(b.prompt).toHaveBeenCalledTimes(1)
+      expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
     })
 
     expect(await view.findByText('workbench-operation')).toBeTruthy()
@@ -215,5 +238,93 @@ describe('buildRenderApp', () => {
     await vi.advanceTimersByTimeAsync(30_000)
 
     expect(b.foundation.observeActiveWork).toHaveBeenCalledTimes(2)
+  })
+
+  it('collapses the utility panel without unmounting the conversation', async () => {
+    const b = await workbench()
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('button', { name: 'Hide tools' }))
+    expect(view.getByRole('tabpanel', { hidden: true }).hasAttribute('hidden')).toBe(true)
+    expect(view.getByTestId('dashboard-chrome')).toBeTruthy()
+    fireEvent.click(view.getByRole('tab', { name: 'Files' }))
+    expect(view.getByRole('tabpanel').hasAttribute('hidden')).toBe(false)
+  })
+
+  it('does not bind a late shell to a different workspace', async () => {
+    const b = await workbench()
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof b.foundation.openTerminal>>>()
+    b.foundation.openTerminal.mockImplementation(() => pending.promise)
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await act(async () => { await b.runtime.sessions.add({ id: 'other', summary: { cwd: 'C:\\other' } }) })
+    await act(async () => {
+      pending.resolve({ id: 'late', output: 'wrong workspace', exited: false, exitCode: null, shell: 'powershell.exe' })
+      await pending.promise
+    })
+    expect(view.queryByText('wrong workspace')).toBeNull()
+    expect(b.foundation.closeTerminal).toHaveBeenCalledWith('late')
+  })
+
+  it('keeps the new shell when an old workspace close completes late', async () => {
+    const b = await workbench()
+    const pending = Promise.withResolvers<undefined>()
+    b.foundation.closeTerminal.mockImplementationOnce(() => pending.promise)
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await view.findByText('PowerShell ready')
+    fireEvent.click(view.getByRole('button', { name: 'Close terminal' }))
+    await act(async () => {
+      await b.runtime.workspaces.update((draft) => {
+        draft.items = [...draft.items, { ...draft.items[0]!, workspaceId: 'workspace-2' as never, path: 'C:\\other' }]
+      })
+      await b.runtime.sessions.add({ id: 'other', summary: { cwd: 'C:\\other' } })
+    })
+    b.foundation.openTerminal.mockResolvedValueOnce({ id: 'shell-2', output: 'new workspace shell', exited: false, exitCode: null, shell: 'powershell.exe' })
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await view.findByText('new workspace shell')
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(view.getByText('new workspace shell')).toBeTruthy()
+  })
+
+  it('labels a bounded file listing instead of presenting it as complete', async () => {
+    const b = await workbench()
+    b.foundation.listFiles.mockResolvedValueOnce({ directory: '', path: 'C:\\workspace', truncated: true, entries: [] })
+    const view = render(<>{b.renderApp()}</>)
+    expect(await view.findByText('Some entries are omitted. Open a subfolder to narrow the list.')).toBeTruthy()
+  })
+
+  it('does not resurrect a shell when a second start resolves after close', async () => {
+    const b = await workbench()
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await view.findByText('PowerShell ready')
+    const opening = Promise.withResolvers<Awaited<ReturnType<typeof b.foundation.openTerminal>>>()
+    b.foundation.openTerminal.mockImplementationOnce(() => opening.promise)
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Close terminal' }))
+    await act(async () => {
+      opening.resolve({ id: 'shell-1', output: 'late shell', exited: false, exitCode: null, shell: 'powershell.exe' })
+      await opening.promise
+    })
+    expect(view.queryByText('late shell')).toBeNull()
+    expect(b.foundation.closeTerminal).toHaveBeenCalledWith('shell-1')
+  })
+
+  it('prevents restarting a shell until its close operation settles', async () => {
+    const b = await workbench()
+    const pending = Promise.withResolvers<undefined>()
+    b.foundation.closeTerminal.mockImplementationOnce(() => pending.promise)
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await view.findByText('PowerShell ready')
+    fireEvent.click(view.getByRole('button', { name: 'Close terminal' }))
+    expect((view.getByRole('button', { name: 'Start terminal' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect((view.getByRole('button', { name: 'Start terminal' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(view.queryByText('PowerShell ready')).toBeNull()
   })
 })

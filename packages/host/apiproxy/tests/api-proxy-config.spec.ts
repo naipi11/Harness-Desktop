@@ -579,6 +579,22 @@ describe('settings domain', () => {
 })
 
 describe('credentials domain', () => {
+  it('never exposes credential-provider failure content in RPC errors', async () => {
+    const ctx = await harness()
+    const api = createApiProxy(ctx, DEFAULTS)
+    const sentinel = 'synthetic-sensitive-error-content'
+    for (const method of ['set', 'unset', 'describe'] as const) {
+      vi.spyOn(ctx.credentials, method).mockRejectedValue(new Error(sentinel))
+    }
+    const responses = [
+      await api.credentials.set(request({ ref: 'TEST_KEY', value: sentinel })),
+      await api.credentials.unset(request({ ref: 'TEST_KEY' })),
+      await api.credentials.describe(request({ refs: ['TEST_KEY'] })),
+    ]
+    expect(JSON.stringify(responses)).not.toContain(sentinel)
+    for (const response of responses) expect(expectErr(response).code).toBe('credential-rejected')
+  })
+
   it('reports an actionable error when no credential provider is mounted', async () => {
     const ctx = await harness({ credentials: false })
     const api = createApiProxy(ctx, DEFAULTS)

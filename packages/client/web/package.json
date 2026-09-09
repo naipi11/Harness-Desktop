@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-client-web",
   "description": "Web shell kernel: bootWebShell (module system holding + seed table + two-stage boot + AppRoot gate + app-shell assembly entry), consumed by the apps/web vite entry",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publishConfig": {
     "access": "public"
   },
@@ -38,6 +38,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@harness-desktop/dsh-client-locale": "workspace:^",
     "@harness-desktop/cordis-plugin-loader": "workspace:^",
     "@harness-desktop/dsh-client-runtime": "workspace:^",
     "@harness-desktop/dsh-client-ui-deliverables": "workspace:^",

@@ -30,6 +30,7 @@ interface ComWorld {
   /** Contexts `SetThreadDpiAwarenessContext` accepts; others return NULL. */
   supportedDpiContexts: number[]
   enumThrows: boolean
+  externalViewsAllowed: boolean
   path: string
   titles: string[]
   options: number[]
@@ -45,7 +46,7 @@ interface ComWorld {
 function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
   return {
     coInitHr: 0, coCreateHr: 0, showHr: 0, getResultHr: 0, getDisplayNameHr: 0,
-    hasThreadDpi: true, supportedDpiContexts: [-4], enumThrows: false,
+    hasThreadDpi: true, supportedDpiContexts: [-4], enumThrows: false, externalViewsAllowed: true,
     path: 'C:\\选中\\directory',
     titles: [], options: [], dpiContexts: [], freed: [], released: [], posted: [],
     registered: 0, unregistered: 0, uninitialized: 0,
@@ -128,13 +129,14 @@ function installFakeKoffi(world: ComWorld): void {
       pointer: (type: unknown) => type,
       sizeof: (type: string) => { void type; return FAKE_POINTER_SIZE },
       view: (value: unknown, len: number): ArrayBuffer => {
+        if (!world.externalViewsAllowed) throw new Error('External ArrayBuffers are unavailable in this runtime')
         const bytes = Buffer.alloc(len)
         bytes.write((value as FakePtr).text as string, 'utf16le')
         return bytes.buffer
       },
       register: (fn: (hwnd: unknown, lparam: unknown) => number) => { world.registered += 1; return { fn } },
       unregister: () => { world.unregistered += 1 },
-      decode: (value: unknown, offsetOrType: unknown): unknown => {
+      decode: Object.assign((value: unknown, offsetOrType: unknown): unknown => {
         if (offsetOrType === 'str16') return (value as FakePtr).text
         if (typeof offsetOrType === 'number') {
           // Vtable slot read: offsets must be multiples of the fake width.
@@ -145,7 +147,7 @@ function installFakeKoffi(world: ComWorld): void {
         // decode(x, 'void *'): out-buffer read or vtable read.
         if (outBuffers.has(value)) return outBuffers.get(value)
         return { owner: value as FakePtr }
-      },
+      }, { string16: (value: unknown): string => (value as FakePtr).text as string }),
       call: (fn: { call: (args: unknown[]) => number }, _proto: unknown, _self: unknown, ...args: unknown[]) => fn.call(args),
     },
   }))
@@ -163,6 +165,16 @@ afterEach(() => {
 })
 
 describe('loadWin32DialogBindings over the fake COM world', () => {
+  it('copies the full UTF-16 path without exposing an external ArrayBuffer', async () => {
+    const world = comWorld({ externalViewsAllowed: false, path: 'C:\\Ā-选择-😀\\workspace' })
+    installFakeKoffi(world)
+    const bindings = await (await loadBindingsModule()).loadWin32DialogBindings()
+
+    expect(runFolderDialog(bindings, 'Pick', vi.fn())).toBe(world.path)
+    expect(world.freed).toHaveLength(1)
+    expect(world.released).toEqual(['item', 'dialog'])
+  })
+
   it('drives the full selection conversation with memory hygiene', async () => {
     const world = comWorld()
     installFakeKoffi(world)

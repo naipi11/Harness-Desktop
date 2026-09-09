@@ -227,7 +227,7 @@ describe('platform provider', () => {
     expect(metadata.references).toEqual([KEY])
   })
 
-  it('resolves and describes from the environment adapter without ever writing', async () => {
+  it.skipIf(process.platform === 'win32')('resolves and describes from the environment adapter without ever writing on unsupported platforms', async () => {
     const dir = await tempDir()
     const env = createLaunchEnvironmentSnapshot([{ source: 'process', values: { [KEY]: ENV_VALUE } }])
     const ctx = await boot({ harnessHome: dir }, env)
@@ -247,7 +247,7 @@ describe('platform provider', () => {
     expect(values.size).toBe(0)
   })
 
-  it('refuses a shadowed unset on a read-only adapter that currently resolves', async () => {
+  it.skipIf(process.platform === 'win32')('refuses a shadowed unset on a read-only adapter that currently resolves on unsupported platforms', async () => {
     const dir = await tempDir()
     const env = createLaunchEnvironmentSnapshot([{ source: 'process', values: { [KEY]: ENV_VALUE } }])
     const ctx = await boot({ harnessHome: dir }, env)

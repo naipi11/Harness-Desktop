@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@harness-desktop/cordis'
 import { credentialRef } from '../src/index.ts'
 import type { CredentialRef } from '../src/index.ts'
@@ -27,6 +27,21 @@ describe('credentialRef', () => {
 })
 
 describe('the credentials seam through the memory provider', () => {
+  it('contains observer errors without logging their potentially sensitive content', async () => {
+    const ctx = new Context()
+    class ObservableCredentials extends MemoryCredentials {
+      updated(): void { this.notifyUpdated(REF) }
+    }
+    const provider = new ObservableCredentials(ctx)
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    try {
+      ctx.on('credentials/updated', () => { throw new Error('synthetic-sensitive-observer') })
+      provider.updated()
+      expect(warn).toHaveBeenCalled()
+      expect(warn.mock.calls.some(args => args.some(arg => arg instanceof Error))).toBe(false)
+    } finally { warn.mockRestore(); await ctx.fiber.dispose() }
+  })
+
   it('mounts as ctx.credentials and resolves a seeded reference with its source', async () => {
     const ctx = await boot({ DEEPSEEK_API_KEY: 'sk-seeded' })
     expect(await ctx.credentials.resolve(REF)).toEqual({ value: 'sk-seeded', source: 'memory' })

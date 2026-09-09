@@ -6,6 +6,8 @@ The **native-OS-chooser backend** of the [directory-picker seam](../directory-pi
 
 **Dual-face package**: the browser half (`./client`) registers a renderless flow occupant into [ui-workspace's](../../client/ui-workspace/README.md) two directory-flow holes — each `open` request drives `host.pickDirectory` and reports the one outcome (picked path / cancel / failure) through the hole's owner conversation. Both directory-flow declarations must be live before either contribution installs. One cordis.yml row therefore composes both sides of the native interaction; the client carries no capability-kind branching, and mounting a second flow package fails at load (the holes are `single` kind).
 
+The Windows child selects Electron's Node mode explicitly when the host executable is Electron; it does not depend on an inherited `ELECTRON_RUN_AS_NODE`. Its `showing` notification keeps IPC connected. Only the terminal result or error flush closes the channel; parent disconnect still terminates the dialog child. Selected UTF-16 paths are copied with `koffi.decode.string16`; they never expose native memory as an external ArrayBuffer, which Electron prohibits.
+
 ## Model Experience
 
 None, as the backend serves the GUI host's directory selection; nothing here reaches a model request.

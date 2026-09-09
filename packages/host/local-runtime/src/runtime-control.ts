@@ -9,6 +9,7 @@ import {
 } from './auth.ts'
 import { mountLocalControlRoutes } from './control-routes.ts'
 import type { RuntimeControlService } from './control-service.ts'
+import { mountWorkbenchRoutes, type WorkbenchService } from './workbench-routes.ts'
 
 type BootstrapCleanup = ReturnType<typeof createBootstrapCleanup>
 
@@ -38,6 +39,8 @@ export interface PrivateRuntimeControlOptions {
   readonly mountAuthenticatedDashboard: (auth: LocalDashboardAuth) => void
   /** Runtime-owned control state shared by native and Dashboard request routes. */
   readonly controlService?: RuntimeControlService
+  /** User-operated workspace files and shell, separate from model terminal attachments. */
+  readonly workbench?: WorkbenchService
 }
 
 /**
@@ -101,6 +104,7 @@ export function mountPrivateRuntimeControl(ctx: Context, options: PrivateRuntime
     mountAuthenticatedDashboard: options.mountAuthenticatedDashboard,
     onHandoffSettled: settle,
   })
+  if (options.workbench !== undefined) mountWorkbenchRoutes(ctx, auth, options.workbench)
   ctx.effect(() => () => control.close(), 'host-local-runtime: bootstrap documents')
   return control
 }

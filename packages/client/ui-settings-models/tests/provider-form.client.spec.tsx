@@ -74,6 +74,7 @@ function scriptedFace(options: {
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
+  credential?: { configured: boolean; writable: boolean; source?: string }
 } = {}) {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
@@ -105,7 +106,7 @@ function scriptedFace(options: {
     },
     credentials: {
       describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
+        credentials: Object.fromEntries(payload.refs.map(ref => [ref, options.credential ?? { configured: false, writable: true }])),
       }))),
       set,
       unset: vi.fn(),
@@ -192,6 +193,21 @@ describe('protocolChoices', () => {
 })
 
 describe('model list editing', () => {
+  it('permits replacing an environment credential without reading it back into the password field', async () => {
+    const { set } = await mountSection({ credential: { configured: true, writable: true, source: 'env' } })
+    openEditor('openai')
+    const field = screen.getByLabelText<HTMLInputElement>(en.keyInput)
+    expect(field.disabled).toBe(false)
+    expect(field.value).toBe('')
+    await waitFor(() => { expect(field.placeholder).toBe('Using launch environment — enter a value to override') })
+    fireEvent.change(field, { target: { value: 'synthetic-new-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY', value: 'synthetic-new-key' }) })
+    await waitFor(() => { expect(screen.queryByLabelText(en.keyInput)).toBeNull() })
+    openEditor('openai')
+    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).value).toBe('')
+  })
+
   it('adds, edits, and removes rows without storing emptied optional fields', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')

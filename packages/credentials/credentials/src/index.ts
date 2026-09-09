@@ -119,8 +119,8 @@ export abstract class CredentialProvider extends Service {
       try {
         const returned = listener(ref)
         if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
-          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
-            this.warnListenerFailure(ref, error)
+          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, () => {
+            this.warnListenerFailure(ref)
           })
         }
       } catch (error) {
@@ -128,7 +128,7 @@ export abstract class CredentialProvider extends Service {
           invariantFailure ??= error
           continue
         }
-        this.warnListenerFailure(ref, error)
+        this.warnListenerFailure(ref)
       }
     }
     if (invariantFailure !== undefined) throw invariantFailure as Error
@@ -136,9 +136,8 @@ export abstract class CredentialProvider extends Service {
   /* jscpd:ignore-end */
 
   /** Contained-listener diagnostic shared by the sync and async failure paths. */
-  private warnListenerFailure(ref: CredentialRef, error: unknown): void {
+  private warnListenerFailure(ref: CredentialRef): void {
     this.ctx.logger.warn('credentials: a credentials/updated listener for "%s" failed', ref)
-    this.ctx.logger.warn(error)
   }
 }
 

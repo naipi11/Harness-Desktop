@@ -21,24 +21,18 @@ interface Koffi {
   proto(declaration: string): unknown
   pointer(type: unknown): unknown
   call(pointer: unknown, proto: unknown, ...args: unknown[]): unknown
-  decode(value: unknown, offsetOrType: unknown, type?: unknown): unknown
+  decode: {
+    (value: unknown, offsetOrType: unknown, type?: unknown): unknown
+    string16(value: unknown): string
+  }
   register(fn: (...args: unknown[]) => unknown, type: unknown): unknown
   unregister(callback: unknown): void
   sizeof(type: string): number
-  view(ref: unknown, len: number): ArrayBuffer
 }
 
-/**
- * Read a NUL-terminated UTF-16 string at a native address. koffi's
- * `_Out_ void **` out-params surface a raw address, and
- * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
- * on real Windows — so view the memory directly instead.
- */
+/** Copy a NUL-terminated UTF-16 value without an external ArrayBuffer, which Electron forbids. */
 function readUtf16(koffi: Koffi, address: unknown): string {
-  const bytes = Buffer.from(koffi.view(address, 32768))
-  let end = 0
-  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
-  return bytes.toString('utf16le', 0, end)
+  return koffi.decode.string16(address)
 }
 
 const COINIT_APARTMENTTHREADED = 0x2

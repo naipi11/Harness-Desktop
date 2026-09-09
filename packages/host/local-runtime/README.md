@@ -37,11 +37,15 @@ Legacy decisions and results live under `HARNESS_HOME` and pass through one Runt
 
 The canonical composition mounts the API, Dashboard assets, session, settings, workspace, storage, and credential-reference providers behind the same ownership lock. Credential values remain with their credential provider; only references enter Runtime-owned state.
 
+The canonical Runtime also supplies the shipped agent-preset roster with `system` trust, before the writable user root. Source launches read the CLI's authoritative `config/agent-presets` directory; the Runtime build copies that directory into `lib/agent-presets` and declares the preset plugin dependencies so installed clients can create their first session without user-authored presets. No preset is copied into `HARNESS_HOME`.
+
 The `desktop-update` settings namespace stores the selected `stable`, `beta`, or `nightly` channel and one fixed-format redacted outcome through that same settings provider. Native control may record only semantic versions, one of the fixed result kinds and codes, and an optional last-known-good version; Dashboard control may read or change only the channel. The Runtime does not fetch, verify, stage, apply, or roll back an artifact, and it has no production update trust root.
 
 Only native control may read the last redacted outcome; Dashboard control cannot read or write it.
 
 ## Lifecycle and leases
+
+The cookie-authenticated `POST /_harness/workbench` route lists only registered workspace roots and their real-path descendants, and operates owner-scoped command shells. Listing has item and byte bounds; shell output is a bounded in-memory tail. Shells run with the signed-in user's permissions through the existing credential-scrubbed subprocess provider. They are user-operated commands, not model tools or Agent turns. Releasing their native client closes its shells; Runtime shutdown closes all remaining shells. The console supports persistent PowerShell commands on Windows and `/bin/sh` commands on POSIX, not full-screen applications.
 
 The Runtime counts actual client attachments, Agent work, and the named background lease. Idle shutdown begins only when all three counts are zero. Migration and terminal-control transactions retain the Runtime until settlement, and direct disposal rejects without starting shutdown while any retainer remains.
 

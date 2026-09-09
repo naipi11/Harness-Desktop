@@ -23,6 +23,9 @@ import {
 } from './endpoint-record.ts'
 import { acquireRuntimeLock, type RuntimeLock } from './instance-lock.ts'
 import { IdleLifecycle } from './idle-lifecycle.ts'
+import { createWorkbenchService } from './workbench.ts'
+import type { WorkspaceId } from '@harness-desktop/dsh-workspace'
+import type {} from '@harness-desktop/dsh-subprocess'
 
 const APP_BOOT_MODULE = '@harness-desktop/dsh-app-boot'
 const CLIENT_CONNECTION_MODULE = '@harness-desktop/dsh-client-connection'
@@ -162,8 +165,15 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
       const commands = ctx.get('commands')
       const permissionPresets = ctx.get('permissionPresets')
       const settings = ctx.get('settings')
+      const registry = ctx.get('workspaceRegistry')
+      const subprocess = ctx.get('subprocess')
+      const workbench = createWorkbenchService({
+        workspacePath: id => registry?.get(id as WorkspaceId)?.path,
+        ...(subprocess === undefined ? {} : { subprocess }),
+      })
       const controlService = createRuntimeControlService({
         runtime: handle,
+        releaseWorkbenchOwner: owner => workbench.closeOwner(owner),
         ...(sessions === undefined ? {} : { sessions }),
         ...(api === undefined ? {} : { api }),
         ...(agents === undefined ? {} : { agents }),
@@ -176,7 +186,9 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
           legacyDshHome: config.legacyDshHome,
         },
       })
-      handle.bindControlCleanup(() => controlService.close())
+      handle.bindControlCleanup(async () => {
+        await runCleanup([() => workbench.close(), () => controlService.close()])
+      })
       const logger = ctx.logger
       ctx.on('session/event', (session, event) => {
         void controlService.handleSessionEvent(session, event).catch(() => {
@@ -203,6 +215,7 @@ export async function startRuntime(config: StartRuntimeConfig): Promise<RuntimeH
             bootstrapParent: config.harnessHome.path('runtime-bootstrap'),
             openBootstrap: config.openBootstrap ?? (async () => {}),
             controlService,
+            workbench,
             mountAuthenticatedDashboard(auth) {
               connectionModule.apply(controlCtx, { trustedHosts: ['127.0.0.1'] }, {
                 authorize: request => auth.authorizeDashboard(request as { headers: Headers }),
@@ -335,13 +348,32 @@ async function bootCanonicalComposition(harnessHome: HarnessHomeProvider): Promi
   const webPatches = appBoot.loadOverlayPatches(
     'harness-runtime', require.resolve('@harness-desktop/dsh-web-app/cordis.patch.yml'),
   )
+  const presetRoot = fileURLToPath(new URL(
+    sourceProcess ? '../../../../apps/cli/config/agent-presets/' : './agent-presets/',
+    import.meta.url,
+  ))
+  const presetPatches = webPatches.map((patch) => {
+    if (typeof patch !== 'object' || patch === null || !('insert' in patch) || !Array.isArray(patch.insert)) return patch
+    return {
+      ...patch,
+      insert: (patch.insert as Record<string, unknown>[]).map(entry => entry['id'] !== 'agent-presets'
+        ? entry
+        : {
+          ...entry,
+          config: {
+            ...(entry['config'] as Record<string, unknown>),
+            roots: [{ path: presetRoot, trust: 'system' }],
+          },
+        }),
+    }
+  })
   const patches = [
     ...sourceProcess
       ? basePatches
       : resolvePatchModules(basePatches, specifier => pathToFileURL(baseRequire.resolve(specifier)).href),
     ...sourceProcess
-      ? webPatches
-      : resolvePatchModules(webPatches, specifier => pathToFileURL(webRequire.resolve(specifier)).href),
+      ? presetPatches
+      : resolvePatchModules(presetPatches, specifier => pathToFileURL(webRequire.resolve(specifier)).href),
   ]
   return appBoot.boot('harness-runtime', fileURLToPath(new URL('../runtime.cordis.yml', import.meta.url)), patches, (ctx) => {
     if (sourceProcess) appBoot.installSourceLoaderResolution(ctx, specifier => import.meta.resolve(specifier))

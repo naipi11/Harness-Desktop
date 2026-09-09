@@ -952,6 +952,9 @@ importers:
       '@harness-desktop/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../packages/core/system-prompt
+      '@harness-desktop/dsh-terminal':
+        specifier: workspace:^
+        version: link:../../packages/terminal/terminal
       '@harness-desktop/dsh-timeout':
         specifier: workspace:^
         version: link:../../packages/util/timeout
@@ -3784,6 +3787,9 @@ importers:
       '@harness-desktop/cordis-plugin-loader':
         specifier: workspace:^
         version: link:../../../vendor/loader
+      '@harness-desktop/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
       '@harness-desktop/dsh-client-runtime':
         specifier: workspace:^
         version: link:../runtime
@@ -4388,6 +4394,10 @@ importers:
         version: link:../../util/launch-environment
 
   packages/credentials/credentials-platform:
+    dependencies:
+      koffi:
+        specifier: 3.1.1
+        version: 3.1.1
     devDependencies:
       '@harness-desktop/cordis':
         specifier: workspace:^
@@ -5633,6 +5643,12 @@ importers:
       '@harness-desktop/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@harness-desktop/dsh-agent-instructions':
+        specifier: workspace:^
+        version: link:../../context/agent-instructions
+      '@harness-desktop/dsh-agent-tool-presentation':
+        specifier: workspace:^
+        version: link:../../core/agent-tool-presentation
       '@harness-desktop/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
@@ -5651,9 +5667,21 @@ importers:
       '@harness-desktop/dsh-cmdline':
         specifier: workspace:^
         version: link:../../boot/cmdline
+      '@harness-desktop/dsh-command-compact':
+        specifier: workspace:^
+        version: link:../../compaction/command-compact
       '@harness-desktop/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@harness-desktop/dsh-compaction-basic':
+        specifier: workspace:^
+        version: link:../../compaction/compaction-basic
+      '@harness-desktop/dsh-compaction-tool-result-pruner':
+        specifier: workspace:^
+        version: link:../../compaction/compaction-tool-result-pruner
+      '@harness-desktop/dsh-fs-local':
+        specifier: workspace:^
+        version: link:../../fs/fs-local
       '@harness-desktop/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
@@ -5675,18 +5703,93 @@ importers:
       '@harness-desktop/dsh-permission-presets':
         specifier: workspace:^
         version: link:../../interaction/permission-presets
+      '@harness-desktop/dsh-persona':
+        specifier: workspace:^
+        version: link:../../preset/persona
+      '@harness-desktop/dsh-plan-mode':
+        specifier: workspace:^
+        version: link:../../plan/plan-mode
       '@harness-desktop/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
       '@harness-desktop/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
+      '@harness-desktop/dsh-skill-filesystem':
+        specifier: workspace:^
+        version: link:../../skill/skill-filesystem
+      '@harness-desktop/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      '@harness-desktop/dsh-terminal':
+        specifier: workspace:^
+        version: link:../../terminal/terminal
+      '@harness-desktop/dsh-terminal-bash':
+        specifier: workspace:^
+        version: link:../../terminal/terminal-bash
+      '@harness-desktop/dsh-tool-ask-user':
+        specifier: workspace:^
+        version: link:../../interaction/tool-ask-user
+      '@harness-desktop/dsh-tool-bash':
+        specifier: workspace:^
+        version: link:../../shell/tool-bash
+      '@harness-desktop/dsh-tool-bash-persistent':
+        specifier: workspace:^
+        version: link:../../shell/tool-bash-persistent
+      '@harness-desktop/dsh-tool-cordis':
+        specifier: workspace:^
+        version: link:../../extensions/tool-cordis
+      '@harness-desktop/dsh-tool-fs':
+        specifier: workspace:^
+        version: link:../../fs/tool-fs
+      '@harness-desktop/dsh-tool-fs-search':
+        specifier: workspace:^
+        version: link:../../fs/tool-fs-search
+      '@harness-desktop/dsh-tool-goal':
+        specifier: workspace:^
+        version: link:../../goal/tool-goal
+      '@harness-desktop/dsh-tool-jobs':
+        specifier: workspace:^
+        version: link:../../jobs/tool-jobs
+      '@harness-desktop/dsh-tool-pwsh':
+        specifier: workspace:^
+        version: link:../../shell/tool-pwsh
+      '@harness-desktop/dsh-tool-ralph':
+        specifier: workspace:^
+        version: link:../../workflow/tool-ralph
+      '@harness-desktop/dsh-tool-skill':
+        specifier: workspace:^
+        version: link:../../skill/tool-skill
+      '@harness-desktop/dsh-tool-str-replace-editor':
+        specifier: workspace:^
+        version: link:../../fs/tool-str-replace-editor
+      '@harness-desktop/dsh-tool-subagent':
+        specifier: workspace:^
+        version: link:../../subagent/tool-subagent
+      '@harness-desktop/dsh-tool-subagent-control':
+        specifier: workspace:^
+        version: link:../../subagent/tool-subagent-control
+      '@harness-desktop/dsh-tool-todo':
+        specifier: workspace:^
+        version: link:../../todo/tool-todo
+      '@harness-desktop/dsh-tool-web':
+        specifier: workspace:^
+        version: link:../../web/tool-web
+      '@harness-desktop/dsh-tool-workflow':
+        specifier: workspace:^
+        version: link:../../workflow/tool-workflow
       '@harness-desktop/dsh-update-policy':
         specifier: workspace:^
         version: link:../../util/update-policy
       '@harness-desktop/dsh-web-app':
         specifier: workspace:^
         version: link:../../bundle/web-app
+      '@harness-desktop/dsh-workflow-worker-thread':
+        specifier: workspace:^
+        version: link:../../workflow/workflow-worker-thread
+      '@harness-desktop/dsh-workspace':
+        specifier: workspace:^
+        version: link:../../workspace/workspace
       '@harness-desktop/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -12532,6 +12635,7 @@ packages:
   '@xmldom/xmldom@0.8.14':
     resolution: {integrity: sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@yarnpkg/cli-dist@4.17.1':
     resolution: {integrity: sha512-2tiSQuJNl/L3QwTdrq6lKWDpkcnp9MGvCT/rIldHcbu3SWfnLdmehvt3eulX1hT7FFt1Gjfq3CesF+kvhFip6g==}

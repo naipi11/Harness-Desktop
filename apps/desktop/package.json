@@ -1,6 +1,6 @@
 {
   "name": "@harness-desktop/dsh-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "homepage": "https://github.com/naipi11/Harness-Desktop",
   "author": {
     "name": "naipi11",
@@ -110,6 +110,7 @@
     "@harness-desktop/dsh-subagent": "workspace:^",
     "@harness-desktop/dsh-system-prompt": "workspace:^",
     "@harness-desktop/dsh-timeout": "workspace:^",
+    "@harness-desktop/dsh-terminal": "workspace:^",
     "@harness-desktop/dsh-token-meter": "workspace:^",
     "@harness-desktop/dsh-tool-workflow": "workspace:^",
     "@harness-desktop/dsh-workflow": "workspace:^",

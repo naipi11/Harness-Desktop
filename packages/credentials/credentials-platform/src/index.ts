@@ -5,9 +5,8 @@
  * The provider persists only opaque reference metadata beneath `HARNESS_HOME`
  * (`.credential-references.json`); secret values are resolved per request from
  * a platform/environment adapter and never touch the metadata file, command
- * lines, logs, or diagnostics. The default adapter reads the launcher's frozen
- * `process` environment layer and is read-only; a platform adapter injected by
- * the Desktop host can be writable.
+ * lines, logs, or diagnostics. Windows uses its local Credential Manager;
+ * other platforms use the launcher's frozen read-only environment.
  * @module @harness-desktop/dsh-credentials-platform
  */
 
@@ -19,6 +18,7 @@ import { launchEnvironmentOf } from '@harness-desktop/dsh-launch-environment'
 import { CredentialProvider, credentialRef } from '@harness-desktop/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@harness-desktop/dsh-credentials'
 import type { LaunchEnvironmentSnapshot } from '@harness-desktop/dsh-launch-environment'
+import { createWindowsCredentialAdapter } from './windows-store.ts'
 
 /** Basename of the reference-metadata document inside the harness home. */
 export const CREDENTIAL_REFERENCES_FILENAME = '.credential-references.json'
@@ -27,12 +27,13 @@ export const CREDENTIAL_REFERENCES_FILENAME = '.credential-references.json'
 export interface Config {
   /** Absolute Harness home beneath which the metadata document lives. */
   harnessHome?: string
-  /** Platform adapter; defaults to the read-only launcher environment. */
+  /** Explicit adapter override; otherwise selected by the host operating system. */
   adapter?: PlatformCredentialAdapter
 }
 
 /** Fully resolved provider parameters; defaulting happens here, never inline. */
 export interface ResolvedSpec {
+  harnessHome: string
   metadataFilename: string
 }
 
@@ -46,7 +47,7 @@ export function resolveSpec(config: Config): ResolvedSpec {
   if (config.harnessHome === undefined) {
     throw new Error('credentials-platform: harnessHome is required')
   }
-  return { metadataFilename: join(config.harnessHome, CREDENTIAL_REFERENCES_FILENAME) }
+  return { harnessHome: config.harnessHome, metadataFilename: join(config.harnessHome, CREDENTIAL_REFERENCES_FILENAME) }
 }
 
 /**
@@ -157,7 +158,10 @@ export class PlatformCredentialProvider extends CredentialProvider {
   constructor(ctx: Context, public config: Config) {
     super(ctx)
     this.spec = resolveSpec(config)
-    this.adapter = config.adapter ?? new EnvironmentAdapter(launchEnvironmentOf(ctx))
+    const environment = new EnvironmentAdapter(launchEnvironmentOf(ctx))
+    this.adapter = config.adapter ?? (process.platform === 'win32'
+      ? createWindowsCredentialAdapter(this.spec.harnessHome, environment)
+      : environment)
   }
 
   /** Load the durable reference list before the service becomes ready. */

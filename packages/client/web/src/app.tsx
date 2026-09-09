@@ -6,7 +6,7 @@
  * the program.
  */
 import {
-  useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode,
+  useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode,
 } from 'react'
 import type { Context } from '@harness-desktop/cordis'
 import { bindSnapshotSelector } from '@harness-desktop/dsh-client-web-react'
@@ -16,6 +16,9 @@ import type {
 // Type-only: app-shell reads the optional projection service after plugin settlement.
 import type {} from '@harness-desktop/dsh-client-ui-deliverables/client'
 import { DocumentTitle } from './DocumentTitle.tsx'
+import { workbenchCopy, type WorkbenchCopy } from './workbench-copy.ts'
+import { authenticatedWorkbench, type WorkbenchClient, type WorkspaceFile, type ShellSnapshot } from './workbench-client.ts'
+import type {} from '@harness-desktop/dsh-client-locale/client'
 import css from './AppRoot.module.css'
 // Type-only: pulls the runtime's SlotMap declaration merge (the 'root' key) into this program.
 import type {} from '@harness-desktop/dsh-client-runtime/client'
@@ -41,7 +44,7 @@ export type OwnUiWorkStopResult =
   | { readonly kind: 'failed'; readonly diagnostic: unknown }
 
 /** Foundation operations the authenticated workbench is allowed to invoke. */
-export interface FoundationControl {
+export interface FoundationControl extends WorkbenchClient {
   /** @returns active Runtime work owned by this Dashboard attachment. */
   observeActiveWork(): Promise<ActiveWorkStatus>
   /** @returns settlement after stopping only this Dashboard attachment's work. */
@@ -84,6 +87,7 @@ async function dashboardControl<T>(operation: 'observe-active-work' | 'stop-own-
 }
 
 const AUTHENTICATED_FOUNDATION: FoundationControl = {
+  ...authenticatedWorkbench,
   observeActiveWork: () => dashboardControl<ActiveWorkStatus>('observe-active-work'),
   stopOwnUiWork: () => dashboardControl<OwnUiWorkStopResult>('stop-own-ui-work'),
 }
@@ -133,6 +137,12 @@ interface EngineeringWorkbenchProps {
 
 /** Authenticated Dashboard engineering surface over the existing Client projections. */
 export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWorkbenchProps): ReactNode {
+  const locale = ctx.get('locale')
+  const language = useSyncExternalStore(
+    callback => locale?.subscribe(callback) ?? EMPTY_SUBSCRIBE(),
+    () => locale?.getLocale().active ?? 'en',
+  )
+  const t = workbenchCopy[language]
   const sessions = ctx.sessions
   const workspaces = ctx.workspaces
   const sessionList = useSyncExternalStore(
@@ -146,15 +156,36 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   const todos = useTodos(current)
   const [panel, setPanel] = useState<WorkbenchPanel>('files')
   const [focus, setFocus] = useState(false)
-  const [directoryEntries, setDirectoryEntries] = useState<readonly { name: string; path: string }[]>([])
+  const [collapsed, setCollapsed] = useState(false)
+  const [directoryEntries, setDirectoryEntries] = useState<readonly WorkspaceFile[]>([])
+  const [filesTruncated, setFilesTruncated] = useState(false)
+  const [directory, setDirectory] = useState('')
+  const [fileState, setFileState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [refresh, setRefresh] = useState(0)
   const [terminalInput, setTerminalInput] = useState('')
+  const [shell, setShell] = useState<ShellSnapshot>()
+  const [shellError, setShellError] = useState(false)
+  const [shellBusy, setShellBusy] = useState(false)
+  const [shellClosing, setShellClosing] = useState<string>()
+  const isShellClosing = shellClosing !== undefined && shellClosing === shell?.id
   const [activeWork, setActiveWork] = useState<ActiveWorkStatus | undefined>(undefined)
   const cwd = currentId === undefined ? undefined : sessionList.byId[currentId]?.cwd
+  const workspaceList = useSyncExternalStore(
+    callback => workspaces.list.subscribe(callback),
+    () => workspaces.list.getSnapshot(),
+  )
+  const workspaceId = workspaceList.items.find(item => item.path === cwd)?.workspaceId
+  const shellOwner = useRef({ workspaceId, active: true, generation: 0 })
+  shellOwner.current.workspaceId = workspaceId
+  useEffect(() => {
+    shellOwner.current.active = true
+    return () => { shellOwner.current.active = false; shellOwner.current.generation += 1 }
+  }, [])
   const title = currentId === undefined
-    ? 'No active session'
+    ? t.noSession
     : sessionList.byId[currentId]?.title ?? sessionList.byId[currentId]?.displayTitle ?? currentId
   const diff = lastCard(snapshot, 'diff')
-  const terminal = lastCard(snapshot, 'terminal')
+
   const produced = useMemo(
     () => snapshot === undefined ? [] : ctx.get('deliverables')?.paths(snapshot.chat.timeline) ?? [],
     [ctx, snapshot],
@@ -163,15 +194,37 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   useEffect(() => {
     let currentRequest = true
     setDirectoryEntries([])
-    if (cwd !== undefined) {
-      void workspaces.listDirectory(cwd).then((listing) => {
-        if (currentRequest) setDirectoryEntries(listing.entries)
+    setFilesTruncated(false)
+    setFileState(workspaceId === undefined ? 'idle' : 'loading')
+    if (workspaceId !== undefined) {
+      void foundation.listFiles(workspaceId, directory).then((listing) => {
+        if (currentRequest) { setDirectoryEntries(listing.entries); setFilesTruncated(listing.truncated); setFileState('idle') }
       }).catch(() => {
-        if (currentRequest) setDirectoryEntries([])
+        if (currentRequest) setFileState('error')
       })
     }
     return () => { currentRequest = false }
-  }, [cwd, workspaces])
+  }, [workspaceId, directory, refresh, foundation])
+
+  useEffect(() => {
+    shellOwner.current.generation += 1
+    setDirectory(''); setShell(undefined); setShellError(false); setShellBusy(false)
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (shell === undefined || shell.exited || panel !== 'terminal') return
+    let active = true
+    let timer: ReturnType<typeof setTimeout>
+    const poll = (): void => {
+      timer = setTimeout(() => {
+        void foundation.readTerminal(shell.id).then((next) => {
+          if (active) { setShell(next); if (!next.exited) poll() }
+        }).catch(() => { if (active) setShellError(true) })
+      }, 500)
+    }
+    poll()
+    return () => { active = false; clearTimeout(timer) }
+  }, [shell?.id, shell?.exited, panel, foundation])
 
   const refreshActiveWork = useCallback(async (): Promise<void> => {
     const status = await foundation.observeActiveWork()
@@ -213,11 +266,43 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   const submitTerminal = (event: FormEvent): void => {
     event.preventDefault()
     const text = terminalInput.trim()
-    if (current === undefined || text === '') return
-    void current.prompt([{ type: 'text', text }], 'queue')
-      .then(() => refreshActiveWork())
-      .catch(() => {})
-    setTerminalInput('')
+    if (shell === undefined || shell.exited || isShellClosing || text === '') return
+    const generation = shellOwner.current.generation
+    const stillOwned = (): boolean => shellOwner.current.active && shellOwner.current.generation === generation
+    setShellBusy(true)
+    void foundation.writeTerminal(shell.id, `${text}\r`).then(() => {
+      if (stillOwned()) { setTerminalInput(''); setShellError(false) }
+    }).catch(() => { if (stillOwned()) setShellError(true) }).finally(() => { if (stillOwned()) setShellBusy(false) })
+  }
+  const startTerminal = (): void => {
+    if (workspaceId === undefined || isShellClosing || shellBusy) return
+    const generation = ++shellOwner.current.generation
+    const stillOwned = (): boolean => shellOwner.current.active
+      && shellOwner.current.workspaceId === workspaceId && shellOwner.current.generation === generation
+    setShellBusy(true)
+    void foundation.openTerminal(workspaceId).then((value) => {
+      if (!stillOwned()) {
+        void foundation.closeTerminal(value.id).catch(() => {})
+        return
+      }
+      setShell(value); setShellError(false)
+    }).catch(() => { if (stillOwned()) setShellError(true) }).finally(() => { if (stillOwned()) setShellBusy(false) })
+  }
+  const closeTerminal = (): void => {
+    if (shell === undefined || isShellClosing) return
+    const id = shell.id
+    shellOwner.current.generation += 1
+    const generation = shellOwner.current.generation
+    setShellClosing(id)
+    void foundation.closeTerminal(id).then(() => {
+      if (shellOwner.current.active) {
+        setShell(current => current?.id === id ? undefined : current)
+      }
+    }).catch(() => {
+      if (shellOwner.current.active && shellOwner.current.generation === generation) setShellError(true)
+    }).finally(() => {
+      if (shellOwner.current.active) setShellClosing(current => current === id ? undefined : current)
+    })
   }
   const completeTask = (task: TodoItem): void => {
     if (current === undefined) return
@@ -233,33 +318,34 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   return (
     <main
       className={css.workbench}
-      aria-label="Engineering workbench"
+      aria-label={t.workbench}
       role="region"
       data-workbench-focus={focus ? 'true' : 'false'}
+      data-workbench-collapsed={collapsed ? 'true' : 'false'}
     >
       <header className={css.workbenchHeader}>
         <div>
-          <span className={css.workbenchEyebrow}>Runtime workspace</span>
+          <span className={css.workbenchEyebrow}>{t.workspace}</span>
           <strong className={css.workbenchTitle}>{title}</strong>
         </div>
-        <div className={css.workbenchStatus} aria-label="Active work status">
+        <div className={css.workbenchStatus} aria-label={t.status}>
           {(activeWork?.ownUiWork ?? []).map(id => <span key={id}>{id}</span>)}
           {(activeWork?.ownUiWork.length ?? 0) > 0 ? (
-            <button type="button" onClick={stopActiveWork}>Stop my active work</button>
-          ) : <span>Idle</span>}
+            <button type="button" onClick={stopActiveWork}>{t.stop}</button>
+          ) : <span>{t.idle}</span>}
         </div>
         <button
           type="button"
           className={css.focusToggle}
-          aria-label={focus ? 'Exit focus mode' : 'Enter focus mode'}
+          aria-label={focus ? t.exitFocus : t.enterFocus}
           onClick={() => { setFocus(value => !value) }}
         >
-          {focus ? 'Restore Dashboard' : 'Focus'}
+          {focus ? t.restore : t.focus}
         </button>
       </header>
 
       <div className={css.workbenchBody}>
-        <nav className={css.workbenchRail} role="tablist" aria-label="Workbench panels">
+        <nav className={css.workbenchRail} role="tablist" aria-label={t.panels}>
           {PANELS.map(item => (
             <button
               type="button"
@@ -267,45 +353,71 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
               key={item.id}
               data-workbench-panel={item.id}
               aria-selected={panel === item.id}
-              onClick={() => { setPanel(item.id) }}
+              onClick={() => { setPanel(item.id); setCollapsed(false) }}
             >
-              {item.label}
+              {t[item.id]}
             </button>
           ))}
+          <button type="button" aria-label={collapsed ? t.show : t.collapse} onClick={() => { setCollapsed(value => !value) }}>
+            {collapsed ? '›' : '‹'}
+          </button>
         </nav>
-        <section className={css.workbenchPanel} data-workbench-active-panel={panel} role="tabpanel">
+        <section className={css.workbenchPanel} data-workbench-active-panel={panel} role="tabpanel" hidden={collapsed}>
           {panel === 'files' && (
-            <ul className={css.workbenchList}>
-              {directoryEntries.map(entry => (
-                <li key={entry.path}>
-                  <span>{entry.name}</span>
-                  <button type="button" aria-label={`Open ${entry.name}`} onClick={() => { openPath(entry.path) }}>Open</button>
-                </li>
-              ))}
-              {directoryEntries.length === 0 && <li>No workspace entries</li>}
-            </ul>
+            <>
+              <div className={css.panelActions}>
+                <button type="button" onClick={() => { setDirectory('') }}>{t.root}</button>
+                <button type="button" onClick={() => { setRefresh(value => value + 1) }}>{t.retry}</button>
+                {directory !== '' && <button type="button" onClick={() => { setDirectory(directory.replace(/[\\/][^\\/]+$|^[^\\/]+$/u, '')) }}>{t.up}</button>}
+              </div>
+              {workspaceId === undefined ? <p>{t.noWorkspace}</p> : fileState === 'loading' ? <p>{t.loading}</p> : fileState === 'error' ? <p role="alert">{t.fileError}</p> : (
+                <ul className={css.workbenchList}>
+                  {directoryEntries.map(entry => (
+                    <li key={entry.path}>
+                      <button className={css.fileName} type="button" onClick={() => {
+                        if (entry.kind === 'directory') setDirectory(entry.directory)
+                        else openPath(entry.path)
+                      }}>{entry.name}</button>
+                      <button type="button" aria-label={`${t.open} ${entry.name}`} onClick={() => { openPath(entry.path) }}>{t.open}</button>
+                    </li>
+                  ))}
+                  {directoryEntries.length === 0 && !filesTruncated && <li>{t.noFiles}</li>}
+                  {filesTruncated && <li role="status">{t.truncated}</li>}
+                </ul>
+              )}
+            </>
           )}
-          {panel === 'diff' && <DiffPanel block={diff} openPath={openPath} />}
+          {panel === 'diff' && <DiffPanel block={diff} openPath={openPath} t={t} />}
           {panel === 'terminal' && (
             <form className={css.terminalPanel} onSubmit={submitTerminal}>
-              <pre>{terminalOutput(terminal) ?? 'No terminal transcript'}</pre>
+              <p>{t.terminalHint}</p>
+              <div className={css.panelActions}>
+                <button type="button" disabled={workspaceId === undefined || shellBusy || isShellClosing} onClick={startTerminal}>{t.start}</button>
+                {shell !== undefined && <>
+                  <button type="button" disabled={isShellClosing} onClick={closeTerminal}>{t.close}</button>
+                </>}
+              </div>
+              {shellError && <p role="alert">{t.terminalError}</p>}
+              <pre role="log" aria-live="polite">{shell?.output || t.noTerminal}</pre>
+              {shell?.exited === true && <p>{t.terminalExited} ({shell.exitCode ?? '—'})</p>}
               <label>
-                <span>Terminal input</span>
+                <span>{t.terminalInput}</span>
                 <input
-                  aria-label="Terminal input"
+                  aria-label={t.terminalInput}
                   value={terminalInput}
+                  disabled={shell === undefined || shell.exited || shellBusy || isShellClosing}
                   onChange={(event) => { setTerminalInput(event.currentTarget.value) }}
                 />
               </label>
-              <button type="submit">Send terminal input</button>
+              <button type="submit" disabled={shell === undefined || shell.exited || shellBusy || isShellClosing || terminalInput.trim() === ''}>{t.send}</button>
             </form>
           )}
           {panel === 'artifacts' && (
             <ul className={css.workbenchList}>
               {produced.map(path => (
-                <li key={path}><span>{path}</span><button type="button" onClick={() => { openPath(path) }}>Open</button></li>
+                <li key={path}><span>{path}</span><button type="button" onClick={() => { openPath(path) }}>{t.open}</button></li>
               ))}
-              {produced.length === 0 && <li>No artifacts yet</li>}
+              {produced.length === 0 && <li>{t.noArtifacts}</li>}
             </ul>
           )}
           {panel === 'tasks' && (
@@ -314,11 +426,11 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
                 <li key={task.content}>
                   <span data-task-status={task.status}>{task.content}</span>
                   {task.status !== 'completed' && (
-                    <button type="button" aria-label={`Complete ${task.content}`} onClick={() => { completeTask(task) }}>Complete</button>
+                    <button type="button" aria-label={`${t.complete} ${task.content}`} onClick={() => { completeTask(task) }}>{t.complete}</button>
                   )}
                 </li>
               ))}
-              {todos.length === 0 && <li>No active tasks</li>}
+              {todos.length === 0 && <li>{t.noTasks}</li>}
             </ul>
           )}
         </section>
@@ -328,19 +440,20 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   )
 }
 
-function DiffPanel({ block, openPath }: {
+function DiffPanel({ block, openPath, t }: {
   readonly block: ToolCallBlock | undefined
   readonly openPath: (path: string) => void
+  readonly t: WorkbenchCopy
 }): ReactNode {
   const view = block === undefined
     ? undefined
     : ('kind' in block && block.resultView?.card === 'diff' ? block.resultView : block.callView?.card === 'diff' ? block.callView : undefined)
-  if (view === undefined) return <p>No diff available</p>
+  if (view === undefined) return <p>{t.noDiff}</p>
   return (
     <div className={css.diffPanel}>
       {view.diffs.map(diff => (
         <article key={diff.path}>
-          <header>{diff.path}<button type="button" aria-label={`Open ${diff.path}`} onClick={() => { openPath(diff.path) }}>Open</button></header>
+          <header>{diff.path}<button type="button" aria-label={`${t.open} ${diff.path}`} onClick={() => { openPath(diff.path) }}>{t.open}</button></header>
           {diff.oldText !== null && <del>{diff.oldText}</del>}
           <ins>{diff.newText}</ins>
         </article>
@@ -349,10 +462,6 @@ function DiffPanel({ block, openPath }: {
   )
 }
 
-function terminalOutput(block: ToolCallBlock | undefined): string | undefined {
-  if (block === undefined || !('kind' in block) || block.resultView?.card !== 'terminal') return undefined
-  return block.resultView.output
-}
 
 /**
  * Build the renderApp factory the app-shell plugin provides to AppRoot.

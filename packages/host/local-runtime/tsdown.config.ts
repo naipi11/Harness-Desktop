@@ -22,5 +22,6 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    copy: [{ from: '../../../apps/cli/config/agent-presets', to: 'lib' }],
   },
 ])

@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { productMetadata } from '@harness-desktop/dsh-app-boot/product-metadata'
+import { desktopMenuTemplate } from './desktop-menu.ts'
 import {
   createRuntimeConnector,
   normalizeRecoveryDiagnostic,
@@ -559,6 +560,7 @@ registerDesktopIpc<BrowserWindow, IpcMainInvokeEvent>({
 })
 
 void app.whenReady().then(async () => {
+  if (process.platform === 'win32') Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(app.getLocale())))
   if (!ownsDesktopInstance) {
     app.quit()
     return

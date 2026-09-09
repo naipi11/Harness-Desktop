@@ -6,6 +6,8 @@
 
 **双面包**：浏览器端（`./client`）向 [ui-workspace](../../client/ui-workspace/README.md) 的两个目录流 slot 注册一个无渲染的流程占用者——每次 `open` 请求驱动 `host.pickDirectory`，并通过 slot 的属主交互约定上报唯一结果（所选路径／取消／失败）。两个目录流程声明必须同时处于有效状态，任一贡献才会安装。因此一行 cordis.yml 同时组合原生交互的两侧；客户端不包含任何按能力类型进行的分支，挂载第二个流程包会在加载期失败（slot 的 kind 为 `single`）。
 
+Windows 子进程在宿主可执行文件为 Electron 时显式选择 Node 模式，不依赖继承的 `ELECTRON_RUN_AS_NODE`。`showing` 通知保持 IPC 连接；只有最终结果或错误发送完成后才关闭通道，父进程断开连接仍会终止对话框子进程。所选 UTF-16 路径通过 `koffi.decode.string16` 复制，不将原生内存暴露为 Electron 禁止的外部 ArrayBuffer。
+
 ## 模型体验
 
 无。该后端服务于 GUI 宿主的目录选择；这里没有任何内容进入模型请求。

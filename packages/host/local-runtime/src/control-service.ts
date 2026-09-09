@@ -89,6 +89,8 @@ type RuntimeSessionsApi = Pick<ApiProxy['sessions'], 'create' | 'prompt' | 'mode
 /** Dependencies for one Runtime lifetime's control state. */
 export interface RuntimeControlServiceOptions {
   readonly runtime: RuntimeHandle
+  /** Await cleanup of shells owned by a releasing native Dashboard client. */
+  readonly releaseWorkbenchOwner?: (owner: RuntimeClientId) => Promise<void>
   readonly sessions?: Pick<SessionStore, 'create' | 'get' | 'list'>
   readonly api?: { readonly sessions: RuntimeSessionsApi }
   readonly agents?: Pick<AgentRegistry, 'get'>
@@ -371,6 +373,7 @@ export function createRuntimeControlService(options: RuntimeControlServiceOption
       const attachmentId = requestedId ?? owner
       if (attachmentId === owner) {
         requireBaseClient(clients, owner)
+        await options.releaseWorkbenchOwner?.(owner)
         await options.runtime.releaseClient(owner)
         clients.delete(owner)
         return

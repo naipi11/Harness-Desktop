@@ -42,7 +42,7 @@ void (async () => {
   try {
     const bindings = await loadWin32DialogBindings()
     const path = runFolderDialog(bindings, title, (threadId) => {
-      post({ kind: 'showing', threadId } satisfies Win32DialogWorkerMessage)
+      send({ kind: 'showing', threadId } satisfies Win32DialogWorkerMessage)
     })
     post({ kind: 'done', path } satisfies Win32DialogWorkerMessage)
   } catch (error: unknown) {

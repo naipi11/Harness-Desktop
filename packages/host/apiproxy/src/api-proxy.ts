@@ -3429,16 +3429,20 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async describe(request) {
         const credentials = ctx.get('credentials')
         if (credentials === undefined) return err(request, credentialsAbsent())
-        const entries = await Promise.all(request.payload.refs.map(async (ref) => {
-          const info = await credentials.describe(credentialRef(ref))
-          const view: CredentialView = {
-            configured: info.configured,
-            ...info.source === undefined ? {} : { source: info.source },
-            writable: info.writable,
-          }
-          return [ref, view] as const
-        }))
-        return ok(request, { credentials: Object.fromEntries(entries) })
+        try {
+          const entries = await Promise.all(request.payload.refs.map(async (ref) => {
+            const info = await credentials.describe(credentialRef(ref))
+            const view: CredentialView = {
+              configured: info.configured,
+              ...info.source === undefined ? {} : { source: info.source },
+              writable: info.writable,
+            }
+            return [ref, view] as const
+          }))
+          return ok(request, { credentials: Object.fromEntries(entries) })
+        } catch {
+          return err(request, { code: 'credential-rejected', message: 'Credential storage could not be read', details: { ref: '' } })
+        }
       },
 
       async set(request) {
@@ -3447,10 +3451,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { ref, value } = request.payload
         try {
           await credentials.set(credentialRef(ref), value)
-        } catch (error: unknown) {
+        } catch {
           return err(request, {
             code: 'credential-rejected',
-            message: error instanceof Error ? error.message : String(error),
+            message: 'Credential storage rejected the update',
             details: { ref },
           })
         }
@@ -3463,10 +3467,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { ref } = request.payload
         try {
           await credentials.unset(credentialRef(ref))
-        } catch (error: unknown) {
+        } catch {
           return err(request, {
             code: 'credential-rejected',
-            message: error instanceof Error ? error.message : String(error),
+            message: 'Credential storage rejected the removal',
             details: { ref },
           })
         }
