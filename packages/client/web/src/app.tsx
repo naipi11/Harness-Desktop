@@ -179,6 +179,19 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   const workspaceId = workspaceList.items.find(item => item.path === cwd)?.workspaceId
   const shellOwner = useRef({ workspaceId, active: true, generation: 0 })
   shellOwner.current.workspaceId = workspaceId
+  const shellCloseFlights = useRef(new Map<string, Promise<void>>())
+  const closedShellIds = useRef(new Set<string>())
+  const closeShellOnce = useCallback((id: string): Promise<void> => {
+    if (closedShellIds.current.has(id)) return Promise.resolve()
+    const existing = shellCloseFlights.current.get(id)
+    if (existing !== undefined) return existing
+    const flight = Promise.resolve()
+      .then(() => foundation.closeTerminal(id))
+      .then(() => { closedShellIds.current.add(id) })
+      .finally(() => { shellCloseFlights.current.delete(id) })
+    shellCloseFlights.current.set(id, flight)
+    return flight
+  }, [foundation])
   useEffect(() => {
     shellOwner.current.active = true
     return () => { shellOwner.current.active = false; shellOwner.current.generation += 1 }
@@ -215,9 +228,9 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
       const id = shellRef.current?.id
       shellRef.current = undefined
       shellOwner.current.generation += 1
-      if (id !== undefined) void foundation.closeTerminal(id).catch(() => {})
+      if (id !== undefined) void closeShellOnce(id).catch(() => {})
     }
-  }, [workspaceId, foundation])
+  }, [workspaceId, closeShellOnce])
 
   useEffect(() => {
     if (shell === undefined || shell.exited || panel !== 'terminal') return
@@ -290,7 +303,7 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     setShellBusy(true)
     void foundation.openTerminal(workspaceId).then((value) => {
       if (!stillOwned()) {
-        void foundation.closeTerminal(value.id).catch(() => {})
+        void closeShellOnce(value.id).catch(() => {})
         return
       }
       setShell(value); setShellError(false)
@@ -302,7 +315,7 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
     shellOwner.current.generation += 1
     const generation = shellOwner.current.generation
     setShellClosing(id)
-    void foundation.closeTerminal(id).then(() => {
+    void closeShellOnce(id).then(() => {
       if (shellOwner.current.active) {
         setShell(current => current?.id === id ? undefined : current)
       }

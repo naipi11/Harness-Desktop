@@ -300,6 +300,7 @@ describe('buildRenderApp', () => {
     b.foundation.openTerminal.mockResolvedValueOnce({ id: 'shell-2', output: 'new workspace shell', exited: false, exitCode: null, shell: 'powershell.exe' })
     fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
     await view.findByText('new workspace shell')
+    expect(b.foundation.closeTerminal).toHaveBeenCalledTimes(1)
     await act(async () => { pending.resolve(undefined); await pending.promise })
     expect(view.getByText('new workspace shell')).toBeTruthy()
   })
