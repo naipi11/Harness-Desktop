@@ -164,6 +164,8 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   const [refresh, setRefresh] = useState(0)
   const [terminalInput, setTerminalInput] = useState('')
   const [shell, setShell] = useState<ShellSnapshot>()
+  const shellRef = useRef<ShellSnapshot>()
+  shellRef.current = shell
   const [shellError, setShellError] = useState(false)
   const [shellBusy, setShellBusy] = useState(false)
   const [shellClosing, setShellClosing] = useState<string>()
@@ -209,7 +211,13 @@ export function EngineeringWorkbench({ ctx, foundation, chrome }: EngineeringWor
   useEffect(() => {
     shellOwner.current.generation += 1
     setDirectory(''); setShell(undefined); setShellError(false); setShellBusy(false)
-  }, [workspaceId])
+    return () => {
+      const id = shellRef.current?.id
+      shellRef.current = undefined
+      shellOwner.current.generation += 1
+      if (id !== undefined) void foundation.closeTerminal(id).catch(() => {})
+    }
+  }, [workspaceId, foundation])
 
   useEffect(() => {
     if (shell === undefined || shell.exited || panel !== 'terminal') return

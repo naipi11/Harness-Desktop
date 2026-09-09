@@ -266,6 +266,22 @@ describe('buildRenderApp', () => {
     expect(b.foundation.closeTerminal).toHaveBeenCalledWith('late')
   })
 
+  it('closes the shell when the current workspace changes', async () => {
+    const b = await workbench()
+    const view = render(<>{b.renderApp()}</>)
+    fireEvent.click(view.getByRole('tab', { name: 'Terminal' }))
+    fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
+    await view.findByText('PowerShell ready')
+    await act(async () => {
+      await b.runtime.workspaces.update((draft) => {
+        draft.items = [...draft.items, { ...draft.items[0]!, workspaceId: 'workspace-2' as never, path: 'C:\\other' }]
+      })
+      await b.runtime.sessions.add({ id: 'other', summary: { cwd: 'C:\\other' } })
+      await b.runtime.sessions.setCurrent('other')
+    })
+    await waitFor(() => { expect(b.foundation.closeTerminal).toHaveBeenCalledWith('shell-1') })
+  })
+
   it('keeps the new shell when an old workspace close completes late', async () => {
     const b = await workbench()
     const pending = Promise.withResolvers<undefined>()
