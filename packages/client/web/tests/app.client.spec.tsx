@@ -284,7 +284,7 @@ describe('buildRenderApp', () => {
     b.foundation.openTerminal.mockResolvedValueOnce({ id: 'shell-2', output: 'new workspace shell', exited: false, exitCode: null, shell: 'powershell.exe' })
     fireEvent.click(view.getByRole('button', { name: 'Start terminal' }))
     await view.findByText('new workspace shell')
-    await act(async () => { pending.resolve(); await pending.promise })
+    await act(async () => { pending.resolve(undefined); await pending.promise })
     expect(view.getByText('new workspace shell')).toBeTruthy()
   })
 
@@ -323,7 +323,7 @@ describe('buildRenderApp', () => {
     await view.findByText('PowerShell ready')
     fireEvent.click(view.getByRole('button', { name: 'Close terminal' }))
     expect((view.getByRole('button', { name: 'Start terminal' }) as HTMLButtonElement).disabled).toBe(true)
-    await act(async () => { pending.resolve(); await pending.promise })
+    await act(async () => { pending.resolve(undefined); await pending.promise })
     expect((view.getByRole('button', { name: 'Start terminal' }) as HTMLButtonElement).disabled).toBe(false)
     expect(view.queryByText('PowerShell ready')).toBeNull()
   })
