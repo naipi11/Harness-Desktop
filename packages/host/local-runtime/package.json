@@ -1,7 +1,7 @@
 {
   "name": "@harness-desktop/dsh-host-local-runtime",
   "description": "Harness Desktop local Runtime ownership and private endpoint foundation",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publishConfig": {
     "access": "public"
   },

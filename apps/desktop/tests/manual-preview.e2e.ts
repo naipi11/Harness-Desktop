@@ -41,7 +41,7 @@ test('cold boots a packaged manual-update preview, selects a workspace, and open
     }))
     expect(resolve(identity.executable).toLowerCase()).toBe(resolve(executable).toLowerCase())
     expect(identity.packaged).toBe(true)
-    expect(identity.version).toBe('1.0.2')
+    expect(identity.version).toBe('1.0.3')
     await expect(readFile(join(dirname(executable), 'resources', 'update-policy.json')))
       .rejects.toMatchObject({ code: 'ENOENT' })
     const page = await application.firstWindow()
