@@ -147,5 +147,5 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
           node --import tsx scripts/release/publish.ts --family dsh --from dist/npm
