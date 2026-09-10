@@ -64,6 +64,7 @@ class RecordingFileSystem extends FileSystem {
   omitSizes = new Set<string>()
   readTargets: string[] = []
   readTextTargets: string[] = []
+  readByteCaps: number[] = []
   signals: AbortSignal[] = []
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
@@ -117,8 +118,16 @@ class RecordingFileSystem extends FileSystem {
     return this.entries.get(target.targetKey)?.content ?? ''
   }
 
-  override async readBytes(_target: FsTarget, _signal: AbortSignal | undefined, _maxBytes: number): Promise<Uint8Array> {
-    throw new Error('not needed in agent-instructions tests')
+  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+    if (signal !== undefined) this.signals.push(signal)
+    signal?.throwIfAborted()
+    this.readByteCaps.push(maxBytes)
+    this.readTargets.push(target.targetKey)
+    if (this.throwOnRead.has(target.targetKey)) throw new Error(`read failed: ${target.displayPath}`)
+    const content = this.entries.get(target.targetKey)?.content ?? ''
+    const bytes = new TextEncoder().encode(content)
+    if (bytes.byteLength > maxBytes) throw new Error(`oversized: ${target.displayPath}`)
+    return bytes
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
@@ -151,18 +160,17 @@ class RecordingFileSystem extends FileSystem {
 class BlockingReadFileSystem extends RecordingFileSystem {
   readonly started = Promise.withResolvers<undefined>()
 
-  override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
     if (signal !== undefined) this.signals.push(signal)
+    this.readByteCaps.push(maxBytes)
     this.readTargets.push(target.targetKey)
     this.started.resolve(undefined)
-    return (async function* () {
-      await new Promise<void>((_resolve, reject) => {
-        const abortReason = (): Error => signal?.reason instanceof Error ? signal.reason : new Error('aborted')
-        if (signal?.aborted) { reject(abortReason()); return }
-        signal?.addEventListener('abort', () => { reject(abortReason()) }, { once: true })
-      })
-      yield 'unreachable'
-    })()
+    await new Promise<void>((_resolve, reject) => {
+      const abortReason = (): Error => signal?.reason instanceof Error ? signal.reason : new Error('aborted')
+      if (signal?.aborted) { reject(abortReason()); return }
+      signal?.addEventListener('abort', () => { reject(abortReason()) }, { once: true })
+    })
+    return new Uint8Array()
   }
 }
 
@@ -505,7 +513,130 @@ describe('workspace context instruction discovery', () => {
       await expect(loadBaselineInstructions({
         cwd: root, dshHome: home, maxBytes: 65536, maxSourceBytes: Infinity,
       })).resolves.toBeUndefined()
+      await expect(loadBaselineInstructions({
+        cwd: root, dshHome: home, maxBytes: 65536, maxTotalSourceBytes: 0,
+      })).resolves.toBeUndefined()
     } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('bounds host reads before accumulating an oversized stream chunk', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'AGENTS.md'), '12345')
+      await write(join(root, 'CLAUDE.md'), 'later')
+
+      const loaded = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        maxSourceBytes: 6,
+        maxTotalSourceBytes: 4,
+      })
+
+      expect(loaded).toBeUndefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('applies the aggregate source budget across baseline files while retaining the per-file cap', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'AGENTS.md'), 'root')
+      await write(join(root, 'CLAUDE.md'), 'sibling')
+
+      const loaded = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        maxSourceBytes: 16,
+        maxTotalSourceBytes: Buffer.byteLength('root', 'utf8'),
+      })
+
+      expect(loaded?.text).toContain('root')
+      expect(loaded?.text).not.toContain('sibling')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('passes the inclusive remaining source budget to provider raw-byte reads', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: '1234' })
+      fs.entries.set(join(root, 'CLAUDE.md'), { type: 'file', content: 'later' })
+      const loaded = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        maxSourceBytes: 6,
+        maxTotalSourceBytes: 4,
+      }, fs)
+
+      expect(loaded?.text).toContain('1234')
+      expect(loaded?.text).not.toContain('later')
+      expect(fs.readByteCaps).toEqual([4])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps provider raw-byte reads binary-safe while instruction decoding stays strict', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: '\u0000' })
+      const loaded = await loadBaselineInstructions({ cwd: root, dshHome: home, maxBytes: 65536, maxSourceBytes: 1 }, fs)
+      expect(loaded?.text).toContain('\u0000')
+      expect(fs.readByteCaps).toEqual([1])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts a multibyte file exactly at the inclusive provider byte boundary', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: '€' })
+      const loaded = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        maxSourceBytes: 3,
+        maxTotalSourceBytes: 3,
+      }, fs)
+
+      expect(loaded?.text).toContain('€')
+      expect(fs.readByteCaps).toEqual([3])
+    } finally {
+      await ctx.fiber.dispose()
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
     }

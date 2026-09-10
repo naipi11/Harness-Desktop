@@ -59,7 +59,14 @@ interface DiscoverOptions {
 interface LoadOptions extends DiscoverOptions {
   maxBytes: number
   maxSourceBytes?: number
+  maxTotalSourceBytes?: number
   replacePreviousBaseline?: boolean
+}
+
+/** Aggregate UTF-8 source budget shared by one complete load batch. */
+export interface SourceByteBudget {
+  readonly maxBytes: number
+  usedBytes: number
 }
 
 /** Rendered baseline plus the successfully read and byte-budget-retained files. */
@@ -319,36 +326,52 @@ export async function discoverBaselineInstructionFiles(options: DiscoverOptions)
   return (await discoverInstructionFiles(options)).map(({ absolutePath, displayPath }) => ({ absolutePath, displayPath }))
 }
 
-async function* nodeTextChunks(path: string, signal?: AbortSignal): AsyncIterable<string> {
-  const stream = createReadStream(path, { encoding: 'utf8', signal })
-  for await (const chunk of stream) yield String(chunk)
+async function readNodeBytesBounded(path: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer | undefined> {
+  const stream = createReadStream(path, {
+    end: maxBytes,
+    highWaterMark: Math.min(64 * 1024, maxBytes + 1),
+    signal,
+  })
+  const parts: Buffer[] = []
+  let bytes = 0
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    const remaining = maxBytes - bytes
+    if (chunk.length > remaining) return undefined
+    parts.push(chunk)
+    bytes += chunk.length
+  }
+  return Buffer.concat(parts, bytes)
 }
 
 async function readBounded(
   file: { absolutePath: string; target?: FsTarget; size?: number },
   maxSourceBytes: number,
+  sourceBudget: SourceByteBudget,
   fileSystem?: FileSystem,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  // TODO(total-instruction-read-bound): enforce an aggregate source budget
-  // across a complete baseline or reconciliation batch; the render budget is
-  // applied only after every accepted file has been read under this per-file cap.
   signal?.throwIfAborted()
   if (file.size !== undefined && file.size > maxSourceBytes) return undefined
+  if (file.size !== undefined && sourceBudget.usedBytes + file.size > sourceBudget.maxBytes) return undefined
   try {
-    const chunks = fileSystem === undefined || file.target === undefined
-      ? nodeTextChunks(file.absolutePath, signal)
-      : await fileSystem.streamText(file.target, signal)
-    const parts: string[] = []
-    let bytes = 0
-    for await (const chunk of chunks) {
+    const remainingBytes = sourceBudget.maxBytes - sourceBudget.usedBytes
+    if (remainingBytes <= 0) return undefined
+    if (fileSystem !== undefined && file.target !== undefined) {
+      const readLimit = Math.min(maxSourceBytes, remainingBytes)
+      const bytes = await fileSystem.readBytes(file.target, signal, readLimit)
       signal?.throwIfAborted()
-      bytes += Buffer.byteLength(chunk, 'utf8')
-      if (bytes > maxSourceBytes) return undefined
-      parts.push(chunk)
+      if (bytes.byteLength > readLimit) return undefined
+      const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      sourceBudget.usedBytes += bytes.byteLength
+      return content
     }
+    const readLimit = Math.min(maxSourceBytes, remainingBytes)
+    const bytes = await readNodeBytesBounded(file.absolutePath, readLimit, signal)
+    if (bytes === undefined) return undefined
     signal?.throwIfAborted()
-    return parts.join('')
+    const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    sourceBudget.usedBytes += bytes.byteLength
+    return content
   } catch {
     signal?.throwIfAborted()
     // A file may disappear or become unreadable after its metadata probe.
@@ -409,10 +432,12 @@ export async function loadBaselineInstructionSet(
   const config = resolveConfig(options)
   if (config.maxBytes <= 0 || !Number.isFinite(config.maxBytes)) return undefined
   if (config.maxSourceBytes <= 0 || !Number.isFinite(config.maxSourceBytes)) return undefined
+  if (config.maxTotalSourceBytes <= 0 || !Number.isFinite(config.maxTotalSourceBytes)) return undefined
   const discovered = await discoverInstructionFiles(options, fileSystem)
   const loaded: LoadedInstructionFile[] = []
+  const sourceBudget: SourceByteBudget = { maxBytes: config.maxTotalSourceBytes, usedBytes: 0 }
   for (const file of discovered) {
-    const content = await readBounded(file, config.maxSourceBytes, fileSystem, options.signal)
+    const content = await readBounded(file, config.maxSourceBytes, sourceBudget, fileSystem, options.signal)
     if (content !== undefined) {
       loaded.push({
         absolutePath: file.absolutePath,
@@ -496,6 +521,7 @@ export async function probeScopeInstruction(
  * Read one already-probed scope candidate under the configured source cap.
  * @param file - winning provider candidate and its metadata snapshot.
  * @param maxSourceBytes - maximum UTF-8 bytes accepted from the source.
+ * @param sourceBudget - aggregate UTF-8 byte budget for the current batch.
  * @param fileSystem - provider used for the streaming read.
  * @param signal - cancellation for provider streaming.
  * @returns loaded content with the probed version, or undefined when unavailable.
@@ -503,10 +529,11 @@ export async function probeScopeInstruction(
 export async function readScopeInstruction(
   file: ProbedInstructionFile,
   maxSourceBytes: number,
+  sourceBudget: SourceByteBudget,
   fileSystem: FileSystem,
   signal?: AbortSignal,
 ): Promise<LoadedInstructionFile | undefined> {
-  const content = await readBounded(file, maxSourceBytes, fileSystem, signal)
+  const content = await readBounded(file, maxSourceBytes, sourceBudget, fileSystem, signal)
   if (content === undefined) return undefined
   return {
     absolutePath: file.absolutePath,

@@ -316,6 +316,7 @@ export async function reconcileInstructionContext(
   }
   const items: ChangeRenderItem[] = []
   const versionUpdates: InstructionVersionUpdate[] = []
+  const sourceBudget = { maxBytes: resolved.maxTotalSourceBytes, usedBytes: 0 }
   const pushRemoval = (scope: string, path: string): void => {
     const change: AgentInstructionChange = { action: 'remove', scope, path }
     items.push({ change, file: { absolutePath: `removed:${scope}`, displayPath: path, content: '' } })
@@ -388,7 +389,7 @@ export async function reconcileInstructionContext(
         continue
       }
 
-      const file = await readScopeInstruction(probedFile, resolved.maxSourceBytes, fileSystem, options.signal)
+      const file = await readScopeInstruction(probedFile, resolved.maxSourceBytes, sourceBudget, fileSystem, options.signal)
       if (file === undefined) continue
       const currentDigest = instructionContentSha1(file.content)
       const trimmedDigest = trimmedInstructionDigest(file.content)

@@ -17,6 +17,7 @@ import {
   probeNoFollow,
   readForEdit,
   readTextForDiff,
+  readWholeBytes,
   readWholeText,
   resolveLocalTarget,
   restoreLineEndings,
@@ -569,6 +570,15 @@ describe('readTextForDiff', () => {
       vi.doUnmock('node:fs/promises')
       vi.resetModules()
     }
+  })
+})
+
+describe('readWholeBytes', () => {
+  it('never returns more than the inclusive byte cap', async () => {
+    const file = join(dir, 'a.bin')
+    await writeFile(file, Buffer.from([1, 2, 3, 4]))
+    await expect(readWholeBytes(localTarget(file), undefined, 3)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+    expect(await readWholeBytes(localTarget(file), undefined, 4)).toEqual(Buffer.from([1, 2, 3, 4]))
   })
 })
 

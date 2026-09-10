@@ -385,8 +385,8 @@ export async function readWholeText(target: LocalTarget, signal?: AbortSignal): 
 /**
  * Read a whole regular file as raw bytes with no decoding or binary rejection.
  * `maxBytes` bounds the complete content: the stat size short-circuits an
- * oversized file before any content I/O, and the stream reads at most one byte
- * beyond the cap so a file growing after stat cannot cause unbounded buffering.
+ * oversized file before any content I/O, and the stream retains at most the
+ * cap while detecting post-stat growth.
  * @param target - the resolved file to read.
  * @param signal - aborts the read (`FS_ABORTED`).
  * @param maxBytes - inclusive byte cap on the complete content (`FS_TOO_LARGE`).
@@ -412,11 +412,11 @@ export async function readWholeBytes(
   let bytes = 0
   try {
     for await (const chunk of stream as AsyncIterable<Buffer>) {
-      bytes += chunk.length
-      if (bytes > maxBytes) {
+      if (chunk.length > maxBytes - bytes) {
         throw new FsError(`cannot read "${target.displayPath}": content exceeds the ${maxBytes}-byte limit`, 'FS_TOO_LARGE')
       }
       chunks.push(chunk)
+      bytes += chunk.length
     }
   } catch (error: unknown) {
     /* v8 ignore next 2 -- a mid-stream abort needs cancellation racing an active read; pre-abort is deterministic. */

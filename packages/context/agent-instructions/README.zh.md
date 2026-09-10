@@ -62,12 +62,13 @@ export interface Config {
   projectRootMarkers?: string[]
   maxBytes: number
   maxSourceBytes?: number
+  maxTotalSourceBytes?: number
   instructionFileCandidates?: string[]
   localInstructionFileCandidates?: string[]
 }
 ```
 
-`maxBytes` 必填，因此每个部署都必须显式选择提示词预算。`maxSourceBytes` 在渲染前限制每个源指令文件，默认为 1 MiB。`projectRootMarkers` 默认为 `['.git']`，`instructionFileCandidates` 默认为 `['AGENTS.md', 'CLAUDE.md']`。每个项目目录中的所有现有候选文件都会加载，在去除周围空白后与较早候选文件内容匹配的文件会被丢弃。因此，使用默认设置时，内容相同的 `AGENTS.md` 与 `CLAUDE.md` 只渲染一次（作为 `AGENTS.md`），真正不同的同级文件则同时应用。`localInstructionFileCandidates` 默认为 `['AGENTS.local.md', 'CLAUDE.local.md']`，会与同一目录的基础文件一起加载其现有 overlay（渲染在它们之后），并应用同一个每目录去重；空列表会禁用 overlay。两个列表中的候选项都必须是同一目录下的文件名，因此会忽略空项、`.`／`..` 以及包含 `/` 或 `\` 的项。
+`maxBytes` 必填，因此每个部署都必须显式选择提示词预算。`maxSourceBytes` 在渲染前限制每个源指令文件，默认为 1 MiB。`maxTotalSourceBytes` 限制一次基线或动态对账批次读取的 UTF-8 总字节数，默认为 4 MiB。`projectRootMarkers` 默认为 `['.git']`，`instructionFileCandidates` 默认为 `['AGENTS.md', 'CLAUDE.md']`。每个项目目录中的所有现有候选文件都会加载，在去除周围空白后与较早候选文件内容匹配的文件会被丢弃。因此，使用默认设置时，内容相同的 `AGENTS.md` 与 `CLAUDE.md` 只渲染一次（作为 `AGENTS.md`），真正不同的同级文件则同时应用。`localInstructionFileCandidates` 默认为 `['AGENTS.local.md', 'CLAUDE.local.md']`，会与同一目录的基础文件一起加载其现有 overlay（渲染在它们之后），并应用同一个每目录去重；空列表会禁用 overlay。两个列表中的候选项都必须是同一目录下的文件名，因此会忽略空项、`.`／`..` 以及包含 `/` 或 `\` 的项。
 
 用户全局文件始终是 `$DSH_HOME/AGENTS.md`，没有本地 overlay；两个候选列表只控制项目 scope。`$DSH_HOME` 默认为 `~/.dsh`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 必须是正整数。
 
@@ -75,7 +76,7 @@ export interface Config {
 
 渲染会优先保留最具体的指令文件。它会先丢弃完整的较宽泛文件，再截断最具体文件，并发出可见 `Workspace instruction budget ...` 通知，其中指名已省略与已截断路径。渲染后字节数绝不超过 `maxBytes`。
 
-即使提供方元数据省略大小，或文件在元数据探测后增长，指令内容仍会通过 `streamText()` 在 `maxSourceBytes` 下读取。超大文件会被忽略；在动态对账期间，它会暂时不可用，而不是被移除。该插件不保留进程级 cache，绝不缓存指令文本。其会话本地 scope cache 只将提供方版本用作快速失效信号；失效后，对有界读取计算的 SHA-1 仍是存储在结构化消息来源中的跨提供方内容标识。
+提供方指令内容通过包含上限的原始字节 `FileSystem.readBytes()` 读取，使用逐文件上限与剩余批次总预算中较小者，然后严格按 UTF-8 解码。主机文件使用有界原始字节流读取，在检测超限的同时不会保留超过选定上限的数据。即使提供方元数据省略大小，或文件在元数据探测后增长，这些上限仍然有效。提供方原始读取仍支持二进制；严格 UTF-8 校验属于指令加载，而不是文件系统 seam。完整批次会持续维护 `maxTotalSourceBytes` 总预算；预算耗尽后跳过后续文件，同时仍执行逐文件上限。超大文件或无效 UTF-8 文件会被忽略；在动态对账期间，它会暂时不可用，而不是被移除。该插件不保留进程级 cache，绝不缓存指令文本。其会话本地 scope cache 只将提供方版本用作快速失效信号；失效后，对有界读取计算的 SHA-1 仍是存储在结构化消息来源中的跨提供方内容标识。
 
 ## 模型体验
 
