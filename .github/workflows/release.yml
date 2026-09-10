@@ -144,6 +144,8 @@ jobs:
           path: dist/npm
 
       - name: Publish tarballs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm config set //registry.npmjs.org/:_authToken "$NODE_AUTH_TOKEN"
           node --import tsx scripts/release/publish.ts --family dsh --from dist/npm
