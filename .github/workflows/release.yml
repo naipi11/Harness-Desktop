@@ -146,4 +146,4 @@ jobs:
       - name: Publish tarballs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm run release:publish --family dsh --from dist/npm
+        run: node --import tsx scripts/release/publish.ts --family dsh --from dist/npm
