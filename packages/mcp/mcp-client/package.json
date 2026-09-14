@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-mcp-client",
+  "name": "@stackstackstack/dsh-mcp-client",
   "description": "MCP client bridge: connects to MCP servers and registers their tools on ctx.tools",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,11 +32,11 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-subprocess": "workspace:^",
+    "@stackstackstack/dsh-timeout": "workspace:^",
+    "@stackstackstack/dsh-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -45,11 +45,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-subprocess": "workspace:^",
+    "@stackstackstack/dsh-timeout": "workspace:^",
+    "@stackstackstack/dsh-tools": "workspace:^",
     "@modelcontextprotocol/server-everything": "^2026.7.4",
     "@modelcontextprotocol/server-filesystem": "^2026.7.4",
     "@deepseek-ai/cordis": "workspace:^"

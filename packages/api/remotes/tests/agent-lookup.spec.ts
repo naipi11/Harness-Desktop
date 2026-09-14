@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import { createApiRemoteAgentResolver } from '@deepseek-ai/dsh-api-remotes'
-import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import AgentRegistry from '@stackstackstack/dsh-agent'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import SessionStore from '@stackstackstack/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId } from '@stackstackstack/dsh-session'
+import { createApiRemoteAgentResolver } from '@stackstackstack/dsh-api-remotes'
+import { TypertLookupFailure } from '@stackstackstack/dsh-typert-protocol'
+import TypertRegistry from '@stackstackstack/dsh-typert-registry'
 
 const sid = (value: string): SessionId => value as SessionId
 

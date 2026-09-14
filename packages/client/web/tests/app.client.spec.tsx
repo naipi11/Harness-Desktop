@@ -7,9 +7,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { buildRenderApp } from '@deepseek-ai/dsh-client-web/src/app.tsx'
+import { SlotTestRuntime } from '@stackstackstack/dsh-client-test-runtime'
+import type { SessionId } from '@stackstackstack/dsh-client-runtime/client'
+import { buildRenderApp } from '@stackstackstack/dsh-client-web/src/app.tsx'
 
 let runtime: SlotTestRuntime | undefined
 

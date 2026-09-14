@@ -2,11 +2,11 @@
 
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
-import type { JsonValue } from '@deepseek-ai/dsh-session/types'
-import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
-import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import { snapshotJsonValue } from '@stackstackstack/dsh-session'
+import type { JsonValue } from '@stackstackstack/dsh-session/types'
+import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@stackstackstack/dsh-tools'
+import type { JsonSchemaNode } from '@stackstackstack/dsh-tools'
 import type {
   CordisInspectMethodManifest, CordisInspectPlatform, CordisInspectProviderManifest,
   CordisInspectProviderView, CordisInspectQueryRequest, CordisInspectQueryResolution,
@@ -151,7 +151,7 @@ export class CordisInspectRegistryService extends Service {
     }
     this.pending.delete(requestId)
     pending.settle(resolution)
-    this.ctx.emit('cordis/inspect-query-resolved', { requestId })
+    this.ctx.emit('@deepseek-ai/cordis/inspect-query-resolved', { requestId })
     return { accepted: true }
   }
 
@@ -183,11 +183,11 @@ export class CordisInspectRegistryService extends Service {
       if (pending === undefined) return
       this.pending.delete(requestId)
       pending.settle({ ok: false, reason: 'cancelled', message: `Client inspect query ${providerId}.${methodName} was cancelled` })
-      this.ctx.emit('cordis/inspect-query-resolved', { requestId })
+      this.ctx.emit('@deepseek-ai/cordis/inspect-query-resolved', { requestId })
     }
     signal.addEventListener('abort', onAbort, { once: true })
     if (signal.aborted) onAbort()
-    else this.ctx.emit('cordis/inspect-query', request)
+    else this.ctx.emit('@deepseek-ai/cordis/inspect-query', request)
     try {
       const resolution = await result
       if (!resolution.ok) throw new Error(`${providerId}.${methodName}: ${resolution.message}`)

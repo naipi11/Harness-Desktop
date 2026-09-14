@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-ask-user
+# @stackstackstack/dsh-tool-ask-user
 
 English | [中文](README.zh.md)
 

@@ -7,9 +7,9 @@
     patches:
       - insert:
           - id: lsp
-            name: '@deepseek-ai/dsh-lsp'
+            name: '@stackstackstack/dsh-lsp'
           - id: lsp-stdio
-            name: '@deepseek-ai/dsh-lsp-stdio'
+            name: '@stackstackstack/dsh-lsp-stdio'
             config:
               servers:
                 fixture:
@@ -18,8 +18,8 @@
                   extensionToLanguage:
                     '.ts': typescript
           - id: timeout-policy
-            name: '@deepseek-ai/dsh-tool-call-timeout-policy'
+            name: '@stackstackstack/dsh-tool-call-timeout-policy'
           - id: tool-lsp
-            name: '@deepseek-ai/dsh-tool-lsp'
+            name: '@stackstackstack/dsh-tool-lsp'
             config:
               maxLocations: 1

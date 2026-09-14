@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-jobs",
+  "name": "@stackstackstack/dsh-jobs",
   "description": "Background job registry (ctx.jobs) for the DeepSeek Harness — shared ids, owner isolation, polling, cancellation, and completion listeners for long-running tool work",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -37,17 +37,17 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-brand": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-brand": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

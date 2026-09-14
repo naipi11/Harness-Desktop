@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-directory-picker-browse",
+  "name": "@stackstackstack/dsh-client-ui-directory-picker-browse",
   "description": "In-app directory browsing surface: the workspace directory-flow owner rendering the host's listing and creation primitives",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,9 +32,9 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-workspace",
-        "@deepseek-ai/dsh-client-locale"
+        "@stackstackstack/dsh-client-runtime",
+        "@stackstackstack/dsh-client-ui-workspace",
+        "@stackstackstack/dsh-client-locale"
       ],
       "platform": "web"
     }
@@ -48,23 +48,23 @@
     "clsx": "^2.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-client-locale": "workspace:^",
+    "@stackstackstack/dsh-client-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-ui-primitives": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-client-ui-workspace": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-client-locale": "workspace:^",
+    "@stackstackstack/dsh-client-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-test-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-ui-primitives": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-client-ui-workspace": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",

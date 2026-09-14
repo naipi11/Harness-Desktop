@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-tool-todo",
+  "name": "@stackstackstack/dsh-tool-todo",
   "description": "Model-facing todo_write tool over the DeepSeek Harness event-sourced session log",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -41,27 +41,27 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-session-projection": "workspace:^",
+    "@stackstackstack/dsh-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-agent-loop": "workspace:^",
+    "@stackstackstack/dsh-agent-loop-testkit": "workspace:^",
+    "@stackstackstack/dsh-host-apiproxy": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-session-projection": "workspace:^",
+    "@stackstackstack/dsh-system-prompt": "workspace:^",
+    "@stackstackstack/dsh-tools": "workspace:^",
+    "@stackstackstack/dsh-user-questions": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

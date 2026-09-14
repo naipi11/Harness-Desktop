@@ -1,4 +1,4 @@
-import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, createMessage } from '@stackstackstack/dsh-llm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { existsSync } from 'node:fs'
@@ -6,9 +6,9 @@ import { chmod, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@deepseek-ai/dsh-session'
-import SqliteSessionPersistence, { SCHEMA_VERSION } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import SessionStore, { SessionId } from '@stackstackstack/dsh-session'
+import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@stackstackstack/dsh-session'
+import SqliteSessionPersistence, { SCHEMA_VERSION } from '@stackstackstack/dsh-session-persistence-sqlite'
 import {
   openDatabase,
   rowToEvent,

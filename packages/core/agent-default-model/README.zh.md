@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-agent-default-model
+# @stackstackstack/dsh-agent-default-model
 
 [English](README.md) | 中文
 

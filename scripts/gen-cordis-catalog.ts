@@ -25,8 +25,8 @@ import {
   renderPageRegion,
   REGION_BEGIN,
   REGION_END,
-} from '@deepseek-ai/dsh-typert-generator'
-import type { CordisCatalogPolicy } from '@deepseek-ai/dsh-typert-generator'
+} from '@stackstackstack/dsh-typert-generator'
+import type { CordisCatalogPolicy } from '@stackstackstack/dsh-typert-generator'
 import { renderCordisCoreApiPages } from './cordis-core-api.ts'
 import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.ts'
 import {
@@ -168,7 +168,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'agent-preset': 'core.md',
   'approval': 'approval.md',
   'commands': 'commands.md',
-  'cordis': 'extensions.md',
+  '@deepseek-ai': 'extensions.md',
   'credentials': 'credentials.md',
   'domain': 'storage.md',
   'fs': 'filesystem.md',

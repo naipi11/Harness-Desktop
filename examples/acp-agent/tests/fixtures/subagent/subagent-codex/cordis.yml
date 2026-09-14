@@ -4,16 +4,16 @@
   name: './fixture.ts'
 
 - id: subagent
-  name: '@deepseek-ai/dsh-subagent'
+  name: '@stackstackstack/dsh-subagent'
 
 - id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
+  name: '@stackstackstack/dsh-subprocess-local'
 
 - id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
+  name: '@stackstackstack/dsh-subagent-codex'
 
 - id: tool-subagent-codex
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: '@stackstackstack/dsh-tool-subagent'
   config:
     provider: codex
     toolName: subagent_codex
@@ -21,7 +21,7 @@
     maxDepth: 'provider-managed'
 
 - id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: '@stackstackstack/dsh-agent-spine-demo'
   config:
     agents:
       - id: main
@@ -32,9 +32,9 @@
     workspaceContext: false
 
 - id: persistence
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: '@stackstackstack/dsh-session-persistence-jsonl'
   config:
     root: './.sessions'
 
 - id: checkpoint-policy
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+  name: '@stackstackstack/dsh-session-checkpoint-policy'

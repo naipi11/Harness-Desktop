@@ -11,8 +11,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   ApprovalRequestId, CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId,
   DynamicCordisClientSource, DynamicCordisHostHalfResult, DynamicCordisResolveAck,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+} from '@stackstackstack/dsh-api-remotes/client'
+import type { SessionId } from '@stackstackstack/dsh-client-connection/client'
 import { CordisRunOrchestrator } from '../src/client/orchestrator.ts'
 import type { CordisUserRunRequest } from '../src/client/orchestrator.ts'
 import type { DynamicCordisLoadResult, DynamicCordisPackageRunner } from '../src/client/runtime.ts'
@@ -85,7 +85,7 @@ function boot(overrides: {
   return { orchestrator, host, load, answers }
 }
 
-/** Register one request the way the `cordis/request-run` event does. */
+/** Register one request the way the `@deepseek-ai/cordis/request-run` event does. */
 function ask(bench: Bench, requestId: ApprovalRequestId = REQ): void {
   bench.orchestrator.open({
     requestId,

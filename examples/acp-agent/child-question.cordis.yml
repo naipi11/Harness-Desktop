@@ -7,8 +7,8 @@
     patches:
       - insert:
           - id: user-questions
-            name: '@deepseek-ai/dsh-user-questions'
+            name: '@stackstackstack/dsh-user-questions'
           - id: tool-ask-user
-            name: '@deepseek-ai/dsh-tool-ask-user'
+            name: '@stackstackstack/dsh-tool-ask-user'
           - id: child-question-tripwire
             name: './tests/fixtures/child-question-tripwire.ts'

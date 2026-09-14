@@ -1,7 +1,7 @@
 /** One-shot session-lineage and event-relationship tracing helpers. */
 
-import { foldSurface, isSurfaceEvent, snapshotSessionEvent } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionId, SurfaceEvent, SurfaceEventType } from '@deepseek-ai/dsh-session'
+import { foldSurface, isSurfaceEvent, snapshotSessionEvent } from '@stackstackstack/dsh-session'
+import type { SessionEvent, SessionId, SurfaceEvent, SurfaceEventType } from '@stackstackstack/dsh-session'
 import { SessionQueryError } from './config.ts'
 import type {
   SessionEventRecord,

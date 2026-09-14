@@ -3,7 +3,7 @@
  * cancellation-grace expiry owns settlement and closes message admission.
  * Pending starts share one abort signal; published children share idempotent
  * cleanup, and quiescence waits for both while synthesizing any missing end events.
- * @module @deepseek-ai/dsh-workflow-worker-thread/host
+ * @module @stackstackstack/dsh-workflow-worker-thread/host
  */
 
 import { tmpdir } from 'node:os'
@@ -11,12 +11,12 @@ import { Worker } from 'node:worker_threads'
 import type { WorkerOptions } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { assertNever } from '@deepseek-ai/dsh-llm'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
-import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
-import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowMeta, WorkflowResult, WorkflowRun, WorkflowRunId } from '@deepseek-ai/dsh-workflow'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import { assertNever } from '@stackstackstack/dsh-llm'
+import { snapshotJsonValue } from '@stackstackstack/dsh-session'
+import type SubagentRuntime from '@stackstackstack/dsh-subagent'
+import type { SubagentRun } from '@stackstackstack/dsh-subagent'
+import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowMeta, WorkflowResult, WorkflowRun, WorkflowRunId } from '@stackstackstack/dsh-workflow'
 import { renderThrown } from './realm.ts'
 import type { ExecutionObserver } from './runtime.ts'
 import { HostToWorkerType, WorkerToHostType } from './protocol.ts'

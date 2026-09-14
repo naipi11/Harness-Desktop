@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-locale
+# @stackstackstack/dsh-client-locale
 
 [English](README.md) | 中文
 

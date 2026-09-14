@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
-import { createScope } from '@deepseek-ai/dsh-scope'
-import type { Scope } from '@deepseek-ai/dsh-scope'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
-import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
-import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { JsonValue, SessionEventMap } from '@deepseek-ai/dsh-session'
+import { createUserMessage, CallId  } from '@stackstackstack/dsh-llm'
+import { createScope } from '@stackstackstack/dsh-scope'
+import type { Scope } from '@stackstackstack/dsh-scope'
+import SystemPrompt from '@stackstackstack/dsh-system-prompt'
+import { CodeRuntime } from '@stackstackstack/dsh-code-runtime'
+import type { CodeRunRequest, CodeRunResult } from '@stackstackstack/dsh-code-runtime'
+import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@stackstackstack/dsh-tools'
+import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@stackstackstack/dsh-tools'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import { Session, SessionId } from '@stackstackstack/dsh-session'
+import type { JsonValue, SessionEventMap } from '@stackstackstack/dsh-session'
 
 const testToolSignal = new AbortController().signal
 
@@ -1668,7 +1668,7 @@ describe('per-agent presentation', () => {
   })
 
   it('inherits a STANDING preset scope\'s mode down the chain, agents beside it unaffected', async () => {
-    const { bindScopeParent } = await import('@deepseek-ai/dsh-scope')
+    const { bindScopeParent } = await import('@stackstackstack/dsh-scope')
     const { ctx, systemPrompt } = await setup({ mode: 'native' })
     const calls = registerEcho(ctx)
     // The preset's standing scope declares once; the agent only PARENTS to it

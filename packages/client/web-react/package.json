@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-client-web-react",
+  "name": "@stackstackstack/dsh-client-web-react",
   "description": "Shell-side React glue: createSlotRenderer, SessionProvider, bindSnapshotSelector (uSES bridge), useInvoke",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -27,16 +27,16 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
     "react": "^18.2.0",
     "use-sync-external-store": "1.2.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^"
   },

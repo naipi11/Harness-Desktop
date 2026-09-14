@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { TodoItem } from '@deepseek-ai/dsh-session'
-import { type Agent } from '@deepseek-ai/dsh-agent'
+import { CallId } from '@stackstackstack/dsh-llm'
+import SystemPrompt from '@stackstackstack/dsh-system-prompt'
+import ToolRuntime from '@stackstackstack/dsh-tools'
+import { Session, SessionId } from '@stackstackstack/dsh-session'
+import type { TodoItem } from '@stackstackstack/dsh-session'
+import { type Agent } from '@stackstackstack/dsh-agent'
 
 import * as tool from '../src/index.ts'
 

@@ -14,18 +14,18 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import { CallId } from '@stackstackstack/dsh-llm'
+import { SessionId } from '@stackstackstack/dsh-session'
+import SystemPrompt from '@stackstackstack/dsh-system-prompt'
+import ToolRuntime from '@stackstackstack/dsh-tools'
+import type { ToolExecution } from '@stackstackstack/dsh-tools'
 
 const testToolSignal = new AbortController().signal
-import WebRuntime from '@deepseek-ai/dsh-web'
-import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
-import LocalSpillStore from '@deepseek-ai/dsh-spill-local'
-import * as SpillPolicy from '@deepseek-ai/dsh-spill-policy'
-import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import WebRuntime from '@stackstackstack/dsh-web'
+import * as WebFetchLocal from '@stackstackstack/dsh-web-fetch-http'
+import LocalSpillStore from '@stackstackstack/dsh-spill-local'
+import * as SpillPolicy from '@stackstackstack/dsh-spill-policy'
+import * as ToolWeb from '@stackstackstack/dsh-tool-web'
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void
 

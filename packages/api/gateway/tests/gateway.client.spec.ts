@@ -2,7 +2,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@stackstackstack/dsh-client-connection/client'
 import type {
   InvocationDescriptor,
   RemoteResult,
@@ -10,8 +10,8 @@ import type {
   TypertContext,
   TypertRemoteScopeApi,
   TypertRemoteNamespace,
-} from '@deepseek-ai/dsh-typert-protocol'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+} from '@stackstackstack/dsh-typert-protocol'
+import TypertRegistry from '@stackstackstack/dsh-typert-registry'
 import type { ClientRemote } from '../src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 
@@ -35,7 +35,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-typert-protocol' {
+declare module '@stackstackstack/dsh-typert-protocol' {
   interface TypertRemoteEventSelection extends Record<'fixture/changed' | 'fixture/idle', true> {}
 
   interface TypertContextMap {

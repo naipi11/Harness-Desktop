@@ -1,5 +1,5 @@
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-tools/types'
+import type { SessionEvent } from '@stackstackstack/dsh-session/types'
+import type {} from '@stackstackstack/dsh-tools/types'
 import type {
   ConversationNode, RunningToolCall, ToolCallBlock, ToolResultNode,
 } from './conversation.ts'

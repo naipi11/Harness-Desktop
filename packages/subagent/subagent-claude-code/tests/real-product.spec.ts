@@ -18,10 +18,10 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import { Context } from '@deepseek-ai/cordis'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import SubagentRuntime from '@stackstackstack/dsh-subagent'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@stackstackstack/dsh-subprocess'
+import LocalSubprocessRuntime from '@stackstackstack/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
 import {
   startMessagesFixture,

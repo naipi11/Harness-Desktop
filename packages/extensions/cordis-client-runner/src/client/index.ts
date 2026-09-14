@@ -14,9 +14,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ApprovalRequestId, CordisDynamicPluginId, DynamicCordisInvokeResult, JsonValue,
   DynamicCordisInventoryRow,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientModuleSystem } from '@deepseek-ai/dsh-client-modules/client'
-import type { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+} from '@stackstackstack/dsh-api-remotes/client'
+import type { ClientModuleSystem } from '@stackstackstack/dsh-client-modules/client'
+import type { SlotRegistry } from '@stackstackstack/dsh-client-runtime/client'
 // The Client Remote assembly is the one place the two planes meet: it mounts the
 // `dynamicCordisRunner` namespace and re-exports its payload vocabulary, so this
 // package names what it sends without importing a Host package.
@@ -54,7 +54,7 @@ export { ClientTimerService } from './timer.ts'
 export type {
   ApprovalRequestId, CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId,
   DynamicCordisPackage,
-} from '@deepseek-ai/dsh-api-remotes/client'
+} from '@stackstackstack/dsh-api-remotes/client'
 
 
 /**
@@ -292,17 +292,17 @@ export function apply(ctx: Context): void {
 
   // Forwarded Host events: `$on` hands the listener the Host's own argument list,
   // so these read the request itself rather than a transport envelope.
-  ctx.remote.$on('cordis/request-run', (request) => {
+  ctx.remote.$on('@deepseek-ai/cordis/request-run', (request) => {
     orchestrator.open(request)
   })
-  ctx.remote.$on('cordis/request-run-resolved', (resolved) => { orchestrator.close(resolved.requestId) })
-  ctx.remote.$on('cordis/dynamic-retract', (retracted) => {
+  ctx.remote.$on('@deepseek-ai/cordis/request-run-resolved', (resolved) => { orchestrator.close(resolved.requestId) })
+  ctx.remote.$on('@deepseek-ai/cordis/dynamic-retract', (retracted) => {
     runner.retract(retracted.pluginId, retracted.pluginRunId)
   })
-  ctx.remote.$on('cordis/inspect-query', (request) => {
+  ctx.remote.$on('@deepseek-ai/cordis/inspect-query', (request) => {
     void inspect.query(request).catch((error: unknown) => {
       console.error(`[cordis-client-runner] inspect query ${request.provider}.${request.method} failed:`, error)
     })
   })
-  ctx.remote.$on('cordis/inspect-query-resolved', (resolved) => { inspect.close(resolved.requestId) })
+  ctx.remote.$on('@deepseek-ai/cordis/inspect-query-resolved', (resolved) => { inspect.close(resolved.requestId) })
 }

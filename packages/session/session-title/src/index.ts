@@ -1,20 +1,20 @@
 /**
  * Log-backed session title service, deterministic fallback, and provider contract.
- * @module @deepseek-ai/dsh-session-title
+ * @module @stackstackstack/dsh-session-title
  */
 
 import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
-import type { Branded } from '@deepseek-ai/dsh-brand'
-import { assertNever, deepFreeze, isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type { Branded } from '@stackstackstack/dsh-brand'
+import { assertNever, deepFreeze, isAgentLoopRequest } from '@stackstackstack/dsh-llm'
+import type { GenerateOptions } from '@stackstackstack/dsh-llm'
 import type {
   Session,
   SessionEvent,
-} from '@deepseek-ai/dsh-session'
+} from '@stackstackstack/dsh-session'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@stackstackstack/dsh-session-projection'
 // The `title` projection-key declaration lives in src/types.ts (its one home);
 // this re-export projects the type face onto the package root AND keeps the
 // module edge in the emitted index.d.ts, so aggregate programs consuming the
@@ -91,7 +91,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module '@stackstackstack/dsh-session/types' {
   interface SessionEventMap {
     /**
      * Latest-wins session title snapshot. Log-only: it never enters the model

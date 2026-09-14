@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-fs-e2b",
+  "name": "@stackstackstack/dsh-fs-e2b",
   "description": "E2B filesystem implementation for DeepSeek Harness",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,15 +32,15 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-e2b": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-e2b": "workspace:^",
+    "@stackstackstack/dsh-fs": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-e2b": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-e2b": "workspace:^",
+    "@stackstackstack/dsh-fs": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

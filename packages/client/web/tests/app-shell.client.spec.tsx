@@ -9,10 +9,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { TestSessions, TestWorkspaces } from '@deepseek-ai/dsh-client-test-runtime'
-import type { Stabilizer } from '@deepseek-ai/dsh-client-test-runtime'
-import * as AppShell from '@deepseek-ai/dsh-client-web/src/app-shell.ts'
+import { SlotRegistry } from '@stackstackstack/dsh-client-runtime/client'
+import { TestSessions, TestWorkspaces } from '@stackstackstack/dsh-client-test-runtime'
+import type { Stabilizer } from '@stackstackstack/dsh-client-test-runtime'
+import * as AppShell from '@stackstackstack/dsh-client-web/src/app-shell.ts'
 
 afterEach(cleanup)
 

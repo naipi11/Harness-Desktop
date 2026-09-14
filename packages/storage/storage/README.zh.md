@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-storage
+# @stackstackstack/dsh-storage
 
 [English](README.md) | 中文
 

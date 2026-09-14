@@ -10,15 +10,15 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import InvariantService from '@deepseek-ai/dsh-invariants'
+import InvariantService from '@stackstackstack/dsh-invariants'
 import type {
   ApprovalRequestId, CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import type { DynamicCordisInvokeResult } from '@deepseek-ai/dsh-api-remotes/client'
+} from '@stackstackstack/dsh-api-remotes/client'
+import type { SessionId } from '@stackstackstack/dsh-client-connection/client'
+import type { DynamicCordisInvokeResult } from '@stackstackstack/dsh-api-remotes/client'
 // Type-only: resolves `ctx.remote` and with it the `$on`/`$dispatch` surface.
-import type {} from '@deepseek-ai/dsh-api-gateway/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@stackstackstack/dsh-api-gateway/client'
+import { SlotRegistry } from '@stackstackstack/dsh-client-runtime/client'
 import * as NodeHalf from '../src/index.ts'
 import * as Invariant from '../src/invariant.ts'
 import * as ClientHalf from '../src/client/index.ts'
@@ -213,7 +213,7 @@ describe('browser half', () => {
     const bench = await boot()
     await bench.ctx.dynamicCordisRunner.startUserRun(USER_RUN)
     expect(bench.ctx.dynamicCordisRunner.isLoaded(PLUGIN)).toBe(true)
-    forward(bench.ctx, 'cordis/dynamic-retract', {
+    forward(bench.ctx, '@deepseek-ai/cordis/dynamic-retract', {
       pluginId: PLUGIN, packageId: PACKAGE, pluginRunId: RUN,
     })
     await bench.settle()
@@ -350,7 +350,7 @@ describe('browser half', () => {
   it('answers a run request after the surface approves it', async () => {
     const bench = await boot()
     const request = 'rr-1' as ApprovalRequestId
-    forward(bench.ctx, 'cordis/request-run', {
+    forward(bench.ctx, '@deepseek-ai/cordis/request-run', {
       requestId: request,
       agentId: AGENT,
       pluginId: PLUGIN,
@@ -383,7 +383,7 @@ describe('browser half', () => {
   it('drops the affordance when another page answers the request', async () => {
     const bench = await boot()
     const request = 'rr-2' as ApprovalRequestId
-    forward(bench.ctx, 'cordis/request-run', {
+    forward(bench.ctx, '@deepseek-ai/cordis/request-run', {
       requestId: request,
       agentId: AGENT,
       pluginId: PLUGIN,
@@ -394,7 +394,7 @@ describe('browser half', () => {
       requiresApproval: true,
     })
     await bench.settle()
-    forward(bench.ctx, 'cordis/request-run-resolved', {
+    forward(bench.ctx, '@deepseek-ai/cordis/request-run-resolved', {
       requestId: request, outcome: 'approved',
     })
     await bench.settle()
@@ -407,7 +407,7 @@ describe('browser half', () => {
   it('exposes the refusal and the load observer on the face', async () => {
     const bench = await boot()
     const request = 'rr-3' as ApprovalRequestId
-    forward(bench.ctx, 'cordis/request-run', {
+    forward(bench.ctx, '@deepseek-ai/cordis/request-run', {
       requestId: request,
       agentId: AGENT,
       pluginId: PLUGIN,

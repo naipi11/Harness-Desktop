@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-shell",
+  "name": "@stackstackstack/dsh-shell",
   "description": "Abstract bash executor seam (ctx.shell) for the DeepSeek Harness",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,17 +32,17 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-subprocess": "workspace:^",
+    "@stackstackstack/dsh-sandbox": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "@stackstackstack/dsh-settings": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-subprocess": "workspace:^",
+    "@stackstackstack/dsh-sandbox": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "@stackstackstack/dsh-settings": "workspace:^"
   }
 }

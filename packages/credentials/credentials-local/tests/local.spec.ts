@@ -3,9 +3,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from '@stackstackstack/dsh-credentials'
+import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@stackstackstack/dsh-launch-environment'
+import type { CredentialRef } from '@stackstackstack/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */

@@ -1,10 +1,10 @@
 /**
  * Durable and model-facing Schedule value types.
- * @module @deepseek-ai/dsh-schedule
+ * @module @stackstackstack/dsh-schedule
  */
 
-import type { Branded } from '@deepseek-ai/dsh-brand'
-import type {} from '@deepseek-ai/dsh-session/types'
+import type { Branded } from '@stackstackstack/dsh-brand'
+import type {} from '@stackstackstack/dsh-session/types'
 
 /** Stable reminder identity that is unique and never reused within one session. */
 export type ScheduleId = Branded<'ScheduleId'>
@@ -210,7 +210,7 @@ export type ScheduleDeleteResult =
 /** Canonical `schedule_delete` value. */
 export type ScheduleDeleteValue = ScheduleDeleteResult | ScheduleToolError
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module '@stackstackstack/dsh-session/types' {
   interface SessionEventMap {
     /**
      * Versioned Schedule mutation. The owning package validates the complete

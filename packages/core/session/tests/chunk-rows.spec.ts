@@ -6,10 +6,10 @@
 
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { decodeStorageRecord, packChunkRuns } from '@deepseek-ai/dsh-session'
-import type { ChunkRow, SessionEvent, StorageRecord } from '@deepseek-ai/dsh-session'
+import { CallId } from '@stackstackstack/dsh-llm'
+import type { StreamChunk } from '@stackstackstack/dsh-llm'
+import { decodeStorageRecord, packChunkRuns } from '@stackstackstack/dsh-session'
+import type { ChunkRow, SessionEvent, StorageRecord } from '@stackstackstack/dsh-session'
 
 /** Build an `assistant/chunk` event with the exact live-append shape. */
 function chunkEvent(seq: number, time: number, chunk: StreamChunk, turn = 1, step = 1): SessionEvent {

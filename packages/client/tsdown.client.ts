@@ -59,7 +59,7 @@ const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
  * dependent bundle materializes. TODO(webload/store-rehome): remove with the
  * store-engine relocation follow-up.
  */
-const RUNTIME_STORE_EXEMPTION = '@deepseek-ai/dsh-client-runtime/client'
+const RUNTIME_STORE_EXEMPTION = '@stackstackstack/dsh-client-runtime/client'
 
 /** Externals resolved from the loader module table: the platform seed entries plus the documented runtime exemption. */
 export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME_STORE_EXEMPTION]

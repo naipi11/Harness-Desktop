@@ -129,10 +129,10 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       }
       const client = new Context()
       for (const id of [
-        '@deepseek-ai/dsh-typert-registry',
-        '@deepseek-ai/dsh-client-connection',
-        '@deepseek-ai/dsh-api-gateway',
-        '@deepseek-ai/dsh-api-remotes',
+        '@stackstackstack/dsh-typert-registry',
+        '@stackstackstack/dsh-client-connection',
+        '@stackstackstack/dsh-api-gateway',
+        '@stackstackstack/dsh-api-remotes',
       ]) {
         const plugin = instantiate(id)
         await client.plugin({ inject: plugin.inject, apply: plugin.apply })

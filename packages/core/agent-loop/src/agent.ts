@@ -14,9 +14,9 @@ import type {
   InboxTarget,
   PreStepDecision,
   RequestErrorAction,
-} from '@deepseek-ai/dsh-agent'
-import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+} from '@stackstackstack/dsh-agent'
+import { Inbox, agentEvents, assembleContextFor } from '@stackstackstack/dsh-agent'
+import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@stackstackstack/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -24,13 +24,13 @@ import {
   deepFreeze,
   errorChain,
   markAgentLoopRequest,
-} from '@deepseek-ai/dsh-llm'
-import type { Scope } from '@deepseek-ai/dsh-scope'
-import { createScope } from '@deepseek-ai/dsh-scope'
-import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
-import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
-import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+} from '@stackstackstack/dsh-llm'
+import type { Scope } from '@stackstackstack/dsh-scope'
+import { createScope } from '@stackstackstack/dsh-scope'
+import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@stackstackstack/dsh-session'
+import { canonicalHeader, headerEquals } from '@stackstackstack/dsh-session'
+import { joinContextSections, renderContextSections, renderPrompt } from '@stackstackstack/dsh-system-prompt'
+import type { PromptAssembly } from '@stackstackstack/dsh-system-prompt'
 import type { Context } from '@deepseek-ai/cordis'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'

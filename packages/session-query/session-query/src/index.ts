@@ -1,13 +1,13 @@
 /**
  * Service Definition for combined session-history reads, traces, filters, and full-text search.
  *
- * @module @deepseek-ai/dsh-session-query
+ * @module @stackstackstack/dsh-session-query
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { Session, snapshotSessionEvent, type SessionId } from '@deepseek-ai/dsh-session'
-import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
-import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title'
+import { Session, snapshotSessionEvent, type SessionId } from '@stackstackstack/dsh-session'
+import { foldSessionTitle } from '@stackstackstack/dsh-session-title'
+import type { SessionTitleSnapshot } from '@stackstackstack/dsh-session-title'
 import type {
   SessionEventResultFilter,
   SessionEventSearchPage,

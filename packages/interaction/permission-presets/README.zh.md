@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-permission-presets
+# @stackstackstack/dsh-permission-presets
 
 [English](README.md) | 中文
 

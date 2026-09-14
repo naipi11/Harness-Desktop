@@ -94,8 +94,8 @@
     },
     "packages/host/directory-picker-auto": {
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-ui-directory-picker-browse",
-        "@deepseek-ai/dsh-client-ui-directory-picker-native"
+        "@stackstackstack/dsh-client-ui-directory-picker-browse",
+        "@stackstackstack/dsh-client-ui-directory-picker-native"
       ]
     },
     "packages/extensions/cordis-host-runner": {
@@ -147,7 +147,7 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-gateway"
+        "@stackstackstack/dsh-api-gateway"
       ]
     },
     "packages/client/ui-primitives": {
@@ -692,7 +692,7 @@
         "tests/**/*.tsx"
       ],
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-ui-theme"
+        "@stackstackstack/dsh-client-ui-theme"
       ]
     },
     "packages/client/ui-settings": {
@@ -717,9 +717,9 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-web-react",
+        "@stackstackstack/dsh-client-ui-primitives",
+        "@stackstackstack/dsh-client-ui-slots",
+        "@stackstackstack/dsh-client-web-react",
         "@types/react",
         "@types/react-dom",
         "react",
@@ -775,7 +775,7 @@
     },
     "packages/bundle/headless": {
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-code-runtime-worker-thread"
+        "@stackstackstack/dsh-code-runtime-worker-thread"
       ]
     },
     "packages/bundle/web-app": {

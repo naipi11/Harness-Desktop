@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-client-runtime",
+  "name": "@stackstackstack/dsh-client-runtime",
   "description": "Client core services: SlotRegistry, SessionRuntime (scope tree + object layer)",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,9 +32,9 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-typert-registry",
-        "@deepseek-ai/dsh-api-remotes"
+        "@stackstackstack/dsh-client-connection",
+        "@stackstackstack/dsh-typert-registry",
+        "@stackstackstack/dsh-api-remotes"
       ],
       "platform": "web",
       "immediately": true
@@ -42,36 +42,36 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-llm-retry": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-session-title": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-attachment": "workspace:^",
+    "@stackstackstack/dsh-client-connection": "workspace:^",
+    "@stackstackstack/dsh-commands": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-host-apiproxy": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-llm-retry": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-session-projection": "workspace:^",
+    "@stackstackstack/dsh-session-title": "workspace:^",
+    "@stackstackstack/dsh-tools": "workspace:^",
     "immer": "^10.1.1",
     "react": "^18.2.0",
     "zustand": "~4.4.7"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^"
+    "@stackstackstack/dsh-api-remotes": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-typert-protocol": "workspace:^",
+    "@stackstackstack/dsh-typert-registry": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@stackstackstack/dsh-api-remotes": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-timeout": "workspace:^",
+    "@stackstackstack/dsh-typert-protocol": "workspace:^",
+    "@stackstackstack/dsh-typert-registry": "workspace:^",
     "@types/react": "~18.3.1"
   },
   "files": [

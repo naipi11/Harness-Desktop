@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-spill-policy`.
- * @module @deepseek-ai/dsh-spill-policy/invariant
+ * Package-owned invariant companion for `@stackstackstack/dsh-spill-policy`.
+ * @module @stackstackstack/dsh-spill-policy/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from '@stackstackstack/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-spill-policy'
+const PACKAGE_NAME = '@stackstackstack/dsh-spill-policy'
 
 /** Cordis companion plugin name. */
 export const name = 'spill-policy-invariant'

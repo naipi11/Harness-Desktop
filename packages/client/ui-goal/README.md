@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-goal
+# @stackstackstack/dsh-client-ui-goal
 
 English | [中文](README.zh.md)
 

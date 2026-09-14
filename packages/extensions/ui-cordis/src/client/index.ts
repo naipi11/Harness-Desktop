@@ -1,11 +1,11 @@
 /** Cordis dynamic-plugin cards, inventory panel, business-view host, and `@pluginId` source. */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { InputTriggerService, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ClientContext, SessionId } from '@stackstackstack/dsh-client-runtime/client'
+import type {} from '@stackstackstack/dsh-client-ui-tool/client'
+import type {} from '@stackstackstack/dsh-client-locale/client'
+import type {} from '@stackstackstack/dsh-client-ui-sidebar/client'
+import type {} from '@stackstackstack/dsh-api-remotes/client'
+import type { InputTriggerService, InputTriggerSource } from '@stackstackstack/dsh-client-ui-input-trigger/client'
 import type {} from './events.ts'
 import { CordisActionRow } from './CordisActionRow.tsx'
 import { CordisDefineRow } from './CordisDefineRow.tsx'
@@ -70,12 +70,12 @@ export function apply(ctx: ClientContext): void {
     if (snapshot.read) runner.reconcileApprovals(snapshot.rows)
   }), 'ui-cordis: reconcile pending approvals')
 
-  ctx.remote.$on('cordis/dynamic-package', () => { inventory.refresh() })
-  ctx.remote.$on('cordis/dynamic-retract', () => { inventory.refresh() })
-  ctx.remote.$on('cordis/request-run', (request) => {
+  ctx.remote.$on('@deepseek-ai/cordis/dynamic-package', () => { inventory.refresh() })
+  ctx.remote.$on('@deepseek-ai/cordis/dynamic-retract', () => { inventory.refresh() })
+  ctx.remote.$on('@deepseek-ai/cordis/request-run', (request) => {
     if (!inventory.getSnapshot().rows.some(row => row.pluginId === request.pluginId)) inventory.refresh()
   })
-  ctx.remote.$on('cordis/request-run-resolved', () => { inventory.refresh() })
+  ctx.remote.$on('@deepseek-ai/cordis/request-run-resolved', () => { inventory.refresh() })
   ctx.on('connection/reset', () => {
     inventory.reset()
     inventory.refresh()

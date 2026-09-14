@@ -1,16 +1,16 @@
 /**
  * Dynamic Cordis Plugin service: immutable package definitions, one active run
  * per Plugin, human-approved Client activation, and Host/Client invocation.
- * @module @deepseek-ai/dsh-cordis-host-runner
+ * @module @stackstackstack/dsh-cordis-host-runner
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from '@deepseek-ai/dsh-session/types'
-import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import type { Agent } from '@stackstackstack/dsh-agent'
+import { createUserMessage } from '@stackstackstack/dsh-llm'
+import type { JsonValue } from '@stackstackstack/dsh-session/types'
+import { TypertRemoteService, Remote } from '@stackstackstack/dsh-typert-protocol'
 import { isPlugin, normalizeHandler } from './guard.ts'
 import { CordisInspectRegistryService } from './inspect-registry.ts'
 import { missingServices, startHostHalf } from './lifecycle.ts'
@@ -288,7 +288,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       mode,
       requiresApproval,
     })
-    this.ctx.emit('cordis/request-run', {
+    this.ctx.emit('@deepseek-ai/cordis/request-run', {
       requestId,
       agentId: agent.id,
       pluginId,
@@ -854,7 +854,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       if (failure !== undefined) return { ok: false, ...failure }
     }
     plugin.run = run
-    this.ctx.emit('cordis/dynamic-package', {
+    this.ctx.emit('@deepseek-ai/cordis/dynamic-package', {
       pluginId: plugin.pluginId,
       packageId: definition.packageId,
       pluginRunId: run.pluginRunId,
@@ -1013,7 +1013,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     override?: RequestRunOutcome,
   ): void {
     const outcome = override ?? (resolution.ok ? 'approved' : resolution.reason === 'rejected' ? 'rejected' : 'failed')
-    this.ctx.emit('cordis/request-run-resolved', { requestId, outcome })
+    this.ctx.emit('@deepseek-ai/cordis/request-run-resolved', { requestId, outcome })
   }
 
   private steerRunOutcome(
@@ -1222,7 +1222,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     delete plugin.run
     for (const dispose of run.handlerDisposers.splice(0)) dispose()
     if (run.fiber !== undefined) await run.fiber.dispose()
-    this.ctx.emit('cordis/dynamic-retract', {
+    this.ctx.emit('@deepseek-ai/cordis/dynamic-retract', {
       pluginId: plugin.pluginId,
       packageId: run.packageId,
       pluginRunId: run.pluginRunId,

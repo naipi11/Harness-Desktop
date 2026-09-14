@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-api-remotes",
+  "name": "@stackstackstack/dsh-api-remotes",
   "description": "Remote BFF assembly and Host Agent/Session lookup policy",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -36,7 +36,7 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-api-gateway"
+        "@stackstackstack/dsh-api-gateway"
       ],
       "platform": "web",
       "immediately": true
@@ -55,42 +55,42 @@
     "lib/types/**/*.d.ts"
   ],
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@stackstackstack/dsh-typert-protocol": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-message-feedback": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^"
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-api-gateway": "workspace:^",
+    "@stackstackstack/dsh-commands": "workspace:^",
+    "@stackstackstack/dsh-credentials": "workspace:^",
+    "@stackstackstack/dsh-goal": "workspace:^",
+    "@stackstackstack/dsh-cordis-host-runner": "workspace:^",
+    "@stackstackstack/dsh-host-plugin-inventory": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-agent-presets": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-message-feedback": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-session-persistence": "workspace:^",
+    "@stackstackstack/dsh-settings": "workspace:^",
+    "@stackstackstack/dsh-typert-registry": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-api-gateway": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-message-feedback": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@stackstackstack/dsh-agent": "workspace:^",
+    "@stackstackstack/dsh-api-gateway": "workspace:^",
+    "@stackstackstack/dsh-commands": "workspace:^",
+    "@stackstackstack/dsh-credentials": "workspace:^",
+    "@stackstackstack/dsh-goal": "workspace:^",
+    "@stackstackstack/dsh-cordis-host-runner": "workspace:^",
+    "@stackstackstack/dsh-host-plugin-inventory": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-agent-presets": "workspace:^",
+    "@stackstackstack/dsh-llm": "workspace:^",
+    "@stackstackstack/dsh-message-feedback": "workspace:^",
+    "@stackstackstack/dsh-session": "workspace:^",
+    "@stackstackstack/dsh-session-persistence": "workspace:^",
+    "@stackstackstack/dsh-settings": "workspace:^",
+    "@stackstackstack/dsh-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

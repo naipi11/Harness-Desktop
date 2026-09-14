@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-model-selection",
+  "name": "@stackstackstack/dsh-client-ui-model-selection",
   "description": "Model selection: the /model popupSelect over session.models / session.selectModel",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,10 +32,10 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-commands",
-        "@deepseek-ai/dsh-api-remotes"
+        "@stackstackstack/dsh-client-locale",
+        "@stackstackstack/dsh-client-runtime",
+        "@stackstackstack/dsh-client-ui-commands",
+        "@stackstackstack/dsh-api-remotes"
       ],
       "platform": "web"
     }
@@ -46,32 +46,32 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-api-remotes": "workspace:^",
+    "@stackstackstack/dsh-client-connection": "workspace:^",
+    "@stackstackstack/dsh-client-locale": "workspace:^",
+    "@stackstackstack/dsh-client-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-ui-commands": "workspace:^",
+    "@stackstackstack/dsh-client-ui-conversation": "workspace:^",
+    "@stackstackstack/dsh-client-ui-primitives": "workspace:^",
+    "@stackstackstack/dsh-client-ui-input-trigger": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "clsx": "^2.1.1",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-api-remotes": "workspace:^",
+    "@stackstackstack/dsh-client-connection": "workspace:^",
+    "@stackstackstack/dsh-client-locale": "workspace:^",
+    "@stackstackstack/dsh-client-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-test-runtime": "workspace:^",
+    "@stackstackstack/dsh-client-ui-commands": "workspace:^",
+    "@stackstackstack/dsh-client-ui-conversation": "workspace:^",
+    "@stackstackstack/dsh-client-ui-primitives": "workspace:^",
+    "@stackstackstack/dsh-client-ui-input-trigger": "workspace:^",
+    "@stackstackstack/dsh-client-ui-slots": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "clsx": "^2.1.1",
     "@deepseek-ai/cordis": "workspace:^",

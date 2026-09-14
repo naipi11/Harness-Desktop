@@ -18,10 +18,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type {
   CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId, DynamicCordisPackage,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientModuleSystem } from '@deepseek-ai/dsh-client-modules/client'
-import type { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+} from '@stackstackstack/dsh-api-remotes/client'
+import type { SessionId } from '@stackstackstack/dsh-client-connection/client'
+import type { ClientModuleSystem } from '@stackstackstack/dsh-client-modules/client'
+import type { SlotRegistry } from '@stackstackstack/dsh-client-runtime/client'
 import { DynamicCordisStyles, evaluateClientHalf, DYNAMIC_CLIENT_REDIRECTS } from './evaluator.ts'
 import type { DynamicCordisEvaluatedPlugin } from './evaluator.ts'
 import { dynamicCordisContext } from './guard.ts'
@@ -301,7 +301,7 @@ export class DynamicCordisPackageRunner {
   }
 
   /**
-   * Unload one package (`cordis/dynamic-retract`: a stop, or an undefine
+   * Unload one package (`@deepseek-ai/cordis/dynamic-retract`: a stop, or an undefine
    * that stops first).
    * @param pluginId - stable Plugin identity.
    * @param pluginRunId - exact activation being retracted; a newer run survives.

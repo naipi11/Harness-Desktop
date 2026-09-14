@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BlockAssembler, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, EMPTY_RESPONSE_CODE, LlmError } from '@stackstackstack/dsh-llm'
+import type { StreamChunk } from '@stackstackstack/dsh-llm'
 import { DONE } from '../src/sse.ts'
 import { mapFinishReason, mapUsage, translate } from '../src/translate.ts'
 

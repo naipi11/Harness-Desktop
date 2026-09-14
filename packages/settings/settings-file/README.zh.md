@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-settings-file
+# @stackstackstack/dsh-settings-file
 
 [English](README.md) | 中文
 

@@ -1,10 +1,12 @@
-/** Package-owned invariant companion for `@deepseek-ai/dsh-attachment-local`. @module @deepseek-ai/dsh-attachment-local/invariant */
+/** Package-owned invariant companion for `@stackstackstack/dsh-attachment-local`.
+ * @module @stackstackstack/dsh-attachment-local/invariant
+ */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from '@stackstackstack/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-attachment-local'
+const PACKAGE_NAME = '@stackstackstack/dsh-attachment-local'
 /** Cordis companion plugin name. */
 export const name = 'attachment-local-invariant'
 /** Services required before package ownership can be reserved. */

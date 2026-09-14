@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /** Inspect the public Codex provider composition without invoking the product. */
 
-import { boot, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
-import type {} from '@deepseek-ai/dsh-subagent'
-import type {} from '@deepseek-ai/dsh-tools'
+import { boot, resolveConfigPath } from '@stackstackstack/dsh-app-boot'
+import type {} from '@stackstackstack/dsh-subagent'
+import type {} from '@stackstackstack/dsh-tools'
 
 const configPath = process.argv[2]
 if (configPath === undefined) {

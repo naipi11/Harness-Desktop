@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-skill-filesystem",
+  "name": "@stackstackstack/dsh-skill-filesystem",
   "description": "Local filesystem skill provider for the DeepSeek Harness",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
@@ -32,10 +32,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
+    "@stackstackstack/dsh-fs": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-home-paths": "workspace:^",
+    "@stackstackstack/dsh-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -44,10 +44,10 @@
     "yaml": "^2.4.2"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
+    "@stackstackstack/dsh-fs": "workspace:^",
+    "@stackstackstack/dsh-invariants": "workspace:^",
+    "@stackstackstack/dsh-home-paths": "workspace:^",
+    "@stackstackstack/dsh-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

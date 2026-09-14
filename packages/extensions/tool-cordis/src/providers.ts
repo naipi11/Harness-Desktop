@@ -1,9 +1,9 @@
 /** First-party Host inspect providers registered by the Cordis tool package. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { HOST_BUILTIN_INSPECTION } from '@deepseek-ai/dsh-cordis-host-runner'
-import type { HostCordisInspectProviderRegistration } from '@deepseek-ai/dsh-cordis-host-runner'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import { HOST_BUILTIN_INSPECTION } from '@stackstackstack/dsh-cordis-host-runner'
+import type { HostCordisInspectProviderRegistration } from '@stackstackstack/dsh-cordis-host-runner'
+import type { JsonValue } from '@stackstackstack/dsh-session'
 import { EVENT_API, queryEventApi, queryServiceApi } from './api-catalog.ts'
 
 const EMPTY_INPUT = { type: 'object', properties: {}, additionalProperties: false } as const
@@ -16,7 +16,7 @@ const SERVICE_OUTPUT = {
 const EVENT_OUTPUT = {
   description: 'Compact Event directory, or one exact Event contract with only its referenced type declarations.',
 } as const
-const HOST_EVENTS = EVENT_API.filter(event => !event.name.startsWith('cordis/'))
+const HOST_EVENTS = EVENT_API.filter(event => !event.name.startsWith('@deepseek-ai/cordis/'))
 
 /**
  * Construct Host providers over generated Catalogs, evaluator declarations, and live Tool scope.

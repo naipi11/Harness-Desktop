@@ -1,7 +1,7 @@
 /** Canonical tool-definition fixtures for repository tests. @module dsh-tools/testing */
 
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { ContentBlock } from '@stackstackstack/dsh-llm'
+import type { JsonValue } from '@stackstackstack/dsh-session'
 import { defineTool } from './schema.ts'
 import type { DefineToolOptions, ParameterSchemaSpec } from './schema.ts'
 import type { ToolDefinition, ToolRunContext } from './index.ts'

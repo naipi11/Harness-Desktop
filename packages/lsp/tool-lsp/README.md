@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-lsp
+# @stackstackstack/dsh-tool-lsp
 
 English | [中文](README.zh.md)
 

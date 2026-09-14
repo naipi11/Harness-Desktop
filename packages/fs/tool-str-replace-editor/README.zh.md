@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-str-replace-editor
+# @stackstackstack/dsh-tool-str-replace-editor
 
 [English](README.md) | 中文
 
