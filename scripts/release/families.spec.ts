@@ -1,5 +1,8 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
@@ -15,7 +18,39 @@ function member(directory: string, name: string, manifest: Record<string, unknow
   return { directory, name, version: '0.0.1', manifest }
 }
 
+function writeManifest(root: string, directory: string, name: string): void {
+  const path = join(root, directory, 'package.json')
+  mkdirSync(join(root, directory), { recursive: true })
+  writeFileSync(path, JSON.stringify({ name, version: '0.0.1' }))
+}
+
 describe('release families', () => {
+  it('validates package scopes per family while preserving root exclusion', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-family-'))
+    try {
+      writeManifest(root, 'packages/core/first-party', '@stackstackstack/dsh-core')
+      expect(releaseFamily('dsh').members(root).map(entry => entry.name)).toEqual(['@stackstackstack/dsh-core'])
+
+      rmSync(join(root, 'packages'), { recursive: true, force: true })
+      writeManifest(root, 'vendor/cordis', '@deepseek-ai/cordis')
+      expect(releaseFamily('vendor').members(root).map(entry => entry.name)).toEqual(['@deepseek-ai/cordis'])
+
+      rmSync(join(root, 'vendor'), { recursive: true, force: true })
+      writeManifest(root, 'vendor/cordis', '@stackstackstack/dsh-core')
+      expect(() => { releaseFamily('vendor').members(root) }).toThrow(/must name a @deepseek-ai/)
+
+      rmSync(join(root, 'vendor'), { recursive: true, force: true })
+      writeManifest(root, 'vendor/cordis', '@deepseek-ai/cordis')
+      expect(() => { releaseFamily('dsh').members(root) }).toThrow(/matched no manifests/)
+
+      rmSync(join(root, 'vendor'), { recursive: true, force: true })
+      writeManifest(root, 'vendor/cordis', '@stackstackstack/dsh-root')
+      expect(() => { releaseFamily('vendor').members(root) }).toThrow(/selected the workspace root/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('names one tag for the whole dsh family and one per vendored package', () => {
     const dsh = releaseFamily('dsh')
     const vendor = releaseFamily('vendor')
