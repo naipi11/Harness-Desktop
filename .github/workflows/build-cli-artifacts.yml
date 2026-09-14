@@ -1,0 +1,82 @@
+name: Build CLI artifacts
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'dsh-v*'
+
+permissions:
+  contents: read
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build:
+    name: dsh ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x64
+            target: node24-linux-x64
+            runner: ubuntu-24.04
+            archive: tar.gz
+          - label: Linux arm64
+            target: node24-linux-arm64
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - label: macOS x64
+            target: node24-macos-x64
+            runner: macos-13
+            archive: tar.gz
+          - label: macOS arm64
+            target: node24-macos-arm64
+            runner: macos-14
+            archive: tar.gz
+          - label: Windows x64
+            target: node24-win-x64
+            runner: windows-2025
+            archive: zip
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pkg-cache
+          key: pkg-fetch-${{ matrix.target }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pkg-fetch-${{ matrix.target }}-
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+      - name: Build CLI artifact
+        env:
+          DSH_CLI_TARGET: ${{ matrix.target }}
+        run: pnpm run build:cli-exe
+      - name: Verify archive checksum (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: sha256sum -c dist-cli/*.${{ matrix.archive }}.sha256
+      - name: Verify archive checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $checksum = Get-ChildItem dist-cli -Filter "*.${{ matrix.archive }}.sha256"
+          $line = Get-Content $checksum.FullName
+          $parts = $line -split '\s+', 2
+          if ((Get-FileHash (Join-Path dist-cli $parts[1]) -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { throw "checksum mismatch" }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dsh-${{ matrix.target }}
+          path: |
+            dist-cli/*.${{ matrix.archive }}
+            dist-cli/*.${{ matrix.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -22,6 +22,30 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
+### 原生 CLI 产物
+
+发布 CI 会生成 Linux x64/arm64、macOS x64/arm64 和 Windows x64 的独立 CLI 压缩包。POSIX 压缩包命名为 `dsh-<version>-<platform>-<arch>.tar.gz`，Windows 使用 `.zip`；每个压缩包都有对应的 `.sha256` 文件，并包含目标平台的 `node-pty` 原生资产。
+
+在 Linux 或 macOS 上，下载匹配的压缩包和校验文件，验证后解压：
+
+```sh
+sha256sum -c dsh-<version>-linux-x64.tar.gz.sha256
+tar -xzf dsh-<version>-linux-x64.tar.gz
+./dsh-<version>-linux-x64 --help
+```
+
+在 Windows PowerShell 中验证并解压 Windows 压缩包：
+
+```powershell
+$sum = Get-Content .\dsh-<version>-win-x64.zip.sha256 -Raw
+$parts = $sum.Trim() -split '\s+', 2
+if ((Get-FileHash .\dsh-<version>-win-x64.zip -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { throw 'checksum mismatch' }
+Expand-Archive .\dsh-<version>-win-x64.zip -DestinationPath .
+dsh-<version>-win-x64.exe --help
+```
+
+这些是 CLI 压缩包，不声称支持 Electron、DMG、MSI、AppImage 或 Python wheel。可在本地为原生目标构建，例如使用 `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`。
+
 ### 从源码运行
 
 如需从仓库源码运行：

@@ -106,6 +106,35 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  cli-artifacts:
+    name: Build native CLI artifacts
+    if: inputs.publish && startsWith(github.ref, 'refs/tags/dsh-v')
+    uses: ./.github/workflows/build-cli-artifacts.yml
+    permissions:
+      contents: read
+
+  release-assets:
+    name: Upload CLI release assets
+    if: inputs.publish && startsWith(github.ref, 'refs/tags/dsh-v')
+    needs: cli-artifacts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-node24-*
+          path: dist-cli
+          merge-multiple: true
+      - name: Verify CLI checksums
+        run: |
+          set -eu
+          for checksum in dist-cli/*.sha256; do (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")"); done
+      - name: Upload CLI assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist-cli/* --clobber
+
   publish:
     name: Publish to npm
     if: inputs.publish

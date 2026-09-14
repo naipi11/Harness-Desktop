@@ -22,6 +22,30 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
+### Native CLI artifacts
+
+Release CI produces standalone CLI archives for Linux x64/arm64, macOS x64/arm64, and Windows x64. POSIX archives are named `dsh-<version>-<platform>-<arch>.tar.gz`; Windows uses `.zip`. Each archive has a matching `.sha256` file and contains the native `node-pty` assets for its target.
+
+On Linux or macOS, download the matching archive and checksum, verify, then extract it:
+
+```sh
+sha256sum -c dsh-<version>-linux-x64.tar.gz.sha256
+tar -xzf dsh-<version>-linux-x64.tar.gz
+./dsh-<version>-linux-x64 --help
+```
+
+On Windows PowerShell, verify and extract the Windows archive:
+
+```powershell
+$sum = Get-Content .\dsh-<version>-win-x64.zip.sha256 -Raw
+$parts = $sum.Trim() -split '\s+', 2
+if ((Get-FileHash .\dsh-<version>-win-x64.zip -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { throw 'checksum mismatch' }
+Expand-Archive .\dsh-<version>-win-x64.zip -DestinationPath .
+dsh-<version>-win-x64.exe --help
+```
+
+These are CLI-only archives. They do not claim Electron, DMG, MSI, AppImage, or Python-wheel support. Build a native target locally with `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`.
+
 ### Run from source
 
 To run from a repository checkout:
