@@ -5,13 +5,27 @@ import { spawn } from 'node:child_process'
 import { chmod, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const staging = resolve(root, '.artifacts/cli-staging')
 const output = resolve(root, 'dist-cli')
 const pkgSpec = '@yao-pkg/pkg@6.21.0'
+const pkgAssets = [
+  'config/**/*',
+  'node_modules/**/*.js',
+  'node_modules/**/*.cjs',
+  'node_modules/**/*.mjs',
+  'node_modules/**/package.json',
+  'node_modules/**/*.json',
+  'node_modules/**/*.node',
+  'node_modules/**/*.wasm',
+] as const
+const dependencyTestDirectories = new Set(['test', 'tests', '__tests__'])
+
+/** Asset globs for the symlink-free production dependency closure. */
+export { pkgAssets }
 const targets = ['node24-linux-x64', 'node24-linux-arm64', 'node24-macos-x64', 'node24-macos-arm64', 'node24-win-x64'] as const
 type Target = typeof targets[number]
 
@@ -24,7 +38,10 @@ function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, CI: 'true' } })
     child.once('error', reject)
-    child.once('exit', code => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with ${code ?? 'signal'}`)))
+    child.once('exit', (code) => {
+      if (code === 0) resolvePromise()
+      else reject(new Error(`${command} exited with ${code ?? 'signal'}`))
+    })
   })
 }
 
@@ -49,6 +66,18 @@ async function materialize(path: string): Promise<void> {
     await cp(targetPath, link, { recursive: true, dereference: true })
     link = await findLink(nodeModules)
   }
+}
+
+async function pruneDependencyTests(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true })
+  await Promise.all(entries.map(async (entry) => {
+    const candidate = join(path, entry.name)
+    if (entry.isDirectory() && dependencyTestDirectories.has(entry.name)) {
+      await rm(candidate, { recursive: true, force: true })
+      return
+    }
+    if (entry.isDirectory() && !entry.isSymbolicLink()) await pruneDependencyTests(candidate)
+  }))
 }
 
 async function prepareNativePty(target: Target): Promise<string | undefined> {
@@ -91,9 +120,10 @@ async function main(): Promise<void> {
   await rm(staging, { recursive: true, force: true }); await mkdir(resolve(root, '.artifacts'), { recursive: true })
   await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['--filter', '@stackstackstack/dsh', 'deploy', '--prod', '--legacy', '--config.node-linker=hoisted', staging])
   await materialize(staging)
+  await pruneDependencyTests(join(staging, 'node_modules'))
   const manifestPath = join(staging, 'package.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
-  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, bin: 'lib/bin.js', pkg: { assets: ['config/**/*', 'node_modules/**/*.js', 'node_modules/**/*.cjs', 'node_modules/**/*.mjs', 'node_modules/**/package.json', 'node_modules/**/*.json', 'node_modules/**/*.node', 'node_modules/**/*.wasm'] } }, null, 2)}\n`)
+  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, bin: 'lib/bin.js', pkg: { assets: pkgAssets } }, null, 2)}\n`)
   await rm(output, { recursive: true, force: true }); await mkdir(output, { recursive: true })
   const helper = await prepareNativePty(target)
   const version = typeof manifest.version === 'string' ? manifest.version : '0.0.0'
@@ -112,6 +142,6 @@ async function main(): Promise<void> {
   console.log(`build-cli-exe: wrote ${archive} and ${archive}.sha256`)
 }
 
-await main()
+if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url) await main()
 
-export { usage, targets }
+export { dependencyTestDirectories, pruneDependencyTests, targets, usage }

@@ -8,6 +8,8 @@ English | [中文](2026-08-14-native-cli-release-artifacts.zh.md)
 
 The dsh command-line runtime needs downloadable native artifacts on the platforms supported by its local subprocess provider. A Linux-only archive does not provide a usable distribution for macOS or Windows, while installer formats would add product and signing contracts that are not implemented.
 
+The CLI staging closure is created with `pnpm deploy --prod`, materialized without symlinks, and pruned of dependency `test`, `tests`, and `__tests__` directories before `@yao-pkg/pkg` scans its configured production assets.
+
 ## Decision
 
 `scripts/build-cli-exe.ts` builds one native `@yao-pkg/pkg@6.21.0 --sea` target per invocation. The supported targets are `node24-linux-x64`, `node24-linux-arm64`, `node24-macos-x64`, `node24-macos-arm64`, and `node24-win-x64`. Linux and macOS produce tarballs; Windows produces a zip archive. Every archive has a SHA-256 sidecar and runs the executable help, version, and default-config smoke checks before the archive is written.

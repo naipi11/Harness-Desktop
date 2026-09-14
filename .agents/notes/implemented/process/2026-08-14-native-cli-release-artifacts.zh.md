@@ -8,6 +8,8 @@ English | [中文](2026-08-14-native-cli-release-artifacts.md)
 
 dsh 命令行运行时需要在本地子进程提供方支持的平台上提供可下载的原生产物。仅有 Linux 压缩包无法为 macOS 或 Windows 提供可用分发，而安装包格式会引入当前尚未实现的产品与签名约定。
 
+CLI 暂存闭包通过 `pnpm deploy --prod` 创建，去除符号链接后，在 `@yao-pkg/pkg` 扫描配置的生产资产之前删除依赖项中的 `test`、`tests` 和 `__tests__` 目录。
+
 ## Decision
 
 `scripts/build-cli-exe.ts` 每次调用构建一个原生 `@yao-pkg/pkg@6.21.0 --sea` 目标。支持的目标是 `node24-linux-x64`、`node24-linux-arm64`、`node24-macos-x64`、`node24-macos-arm64` 和 `node24-win-x64`。Linux 与 macOS 生成 tar 包，Windows 生成 zip 包。每个压缩包都有 SHA-256 校验文件，并在写入压缩包前运行可执行文件的 help、version 和默认配置冒烟检查。
