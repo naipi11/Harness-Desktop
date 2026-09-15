@@ -21,6 +21,7 @@ const pkgAssets = [
   'node_modules/**/*.json',
   'node_modules/**/*.node',
   'node_modules/**/*.wasm',
+  'node_modules/**/cordis.patch.yml',
 ] as const
 const dependencyTestDirectories = new Set(['test', 'tests', '__tests__'])
 

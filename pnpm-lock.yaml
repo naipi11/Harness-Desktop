@@ -198,6 +198,9 @@ importers:
       '@stackstackstack/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@stackstackstack/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../packages/runtime-diagnostics/invariants
       '@stackstackstack/dsh-jobs-local':
         specifier: workspace:^
         version: link:../../packages/jobs/jobs-local
@@ -234,6 +237,9 @@ importers:
       '@stackstackstack/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      '@stackstackstack/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../packages/core/system-prompt
       '@stackstackstack/dsh-terminal':
         specifier: workspace:^
         version: link:../../packages/terminal/terminal
@@ -346,9 +352,6 @@ importers:
       '@stackstackstack/dsh-subagent':
         specifier: workspace:^
         version: link:../../packages/subagent/subagent
-      '@stackstackstack/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../packages/core/system-prompt
       '@stackstackstack/dsh-tools':
         specifier: workspace:^
         version: link:../../packages/core/tools

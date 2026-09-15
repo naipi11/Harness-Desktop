@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { pruneDependencyTests } from './build-cli-exe.ts'
+import { pkgAssets, pruneDependencyTests } from './build-cli-exe.ts'
 
 const roots: string[] = []
 
@@ -33,6 +33,12 @@ describe('CLI pkg staging', () => {
     expect(existsSync(join(root, 'test'))).toBe(false)
     expect(existsSync(join(root, 'nested', '__tests__'))).toBe(false)
     expect(existsSync(join(root, 'nested', 'tests'))).toBe(false)
+  })
+
+  it('includes shipped bundle patch files without broad YAML dependency globs', () => {
+    expect(pkgAssets).toContain('node_modules/**/cordis.patch.yml')
+    expect(pkgAssets).not.toContain('node_modules/**/*.yml')
+    expect(pkgAssets).not.toContain('node_modules/**/*.yaml')
   })
 
   it('declares every required app-boot peer as a production dependency', () => {
