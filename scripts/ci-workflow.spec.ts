@@ -13,6 +13,46 @@ describe('CI workflow', () => {
     expect(publish.needs).toEqual(['pack', 'cli-artifacts'])
   })
 
+  it('verifies CLI checksums from the directory containing the archives', () => {
+    const build = loadWorkflow('.github/workflows/build-cli-artifacts.yml')
+    const buildJob = workflowJob(build, 'build')
+    const buildSteps = buildJob.steps as unknown[]
+    if (!Array.isArray(buildSteps)) throw new TypeError('CLI artifact build must define steps')
+    const posixChecksum = buildSteps.find(step => isRecord(step) && step.name === 'Verify archive checksum (POSIX)')
+    expect(posixChecksum).toMatchObject({
+      if: "runner.os != 'Windows'",
+      shell: 'bash',
+      run: 'cd dist-cli && sha256sum -c ./*.${{ matrix.archive }}.sha256',
+    })
+
+    const artifactUpload = buildSteps.find(step => isRecord(step) && step.uses === 'actions/upload-artifact@v7')
+    expect(artifactUpload).toMatchObject({
+      with: { name: 'dsh-${{ matrix.target }}' },
+    })
+
+    const release = loadWorkflow('.github/workflows/release.yml')
+    const releaseAssets = workflowJob(release, 'release-assets')
+    expect(releaseAssets).toMatchObject({
+      needs: 'cli-artifacts',
+    })
+    const releaseDownload = (releaseAssets.steps as unknown[]).find(
+      step => isRecord(step) && step.uses === 'actions/download-artifact@v4',
+    )
+    expect(releaseDownload).toMatchObject({
+      with: { pattern: 'dsh-node24-*', path: 'dist-cli', 'merge-multiple': true },
+    })
+    const releaseSteps = releaseAssets.steps as unknown[]
+    if (!Array.isArray(releaseSteps)) throw new TypeError('Release assets job must define steps')
+    const releaseChecksum = releaseSteps.find(step => isRecord(step) && step.name === 'Verify CLI checksums')
+    if (!isRecord(releaseChecksum) || typeof releaseChecksum.run !== 'string') {
+      throw new TypeError('Release assets must verify CLI checksums')
+    }
+    expect(releaseChecksum.run).toContain('cd "$(dirname "$checksum")"')
+    expect(releaseAssets).toMatchObject({
+      needs: 'cli-artifacts',
+    })
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8'))
     if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')

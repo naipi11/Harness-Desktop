@@ -55,7 +55,7 @@ jobs:
       - name: Verify archive checksum (POSIX)
         if: runner.os != 'Windows'
         shell: bash
-        run: sha256sum -c dist-cli/*.${{ matrix.archive }}.sha256
+        run: cd dist-cli && sha256sum -c ./*.${{ matrix.archive }}.sha256
       - name: Verify archive checksum (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
