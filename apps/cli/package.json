@@ -79,6 +79,7 @@
     "@stackstackstack/dsh-agent-instructions": "workspace:^",
     "commander": "^15.0.0",
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cosmokit": "workspace:^",
     "js-yaml": "^4.2.0",
     "node-addon-require-builtin": "^0.1.4"
   },

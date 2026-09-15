@@ -36,7 +36,7 @@ function usage(): string {
 function run(command: string, args: string[]): Promise<void> {
   console.log(`build-cli-exe: ${command} ${args.join(' ')}`)
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, CI: 'true' } })
+    const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, CI: 'true' } })
     child.once('error', reject)
     child.once('exit', (code) => {
       if (code === 0) resolvePromise()

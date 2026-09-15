@@ -141,6 +141,9 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../vendor/timer
+      '@deepseek-ai/cosmokit':
+        specifier: link:../../vendor/cosmokit
+        version: link:../../vendor/cosmokit
       '@stackstackstack/dsh-agent-instructions':
         specifier: workspace:^
         version: link:../../packages/context/agent-instructions

@@ -7,6 +7,12 @@ const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
 
 describe('CI workflow', () => {
+  it('requires native CLI artifacts before npm publication on tagged releases', () => {
+    const workflow = loadWorkflow('.github/workflows/release.yml')
+    const publish = workflowJob(workflow, 'publish')
+    expect(publish.needs).toEqual(['pack', 'cli-artifacts'])
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8'))
     if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')

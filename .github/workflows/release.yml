@@ -138,7 +138,7 @@ jobs:
   publish:
     name: Publish to npm
     if: inputs.publish
-    needs: pack
+    needs: [pack, cli-artifacts]
     runs-on: ubuntu-24.04
     # Required reviewers and the allowed tags live on the environment; this is
     # the only step in the sequence that can write to the registry.
