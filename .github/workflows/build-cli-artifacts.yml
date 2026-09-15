@@ -30,14 +30,6 @@ jobs:
             target: node24-linux-arm64
             runner: ubuntu-24.04-arm
             archive: tar.gz
-          - label: macOS x64
-            target: node24-macos-x64
-            runner: macos-13
-            archive: tar.gz
-          - label: macOS arm64
-            target: node24-macos-arm64
-            runner: macos-14
-            archive: tar.gz
           - label: Windows x64
             target: node24-win-x64
             runner: windows-2025
