@@ -121,6 +121,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: dsh-node24-*
@@ -130,6 +135,13 @@ jobs:
         run: |
           set -eu
           for checksum in dist-cli/*.sha256; do (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")"); done
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --generate-notes
+          fi
       - name: Upload CLI assets to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

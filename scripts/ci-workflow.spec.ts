@@ -35,19 +35,33 @@ describe('CI workflow', () => {
     expect(releaseAssets).toMatchObject({
       needs: 'cli-artifacts',
     })
-    const releaseDownload = (releaseAssets.steps as unknown[]).find(
+    const releaseSteps = releaseAssets.steps as unknown[]
+    if (!Array.isArray(releaseSteps)) throw new TypeError('Release assets job must define steps')
+    const checkout = releaseSteps.find(step => isRecord(step) && step.uses === 'actions/checkout@v6')
+    expect(checkout).toMatchObject({
+      with: { ref: '${{ github.ref }}', 'fetch-depth': 1, 'persist-credentials': false },
+    })
+    const releaseDownload = releaseSteps.find(
       step => isRecord(step) && step.uses === 'actions/download-artifact@v4',
     )
     expect(releaseDownload).toMatchObject({
       with: { pattern: 'dsh-node24-*', path: 'dist-cli', 'merge-multiple': true },
     })
-    const releaseSteps = releaseAssets.steps as unknown[]
-    if (!Array.isArray(releaseSteps)) throw new TypeError('Release assets job must define steps')
     const releaseChecksum = releaseSteps.find(step => isRecord(step) && step.name === 'Verify CLI checksums')
     if (!isRecord(releaseChecksum) || typeof releaseChecksum.run !== 'string') {
       throw new TypeError('Release assets must verify CLI checksums')
     }
     expect(releaseChecksum.run).toContain('cd "$(dirname "$checksum")"')
+    const ensureRelease = releaseSteps.find(step => isRecord(step) && step.name === 'Ensure GitHub Release exists')
+    expect(ensureRelease).toMatchObject({
+      env: { GH_TOKEN: '${{ github.token }}' },
+    })
+    if (!isRecord(ensureRelease) || typeof ensureRelease.run !== 'string') {
+      throw new TypeError('Release assets must ensure a GitHub Release before upload')
+    }
+    expect(ensureRelease.run).toContain('gh release view')
+    expect(ensureRelease.run).toContain('gh release create')
+    expect(ensureRelease.run).toContain('--generate-notes')
     expect(releaseAssets).toMatchObject({
       needs: 'cli-artifacts',
     })
