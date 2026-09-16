@@ -8,7 +8,7 @@ English | [中文](2026-08-14-native-cli-release-artifacts.md)
 
 dsh 命令行运行时需要在本地子进程提供方支持的平台上提供可下载的原生产物。仅有 Linux 压缩包无法为 macOS 或 Windows 提供可用分发，而安装包格式会引入当前尚未实现的产品与签名约定。
 
-CLI 暂存闭包通过 `pnpm deploy --prod` 创建，去除符号链接后，在 `@yao-pkg/pkg` 扫描配置的生产资产之前删除依赖项中的 `test`、`tests` 和 `__tests__` 目录。
+CLI 暂存闭包通过 `pnpm deploy --prod --ignore-scripts` 创建，去除符号链接后，在 `@yao-pkg/pkg` 扫描配置的生产资产之前删除依赖项中的 `test`、`tests` 和 `__tests__` 目录。前置的工作区安装和主机库构建仍保留准备原生输入所需的生命周期步骤；仅生产部署不会调用根开发钩子安装器。
 
 ## Decision
 

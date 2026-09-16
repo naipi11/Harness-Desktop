@@ -10,7 +10,7 @@ Standalone CLI archives require manual extraction and do not provide package-man
 
 ## Decision
 
-The release pipeline builds `dsh-<version>-win-x64-setup.exe` with Inno Setup 6.7.0 from the validated Windows x64 CLI executable and builds `dsh_<version>_amd64.deb` or `dsh_<version>_arm64.deb` with `dpkg-deb` from the matching validated Linux CLI executable. The Windows installer has a per-user application under `%LOCALAPPDATA%\DeepSeek Harness` and an uninstaller. Each Debian package installs `/usr/bin/dsh` with matching control metadata and is removable through `apt`. Each package receives a SHA-256 sidecar.
+The release pipeline builds `dsh-<version>-win-x64-setup.exe` with Inno Setup 6.7.0 from the validated Windows x64 CLI executable and builds `dsh_<version>_amd64.deb` or `dsh_<version>_arm64.deb` with `dpkg-deb` from the matching validated Linux CLI executable. The Windows installer lane installs the pinned Chocolatey package with `--allow-downgrade --force` and checks the installed version is exactly 6.7.0 before packaging, so a preinstalled newer Chocolatey version cannot silently change the toolchain. The Windows installer has a per-user application under `%LOCALAPPDATA%\DeepSeek Harness` and an uninstaller. Each Debian package installs `/usr/bin/dsh` with matching control metadata and is removable through `apt`. Each package receives a SHA-256 sidecar.
 
 Packaging runs only after the existing CLI artifact build and validation. A release-scoped job checks every archive and package checksum and requires both installer formats before creating or updating a GitHub Release, preventing partial publication. Builders have read-only repository permissions; only the final asset job has contents write permission.
 

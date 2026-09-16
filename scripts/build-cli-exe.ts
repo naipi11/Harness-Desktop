@@ -119,7 +119,7 @@ async function main(): Promise<void> {
   }
   if (!values['skip-build']) await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'build:lib:host'])
   await rm(staging, { recursive: true, force: true }); await mkdir(resolve(root, '.artifacts'), { recursive: true })
-  await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['--filter', '@stackstackstack/dsh', 'deploy', '--prod', '--legacy', '--config.node-linker=hoisted', staging])
+  await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['--filter', '@stackstackstack/dsh', 'deploy', '--prod', '--ignore-scripts', '--legacy', '--config.node-linker=hoisted', staging])
   await materialize(staging)
   await pruneDependencyTests(join(staging, 'node_modules'))
   const manifestPath = join(staging, 'package.json')

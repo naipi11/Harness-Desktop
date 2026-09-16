@@ -10,7 +10,7 @@ English | [English](2026-09-16-cli-installers.md)
 
 ## Decision
 
-发布流程使用 Inno Setup 6.7.0，从已验证的 Windows x64 CLI 可执行文件构建 `dsh-<version>-win-x64-setup.exe`；使用 `dpkg-deb`，从匹配的已验证 Linux CLI 可执行文件构建 `dsh_<version>_amd64.deb` 或 `dsh_<version>_arm64.deb`。Windows 安装程序将当前用户应用安装到 `%LOCALAPPDATA%\DeepSeek Harness` 并提供卸载程序。每个 Debian 软件包都将 dsh 安装到 `/usr/bin/dsh`，包含匹配的 Debian control 元数据，并可通过 `apt` 删除。每个软件包都有 SHA-256 校验文件。
+发布流程使用 Inno Setup 6.7.0，从已验证的 Windows x64 CLI 可执行文件构建 `dsh-<version>-win-x64-setup.exe`；使用 `dpkg-deb`，从匹配的已验证 Linux CLI 可执行文件构建 `dsh_<version>_amd64.deb` 或 `dsh_<version>_arm64.deb`。Windows 安装步骤使用 `--allow-downgrade --force` 安装固定的 Chocolatey 包，并在打包前检查已安装版本必须精确为 6.7.0，避免预装的新版本悄悄改变工具链。Windows 安装程序将当前用户应用安装到 `%LOCALAPPDATA%\DeepSeek Harness` 并提供卸载程序。每个 Debian 软件包都将 dsh 安装到 `/usr/bin/dsh`，包含匹配的 Debian control 元数据，并可通过 `apt` 删除。每个软件包都有 SHA-256 校验文件。
 
 打包只在现有 CLI 产物构建和验证之后运行。发布范围的 job 检查所有压缩包和软件包校验和，并要求两种安装包都存在后才创建或更新 GitHub Release，避免部分发布。构建 job 只有只读仓库权限，最终资产 job 才拥有 contents 写权限。
 

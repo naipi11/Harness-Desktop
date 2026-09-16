@@ -99,7 +99,9 @@ jobs:
         if: matrix.target == 'node24-win-x64'
         shell: pwsh
         run: |
-          choco install innosetup --version=6.7.0 --no-progress --yes
+          choco install innosetup --version=6.7.0 --allow-downgrade --force --no-progress --yes
+          $installedVersion = [version](choco list --local-only --exact innosetup --limit-output | ForEach-Object { ($_ -split '\|', 2)[1] } | Select-Object -First 1)
+          if ($installedVersion -ne [version]'6.7.0') { throw "expected Inno Setup 6.7.0, found $installedVersion" }
           $archive = Get-ChildItem dist-cli -Filter '*.zip' | Select-Object -First 1
           Expand-Archive $archive.FullName -DestinationPath dist-cli -Force
           $exe = Get-ChildItem dist-cli -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*setup*' } | Select-Object -First 1

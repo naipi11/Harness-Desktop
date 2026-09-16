@@ -13,6 +13,28 @@ describe('CI workflow', () => {
     expect(publish.needs).toEqual(['pack', 'cli-artifacts'])
   })
 
+  it('keeps CLI production staging script-free and pins the Windows installer toolchain', () => {
+    const build = loadWorkflow('.github/workflows/build-cli-artifacts.yml')
+    const buildJob = workflowJob(build, 'build')
+    if (!Array.isArray(buildJob.steps)) throw new TypeError('CLI artifact build must define steps')
+    const buildSteps: unknown[] = buildJob.steps
+    const install = buildSteps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
+    const artifact = buildSteps.find(step => isRecord(step) && step.name === 'Build CLI artifact')
+    expect(artifact).toMatchObject({ run: 'pnpm run build:cli-exe' })
+
+    const builder = readFileSync(resolve(root, 'scripts/build-cli-exe.ts'), 'utf8')
+    expect(builder).toContain("'deploy', '--prod', '--ignore-scripts'")
+
+    const installer = buildSteps.find(step => isRecord(step) && step.name === 'Build Windows setup installer')
+    if (!isRecord(installer) || typeof installer.run !== 'string') {
+      throw new TypeError('CLI artifact build must define the Windows installer step')
+    }
+    expect(installer.run).toContain('choco install innosetup --version=6.7.0 --allow-downgrade --force')
+    expect(installer.run).toContain("[version]'6.7.0'")
+    expect(installer.run).toContain('expected Inno Setup 6.7.0')
+  })
+
   it('verifies CLI checksums from the directory containing the archives', () => {
     const build = loadWorkflow('.github/workflows/build-cli-artifacts.yml')
     const buildJob = workflowJob(build, 'build')

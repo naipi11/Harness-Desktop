@@ -8,7 +8,7 @@ English | [中文](2026-08-14-native-cli-release-artifacts.zh.md)
 
 The dsh command-line runtime needs downloadable native artifacts on the platforms supported by its local subprocess provider. A Linux-only archive does not provide a usable distribution for macOS or Windows, while installer formats would add product and signing contracts that are not implemented.
 
-The CLI staging closure is created with `pnpm deploy --prod`, materialized without symlinks, and pruned of dependency `test`, `tests`, and `__tests__` directories before `@yao-pkg/pkg` scans its configured production assets.
+The CLI staging closure is created with `pnpm deploy --prod --ignore-scripts`, materialized without symlinks, and pruned of dependency `test`, `tests`, and `__tests__` directories before `@yao-pkg/pkg` scans its configured production assets. The preceding workspace install and host library build retain the lifecycle steps needed to prepare native inputs; the production-only deploy cannot invoke the root development hook installer.
 
 ## Decision
 
