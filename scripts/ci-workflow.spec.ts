@@ -25,6 +25,9 @@ describe('CI workflow', () => {
 
     const builder = readFileSync(resolve(root, 'scripts/build-cli-exe.ts'), 'utf8')
     expect(builder).toContain("'deploy', '--prod', '--ignore-scripts'")
+    expect(builder).toContain("DSH_SKIP_LEFTHOOK_INSTALL: '1'")
+    const lefthookInstaller = readFileSync(resolve(root, 'scripts/install-lefthook.mjs'), 'utf8')
+    expect(lefthookInstaller).toContain("process.env.DSH_SKIP_LEFTHOOK_INSTALL === '1'")
 
     const installer = buildSteps.find(step => isRecord(step) && step.name === 'Build Windows setup installer')
     if (!isRecord(installer) || typeof installer.run !== 'string') {
@@ -33,6 +36,10 @@ describe('CI workflow', () => {
     expect(installer.run).toContain('choco install innosetup --version=6.7.0 --allow-downgrade --force')
     expect(installer.run).toContain("[version]'6.7.0'")
     expect(installer.run).toContain('expected Inno Setup 6.7.0')
+    expect(installer.run).toContain('CLI archive is missing')
+    expect(installer.run).toContain('CLI executable is missing')
+    expect(installer.run).toContain('Windows setup installer was not generated')
+    expect(installer.run).toContain('Windows setup uninstaller was not generated')
   })
 
   it('verifies CLI checksums from the directory containing the archives', () => {

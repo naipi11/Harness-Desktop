@@ -34,10 +34,10 @@ function usage(): string {
   return `Usage: pnpm exec tsx scripts/build-cli-exe.ts --target=<target> [--skip-build] [--dry-run]\n\nBuilds a native CLI archive for ${targets.join(', ')}.\nThis is a CLI-only artifact; it does not build Electron, DMG, MSI, AppImage, or Python wheels.`
 }
 
-function run(command: string, args: string[]): Promise<void> {
+function run(command: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<void> {
   console.log(`build-cli-exe: ${command} ${args.join(' ')}`)
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, CI: 'true' } })
+    const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, CI: 'true', ...env } })
     child.once('error', reject)
     child.once('exit', (code) => {
       if (code === 0) resolvePromise()
@@ -119,7 +119,7 @@ async function main(): Promise<void> {
   }
   if (!values['skip-build']) await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', 'build:lib:host'])
   await rm(staging, { recursive: true, force: true }); await mkdir(resolve(root, '.artifacts'), { recursive: true })
-  await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['--filter', '@stackstackstack/dsh', 'deploy', '--prod', '--ignore-scripts', '--legacy', '--config.node-linker=hoisted', staging])
+  await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['--filter', '@stackstackstack/dsh', 'deploy', '--prod', '--ignore-scripts', '--legacy', '--config.node-linker=hoisted', staging], { DSH_SKIP_LEFTHOOK_INSTALL: '1' })
   await materialize(staging)
   await pruneDependencyTests(join(staging, 'node_modules'))
   const manifestPath = join(staging, 'package.json')

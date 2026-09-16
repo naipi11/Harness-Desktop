@@ -240,6 +240,14 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     })
   }
 
+  it('skips hook installation for production artifact deployment without resolving lefthook', async () => {
+    const fixture = createFixture()
+    const result = await runInstaller(fixture, fixture.main, { DSH_SKIP_LEFTHOOK_INSTALL: '1' })
+
+    expect(result.status, result.stderr).toBe(0)
+    expect(existsSync(hooksPath(fixture, fixture.main))).toBe(false)
+  })
+
   it('isolates main and linked worktrees without changing legacy common hooks', async () => {
     const fixture = createFixture()
     const common = commonDirectory(fixture)

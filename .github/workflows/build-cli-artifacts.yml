@@ -81,10 +81,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes dpkg-dev
           archive=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//').tar.gz" -print -quit)
-          test -n "$archive"
+          if [[ -z "$archive" ]]; then echo "CLI archive is missing for ${{ matrix.target }}" >&2; exit 1; fi
           tar -xzf "$archive" -C dist-cli
           exe=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//')" -print -quit)
-          test -n "$exe"
+          if [[ -z "$exe" ]]; then echo "CLI executable is missing for ${{ matrix.target }}" >&2; exit 1; fi
           version="${GITHUB_REF_NAME#dsh-v}"
           if [[ -z "$version" || "$version" == "$GITHUB_REF_NAME" ]]; then echo "workflow must run from a dsh-v tag" >&2; exit 1; fi
           architecture='${{ matrix.deb_arch }}'
@@ -102,15 +102,19 @@ jobs:
           choco install innosetup --version=6.7.0 --allow-downgrade --force --no-progress --yes
           $installedVersion = [version](choco list --local-only --exact innosetup --limit-output | ForEach-Object { ($_ -split '\|', 2)[1] } | Select-Object -First 1)
           if ($installedVersion -ne [version]'6.7.0') { throw "expected Inno Setup 6.7.0, found $installedVersion" }
-          $archive = Get-ChildItem dist-cli -Filter '*.zip' | Select-Object -First 1
+          $archive = Get-ChildItem dist-cli -File -Filter '*.zip' | Select-Object -First 1
+          if ($null -eq $archive) { throw 'CLI archive is missing for node24-win-x64' }
           Expand-Archive $archive.FullName -DestinationPath dist-cli -Force
           $exe = Get-ChildItem dist-cli -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*setup*' } | Select-Object -First 1
+          if ($null -eq $exe) { throw 'CLI executable is missing for node24-win-x64' }
           $version = '${{ github.ref_name }}'.Replace('dsh-v','')
           pnpm run package:cli-installer -- --format windows --input $exe.FullName --version $version
-          $installer = Get-ChildItem dist-cli -Filter '*-setup.exe' | Select-Object -First 1
+          $installer = Get-ChildItem dist-cli -File -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'Windows setup installer was not generated' }
           Start-Process $installer.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
           & "$env:LOCALAPPDATA\DeepSeek Harness\dsh.exe" --version
-          $uninstaller = Get-ChildItem "$env:LOCALAPPDATA\DeepSeek Harness" -Filter 'unins*.exe' | Select-Object -First 1
+          $uninstaller = Get-ChildItem "$env:LOCALAPPDATA\DeepSeek Harness" -File -Filter 'unins*.exe' | Select-Object -First 1
+          if ($null -eq $uninstaller) { throw 'Windows setup uninstaller was not generated' }
           & $uninstaller.FullName '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
       - uses: actions/upload-artifact@v7
         with:
