@@ -86,8 +86,8 @@ async function main(): Promise<void> {
     format: values.format,
     input: values.input,
     version: values.version,
-    architecture,
-    out: values.out,
+    ...(architecture === undefined ? {} : { architecture }),
+    ...(values.out === undefined ? {} : { out: values.out }),
   })
 }
 
