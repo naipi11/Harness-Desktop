@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes dpkg-dev
-          archive=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//').tar.gz' -print -quit)
+          archive=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//').tar.gz" -print -quit)
           test -n "$archive"
           tar -xzf "$archive" -C dist-cli
           exe=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//')" -print -quit)
