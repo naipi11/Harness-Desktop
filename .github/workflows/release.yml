@@ -110,6 +110,8 @@ jobs:
     name: Build native CLI artifacts
     if: inputs.publish && startsWith(github.ref, 'refs/tags/dsh-v')
     uses: ./.github/workflows/build-cli-artifacts.yml
+    with:
+      publish: ${{ inputs.publish }}
     permissions:
       contents: read
 
@@ -134,6 +136,8 @@ jobs:
       - name: Verify CLI checksums
         run: |
           set -eu
+          test -n "$(find dist-cli -type f -name 'dsh_*.deb')"
+          test -n "$(find dist-cli -type f -name 'dsh-*-setup.exe')"
           for checksum in dist-cli/*.sha256; do (cd "$(dirname "$checksum")" && sha256sum -c "$(basename "$checksum")"); done
       - name: Ensure GitHub Release exists
         env:

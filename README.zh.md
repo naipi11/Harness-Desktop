@@ -44,7 +44,7 @@ Expand-Archive .\dsh-<version>-win-x64.zip -DestinationPath .
 dsh-<version>-win-x64.exe --help
 ```
 
-这些是 CLI 压缩包，不声称支持 Electron、DMG、MSI、AppImage 或 Python wheel。可在本地为原生目标构建，例如使用 `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`。
+Windows x64 发布版本还包含使用 Inno Setup 构建的 `dsh-<version>-win-x64-setup.exe`。运行安装程序即可按当前用户将 `dsh.exe` 安装到 `%LOCALAPPDATA%\DeepSeek Harness`，并在 Windows 设置中提供卸载程序。Debian x64 和 arm64 发布版本分别包含 `dsh_<version>_amd64.deb` 和 `dsh_<version>_arm64.deb`；使用 `sudo apt install ./dsh_<version>_<architecture>.deb` 安装，使用 `sudo apt remove dsh` 卸载。安装前请先验证对应的 `.sha256` 文件。这些安装包仅支持 Windows x64 与 Debian x64/arm64；其他 Linux 发行版可使用 CLI 压缩包。CLI 分发不声称支持 Electron、DMG、MSI、AppImage 或 Python wheel。可在本地为原生目标构建，例如使用 `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`。
 
 ### 从源码运行
 

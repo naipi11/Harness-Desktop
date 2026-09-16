@@ -44,7 +44,7 @@ Expand-Archive .\dsh-<version>-win-x64.zip -DestinationPath .
 dsh-<version>-win-x64.exe --help
 ```
 
-These are CLI-only archives. They do not claim Electron, DMG, MSI, AppImage, or Python-wheel support. Build a native target locally with `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`.
+Windows x64 releases also include `dsh-<version>-win-x64-setup.exe`, built with Inno Setup. Run it as a per-user installer; it installs `dsh.exe` under `%LOCALAPPDATA%\DeepSeek Harness` and registers an uninstaller in Windows Settings. Debian x64 and arm64 releases include `dsh_<version>_amd64.deb` and `dsh_<version>_arm64.deb`; install the matching file with `sudo apt install ./dsh_<version>_<architecture>.deb` and remove with `sudo apt remove dsh`. Verify the matching `.sha256` file before installing. These packages are limited to Windows x64 and Debian x64/arm64; other Linux distributions can use the CLI archives. The CLI distributions do not claim Electron, DMG, MSI, AppImage, or Python-wheel support. Build a native target locally with `DSH_CLI_TARGET=node24-linux-x64 pnpm run build:cli-exe`.
 
 ### Run from source
 

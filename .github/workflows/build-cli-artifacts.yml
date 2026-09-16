@@ -2,6 +2,11 @@ name: Build CLI artifacts
 
 on:
   workflow_call:
+    inputs:
+      publish:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
   push:
     tags:
@@ -26,10 +31,12 @@ jobs:
             target: node24-linux-x64
             runner: ubuntu-24.04
             archive: tar.gz
+            deb_arch: amd64
           - label: Linux arm64
             target: node24-linux-arm64
             runner: ubuntu-24.04-arm
             archive: tar.gz
+            deb_arch: arm64
           - label: Windows x64
             target: node24-win-x64
             runner: windows-2025
@@ -60,15 +67,58 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $checksum = Get-ChildItem dist-cli -Filter "*.${{ matrix.archive }}.sha256"
-          $line = Get-Content $checksum.FullName
+          $checksums = @(Get-ChildItem dist-cli -File -Filter "*.${{ matrix.archive }}.sha256")
+          if ($checksums.Count -ne 1) { throw "expected exactly one archive checksum" }
+          $line = (Get-Content $checksums[0].FullName).Trim()
           $parts = $line -split '\s+', 2
+          if ($parts.Count -ne 2) { throw "invalid checksum file" }
           if ((Get-FileHash (Join-Path dist-cli $parts[1]) -Algorithm SHA256).Hash.ToLower() -ne $parts[0].ToLower()) { throw "checksum mismatch" }
+      - name: Build Debian package
+        if: startsWith(matrix.target, 'node24-linux-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev
+          archive=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//').tar.gz' -print -quit)
+          test -n "$archive"
+          tar -xzf "$archive" -C dist-cli
+          exe=$(find dist-cli -maxdepth 1 -type f -name "dsh-*-$(echo '${{ matrix.target }}' | sed 's/^node24-//')" -print -quit)
+          test -n "$exe"
+          version="${GITHUB_REF_NAME#dsh-v}"
+          if [[ -z "$version" || "$version" == "$GITHUB_REF_NAME" ]]; then echo "workflow must run from a dsh-v tag" >&2; exit 1; fi
+          architecture='${{ matrix.deb_arch }}'
+          pnpm run package:cli-installer -- --format deb --input "$exe" --version "$version" --architecture "$architecture"
+          deb="dist-cli/dsh_${version}_${architecture}.deb"
+          test -f "$deb" && test -f "$deb.sha256"
+          dpkg-deb --info "$deb" | grep -F "Architecture: $architecture"
+          sudo dpkg -i "$deb"
+          /usr/bin/dsh --version
+          sudo dpkg -r dsh
+      - name: Build Windows setup installer
+        if: matrix.target == 'node24-win-x64'
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.7.0 --no-progress --yes
+          $archive = Get-ChildItem dist-cli -Filter '*.zip' | Select-Object -First 1
+          Expand-Archive $archive.FullName -DestinationPath dist-cli -Force
+          $exe = Get-ChildItem dist-cli -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*setup*' } | Select-Object -First 1
+          $version = '${{ github.ref_name }}'.Replace('dsh-v','')
+          pnpm run package:cli-installer -- --format windows --input $exe.FullName --version $version
+          $installer = Get-ChildItem dist-cli -Filter '*-setup.exe' | Select-Object -First 1
+          Start-Process $installer.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          & "$env:LOCALAPPDATA\DeepSeek Harness\dsh.exe" --version
+          $uninstaller = Get-ChildItem "$env:LOCALAPPDATA\DeepSeek Harness" -Filter 'unins*.exe' | Select-Object -First 1
+          & $uninstaller.FullName '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
       - uses: actions/upload-artifact@v7
         with:
           name: dsh-${{ matrix.target }}
           path: |
             dist-cli/*.${{ matrix.archive }}
             dist-cli/*.${{ matrix.archive }}.sha256
+            dist-cli/dsh_*.deb
+            dist-cli/dsh_*.deb.sha256
+            dist-cli/dsh-*-setup.exe
+            dist-cli/dsh-*-setup.exe.sha256
           if-no-files-found: error
           retention-days: 14
