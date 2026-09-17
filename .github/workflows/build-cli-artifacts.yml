@@ -88,7 +88,7 @@ jobs:
           version="${GITHUB_REF_NAME#dsh-v}"
           if [[ -z "$version" || "$version" == "$GITHUB_REF_NAME" ]]; then echo "workflow must run from a dsh-v tag" >&2; exit 1; fi
           architecture='${{ matrix.deb_arch }}'
-          pnpm run package:cli-installer -- --format deb --input "$exe" --version "$version" --architecture "$architecture"
+          pnpm exec tsx scripts/package-cli-installers.ts --format deb --input "$exe" --version "$version" --architecture "$architecture"
           deb="dist-cli/dsh_${version}_${architecture}.deb"
           test -f "$deb" && test -f "$deb.sha256"
           dpkg-deb --info "$deb" | grep -F "Architecture: $architecture"
@@ -108,7 +108,7 @@ jobs:
           $exe = Get-ChildItem dist-cli -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*setup*' } | Select-Object -First 1
           if ($null -eq $exe) { throw 'CLI executable is missing for node24-win-x64' }
           $version = '${{ github.ref_name }}'.Replace('dsh-v','')
-          pnpm run package:cli-installer -- --format windows --input $exe.FullName --version $version
+          pnpm exec tsx scripts/package-cli-installers.ts --format windows --input $exe.FullName --version $version
           $installer = Get-ChildItem dist-cli -File -Filter '*-setup.exe' | Select-Object -First 1
           if ($null -eq $installer) { throw 'Windows setup installer was not generated' }
           Start-Process $installer.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait

@@ -29,10 +29,17 @@ describe('CI workflow', () => {
     const lefthookInstaller = readFileSync(resolve(root, 'scripts/install-lefthook.mjs'), 'utf8')
     expect(lefthookInstaller).toContain("process.env.DSH_SKIP_LEFTHOOK_INSTALL === '1'")
 
+    const debian = buildSteps.find(step => isRecord(step) && step.name === 'Build Debian package')
+    if (!isRecord(debian) || typeof debian.run !== 'string') {
+      throw new TypeError('CLI artifact build must define the Debian installer step')
+    }
+    expect(debian.run).toContain('pnpm exec tsx scripts/package-cli-installers.ts --format deb')
+
     const installer = buildSteps.find(step => isRecord(step) && step.name === 'Build Windows setup installer')
     if (!isRecord(installer) || typeof installer.run !== 'string') {
       throw new TypeError('CLI artifact build must define the Windows installer step')
     }
+    expect(installer.run).toContain('pnpm exec tsx scripts/package-cli-installers.ts --format windows')
     expect(installer.run).toContain('choco install innosetup --version=6.7.0 --allow-downgrade --force')
     expect(installer.run).toContain("[version]'6.7.0'")
     expect(installer.run).toContain('expected Inno Setup 6.7.0')
